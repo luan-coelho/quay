@@ -190,6 +190,16 @@ fn main() -> Result<()> {
     window.set_all_labels(ModelRc::from(all_labels_model.clone()));
     window.set_filter_label_id("".into());
 
+    // Polish 3: per-task label/dependency management UI state.
+    let active_task_labels_model = Rc::new(VecModel::<LabelPillData>::default());
+    let active_task_available_labels_model = Rc::new(VecModel::<LabelPillData>::default());
+    let active_task_deps_model = Rc::new(VecModel::<TaskCardData>::default());
+    window.set_active_task_labels(ModelRc::from(active_task_labels_model.clone()));
+    window
+        .set_active_task_available_labels(ModelRc::from(active_task_available_labels_model.clone()));
+    window.set_active_task_dependencies(ModelRc::from(active_task_deps_model.clone()));
+    window.set_label_picker_open(false);
+
     // Files tab state. Populated on select_task if the task has a
     // worktree; empty otherwise.
     let file_entries_model = Rc::new(VecModel::<FileEntryData>::default());
@@ -360,11 +370,76 @@ fn main() -> Result<()> {
     };
     refresh_kanban();
 
+    // Polish 3: helper that rebuilds the Description tab's per-task
+    // labels / available-labels / dependencies panels. Called from
+    // select_task and from each attach/detach/remove-dep callback so
+    // the UI stays in sync without a full kanban refresh.
+    let refresh_active_panels = {
+        let state = state.clone();
+        let labels_model = active_task_labels_model.clone();
+        let available_model = active_task_available_labels_model.clone();
+        let deps_model = active_task_deps_model.clone();
+        move || {
+            // Clear everything first.
+            while labels_model.row_count() > 0 {
+                labels_model.remove(labels_model.row_count() - 1);
+            }
+            while available_model.row_count() > 0 {
+                available_model.remove(available_model.row_count() - 1);
+            }
+            while deps_model.row_count() > 0 {
+                deps_model.remove(deps_model.row_count() - 1);
+            }
+
+            let Some(active_id) = *state.active_task.borrow() else {
+                return;
+            };
+            let label_store = LabelStore::new(&state.db.conn);
+            let dep_store = DependencyStore::new(&state.db.conn);
+
+            // Attached labels.
+            let attached = label_store.labels_for_task(active_id).unwrap_or_default();
+            let attached_ids: std::collections::HashSet<Uuid> =
+                attached.iter().map(|l| l.id).collect();
+            for l in &attached {
+                labels_model.push(label_to_pill(l));
+            }
+
+            // Available labels = all labels not already attached.
+            let all = label_store.list_all().unwrap_or_default();
+            for l in all {
+                if !attached_ids.contains(&l.id) {
+                    available_model.push(label_to_pill(&l));
+                }
+            }
+
+            // Direct dependencies as TaskCardData (reused for ID + title).
+            let dep_ids = dep_store.dependencies_of(active_id).unwrap_or_default();
+            let all_tasks = state.list_tasks().unwrap_or_default();
+            // Stable display-ids: same logic as refresh_kanban.
+            let mut sorted = all_tasks.clone();
+            sorted.sort_by_key(|t| t.created_at);
+            let display_ids: HashMap<Uuid, i32> = sorted
+                .iter()
+                .enumerate()
+                .map(|(i, t)| (t.id, (i + 1) as i32))
+                .collect();
+            for dep_id in dep_ids {
+                if let Some(task) = all_tasks.iter().find(|t| t.id == dep_id) {
+                    let display_id = display_ids.get(&task.id).copied().unwrap_or(0);
+                    deps_model.push(task_to_card(task, display_id, false, false, Vec::new(), 0));
+                }
+            }
+        }
+    };
+    refresh_active_panels();
+
     // ── Callbacks ────────────────────────────────────────────────────────────
     {
         let state = state.clone();
         let weak = window.as_weak();
         let refresh = refresh_kanban.clone();
+        let refresh_panels = refresh_active_panels.clone();
         window.on_select_task(move |id| {
             let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
             match state.select_task(uuid) {
@@ -437,6 +512,10 @@ fn main() -> Result<()> {
                         }
                     }
                     refresh();
+                    // Polish 3: also rebuild the Description tab panels
+                    // so the label/dep sections reflect the newly active
+                    // task without waiting for a second event.
+                    refresh_panels();
                 }
                 Err(err) => tracing::error!(%err, "failed to select task"),
             }
@@ -637,6 +716,56 @@ fn main() -> Result<()> {
         // the new id explicitly.
         let refresh = refresh_kanban.clone();
         window.on_filter_changed(move |_new_id| {
+            refresh();
+        });
+    }
+
+    // ── Polish 3 label/dep attach+detach wiring ─────────────────────────
+    {
+        let state = state.clone();
+        let refresh_panels = refresh_active_panels.clone();
+        let refresh = refresh_kanban.clone();
+        window.on_attach_label(move |label_id| {
+            let Some(active_id) = *state.active_task.borrow() else { return };
+            let Ok(label_uuid) = Uuid::from_str(label_id.as_str()) else { return };
+            let store = LabelStore::new(&state.db.conn);
+            if let Err(err) = store.attach(active_id, label_uuid) {
+                tracing::warn!(%err, "attach_label failed");
+                return;
+            }
+            refresh_panels();
+            refresh();
+        });
+    }
+    {
+        let state = state.clone();
+        let refresh_panels = refresh_active_panels.clone();
+        let refresh = refresh_kanban.clone();
+        window.on_detach_label(move |label_id| {
+            let Some(active_id) = *state.active_task.borrow() else { return };
+            let Ok(label_uuid) = Uuid::from_str(label_id.as_str()) else { return };
+            let store = LabelStore::new(&state.db.conn);
+            if let Err(err) = store.detach(active_id, label_uuid) {
+                tracing::warn!(%err, "detach_label failed");
+                return;
+            }
+            refresh_panels();
+            refresh();
+        });
+    }
+    {
+        let state = state.clone();
+        let refresh_panels = refresh_active_panels.clone();
+        let refresh = refresh_kanban.clone();
+        window.on_remove_dependency(move |dep_id| {
+            let Some(active_id) = *state.active_task.borrow() else { return };
+            let Ok(dep_uuid) = Uuid::from_str(dep_id.as_str()) else { return };
+            let store = DependencyStore::new(&state.db.conn);
+            if let Err(err) = store.remove(active_id, dep_uuid) {
+                tracing::warn!(%err, "remove_dependency failed");
+                return;
+            }
+            refresh_panels();
             refresh();
         });
     }

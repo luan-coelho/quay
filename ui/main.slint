@@ -614,6 +614,13 @@ export component MainWindow inherits Window {
     in property <string> editor-syntax-name: "Plain Text";
     in property <bool> editor-file-dirty: false;
 
+    // Description tab: labels attached to the active task + dependencies.
+    in property <[LabelPillData]> active-task-labels;
+    // Potential labels to attach (all available ones the task doesn't have yet).
+    in property <[LabelPillData]> active-task-available-labels;
+    in property <[TaskCardData]> active-task-dependencies;
+    in-out property <bool> label-picker-open: false;
+
     // Git Changes tab data — refreshed ~1×/s while the tab is open.
     in property <[DiffFileData]> git-diff-files;
     in property <[CommitEntryData]> git-commit-log;
@@ -640,6 +647,9 @@ export component MainWindow inherits Window {
     callback editor-content-changed(string);
     callback editor-save();
     callback editor-close();
+    callback attach-label(string);   // label id
+    callback detach-label(string);   // label id
+    callback remove-dependency(string);  // dep task id
     callback key-pressed(string, bool, bool, bool);
 
     // Layout constants.
@@ -1183,6 +1193,198 @@ export component MainWindow inherits Window {
                     }
 
                     Rectangle { horizontal-stretch: 1; }
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: Tokens.border-very-soft;
+                }
+
+                // ── Labels section ─────────────────────────────────
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+                    Text {
+                        text: "LABELS";
+                        color: Tokens.text-tertiary;
+                        font-size: 9px;
+                        font-weight: 700;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    TouchArea {
+                        width: 20px;
+                        height: 16px;
+                        clicked => { root.label-picker-open = !root.label-picker-open; }
+                        Rectangle {
+                            background: parent.has-hover ? #1f2331 : transparent;
+                            border-radius: 3px;
+                            border-width: 1px;
+                            border-color: Tokens.border-soft;
+                            Text {
+                                text: "+";
+                                color: Tokens.text-secondary;
+                                font-size: 11px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+                }
+
+                // Attached labels row — click × to detach.
+                HorizontalLayout {
+                    spacing: 4px;
+                    alignment: start;
+                    if root.active-task-labels.length == 0 && !root.label-picker-open: Text {
+                        text: "No labels — click + to add one.";
+                        color: Tokens.text-tertiary;
+                        font-size: 10px;
+                        vertical-alignment: center;
+                    }
+                    for label in root.active-task-labels: TouchArea {
+                        width: detach-chip.preferred-width + 14px;
+                        height: 18px;
+                        clicked => { root.detach-label(label.id); }
+                        Rectangle {
+                            background: rgb(label.color-r, label.color-g, label.color-b);
+                            border-radius: 3px;
+                            detach-chip := HorizontalLayout {
+                                padding-left: 6px;
+                                padding-right: 6px;
+                                spacing: 4px;
+                                alignment: center;
+                                Text {
+                                    text: label.name;
+                                    color: #0b0d11;
+                                    font-size: 9px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: "×";
+                                    color: #0b0d11;
+                                    font-size: 10px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Label picker — visible only when label-picker-open.
+                if root.label-picker-open: Rectangle {
+                    height: 54px;
+                    background: #0e0f13;
+                    border-radius: 4px;
+                    border-width: 1px;
+                    border-color: Tokens.border-soft;
+
+                    VerticalLayout {
+                        padding: 6px;
+                        spacing: 4px;
+                        Text {
+                            text: "Pick a label to attach";
+                            color: Tokens.text-tertiary;
+                            font-size: 9px;
+                        }
+                        HorizontalLayout {
+                            spacing: 4px;
+                            alignment: start;
+                            for available in root.active-task-available-labels: TouchArea {
+                                width: pick-chip.preferred-width + 12px;
+                                height: 16px;
+                                clicked => {
+                                    root.attach-label(available.id);
+                                    root.label-picker-open = false;
+                                }
+                                Rectangle {
+                                    background: rgb(available.color-r, available.color-g, available.color-b);
+                                    border-radius: 3px;
+                                    pick-chip := Text {
+                                        text: available.name;
+                                        color: #0b0d11;
+                                        font-size: 9px;
+                                        font-weight: 700;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Dependencies section ───────────────────────────
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: "BLOCKED BY";
+                        color: Tokens.text-tertiary;
+                        font-size: 9px;
+                        font-weight: 700;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text {
+                        text: root.active-task-dependencies.length;
+                        color: Tokens.text-tertiary;
+                        font-size: 9px;
+                    }
+                }
+                if root.active-task-dependencies.length == 0: Text {
+                    text: "No dependencies.";
+                    color: Tokens.text-tertiary;
+                    font-size: 10px;
+                }
+                for dep in root.active-task-dependencies: Rectangle {
+                    height: 22px;
+                    background: #0e0f13;
+                    border-radius: 3px;
+                    border-width: 1px;
+                    border-color: Tokens.border-soft;
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 4px;
+                        spacing: 6px;
+                        alignment: start;
+                        Text {
+                            text: "#" + dep.display-id;
+                            color: Tokens.text-tertiary;
+                            font-size: 9px;
+                            font-family: "JetBrains Mono";
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: dep.title;
+                            color: Tokens.text-secondary;
+                            font-size: 10px;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        TouchArea {
+                            width: 16px;
+                            height: 16px;
+                            clicked => { root.remove-dependency(dep.id); }
+                            Rectangle {
+                                background: parent.has-hover ? rgba(248, 113, 113, 15%) : transparent;
+                                border-radius: 3px;
+                                Text {
+                                    text: "×";
+                                    color: Tokens.kind-bug;
+                                    font-size: 10px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Rectangle {
