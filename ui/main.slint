@@ -421,6 +421,18 @@ component FilterChip inherits Rectangle {
         padding-right: 8px;
         spacing: 6px;
         alignment: center;
+        // Polish 23: kind glyph on the left of the label, matching
+        // the Lanes reference. Color is muted text-tertiary because
+        // filter chips aren't kinded.
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "◆";
+                color: Tokens.text-tertiary;
+                font-size: 9px;
+                vertical-alignment: center;
+            }
+        }
         VerticalLayout {
             alignment: center;
             Text {
@@ -430,7 +442,9 @@ component FilterChip inherits Rectangle {
                 vertical-alignment: center;
             }
         }
-        VerticalLayout {
+        // Polish 23: × only renders when the chip is the active
+        // filter, removing visual noise from the inactive ones.
+        if root.selected: VerticalLayout {
             alignment: center;
             Text {
                 text: "×";
@@ -1227,6 +1241,31 @@ export component MainWindow inherits Window {
                                     root.filter-label-id = lbl.id;
                                     root.filter-changed(lbl.id);
                                 }
+                            }
+                        }
+                    }
+                    // Polish 23: spacer pushes the funnel icon to the
+                    // right edge of the strip.
+                    Rectangle { horizontal-stretch: 1; }
+                    // Polish 23: funnel icon stub. Slint 1.15 has no
+                    // dedicated funnel codepoint in its built-in font,
+                    // so we use `▽` as the closest visual hint.
+                    // Click is a no-op for now — wiring an actual
+                    // filter menu is a future polish.
+                    VerticalLayout {
+                        alignment: end;
+                        TouchArea {
+                            width: 22px;
+                            height: 22px;
+                            clicked => { /* stub */ }
+                            Text {
+                                text: "▽";
+                                color: Tokens.text-tertiary;
+                                font-size: 11px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
                             }
                         }
                     }
