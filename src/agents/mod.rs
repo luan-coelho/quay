@@ -22,6 +22,7 @@
 
 pub mod claude_code;
 pub mod claude_resume;
+pub mod claude_stats;
 pub mod opencode;
 
 use anyhow::Result;

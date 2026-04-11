@@ -101,6 +101,10 @@ fn main() -> Result<()> {
     window.set_active_task_description("".into());
     window.set_active_task_instructions("".into());
     window.set_active_task_session_state("idle".into());
+    window.set_active_task_tokens_text("".into());
+    window.set_active_task_cost_text("".into());
+    window.set_active_task_runtime_text("".into());
+    window.set_active_task_message_count(0);
     window.set_active_right_tab("terminal".into());
 
     // Sidebar: menu items.
@@ -203,6 +207,12 @@ fn main() -> Result<()> {
     window.set_label_picker_open(false);
     window.set_dep_picker_open(false);
 
+    // Polish 16: open-task tabs model for the right-pane tab strip.
+    // One entry per pinned task — rebuilt on every `refresh_kanban`
+    // so newly-renamed or state-changed tasks stay in sync.
+    let open_tabs_model = Rc::new(VecModel::<OpenTaskTabData>::default());
+    window.set_open_task_tabs(ModelRc::from(open_tabs_model.clone()));
+
     // Files tab state. Populated on select_task if the task has a
     // worktree; empty otherwise.
     let file_entries_model = Rc::new(VecModel::<FileEntryData>::default());
@@ -254,6 +264,7 @@ fn main() -> Result<()> {
         let review = review_model.clone();
         let done = done_model.clone();
         let misc = misc_model.clone();
+        let open_tabs = open_tabs_model.clone();
         move || {
             let tasks = match state.list_tasks() {
                 Ok(t) => t,
@@ -424,6 +435,35 @@ fn main() -> Result<()> {
             replace_model(&review, review_v);
             replace_model(&done, done_v);
             replace_model(&misc, misc_v);
+
+            // Polish 16: rebuild the open-task tabs model from the
+            // AppState pinned list. Purge any tabs whose task was
+            // deleted in the meantime so the UI never shows a stale
+            // orphan chip. The list preserves the user's insertion
+            // order — no re-sort.
+            let tasks_by_id: HashMap<Uuid, &Task> =
+                tasks.iter().map(|t| (t.id, t)).collect();
+            let mut pinned = state.open_tabs.borrow_mut();
+            pinned.retain(|id| tasks_by_id.contains_key(id));
+            let snapshot: Vec<Uuid> = pinned.clone();
+            drop(pinned);
+            while open_tabs.row_count() > 0 {
+                open_tabs.remove(open_tabs.row_count() - 1);
+            }
+            for id in &snapshot {
+                if let Some(task) = tasks_by_id.get(id) {
+                    let display_id = display_ids.get(id).copied().unwrap_or(0);
+                    let kind = TaskKind::from_title(&task.title);
+                    open_tabs.push(OpenTaskTabData {
+                        id: SharedString::from(id.to_string()),
+                        display_id,
+                        title: SharedString::from(task.title.as_str()),
+                        kind: SharedString::from(kind_to_str(kind)),
+                        is_active: active_uuid == Some(*id),
+                        session_state: SharedString::from(task.session_state.as_str()),
+                    });
+                }
+            }
         }
     };
     refresh_kanban();
@@ -519,6 +559,9 @@ fn main() -> Result<()> {
         let refresh_panels = refresh_active_panels.clone();
         window.on_select_task(move |id| {
             let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
+            // Polish 16: clicking a card always pins the task into
+            // the open-tabs strip. Harmless if already pinned.
+            state.pin_open_tab(uuid);
             match state.select_task(uuid) {
                 // Only refresh the UI for the description/title when the
                 // active task actually changed — otherwise a second click on
@@ -582,6 +625,13 @@ fn main() -> Result<()> {
                         window.set_active_task_description(description.into());
                         window.set_active_task_instructions(instructions.into());
                         window.set_active_task_session_state(sess_state.into());
+                        // Polish 15: clear old stats immediately so a
+                        // stale chip row from the previous task doesn't
+                        // flicker until the 2s timer fires.
+                        window.set_active_task_tokens_text("".into());
+                        window.set_active_task_cost_text("".into());
+                        window.set_active_task_runtime_text("".into());
+                        window.set_active_task_message_count(0);
                         if state.blit_active() {
                             window.set_frame(Image::from_rgba8_premultiplied(
                                 state.framebuffer.borrow().buffer.clone(),
@@ -1007,6 +1057,8 @@ fn main() -> Result<()> {
                 *active = None;
             }
             drop(active);
+            // Polish 16: also drop it from the open-tabs strip.
+            state.open_tabs.borrow_mut().retain(|t| *t != uuid);
             // Reset UI panels to empty-state.
             if let Some(window) = weak.upgrade() {
                 window.set_active_task_id("".into());
@@ -1015,9 +1067,166 @@ fn main() -> Result<()> {
                 window.set_active_task_description("".into());
                 window.set_active_task_instructions("".into());
                 window.set_active_task_session_state("idle".into());
+                window.set_active_task_tokens_text("".into());
+                window.set_active_task_cost_text("".into());
+                window.set_active_task_runtime_text("".into());
+                window.set_active_task_message_count(0);
             }
             refresh_panels();
             refresh();
+        });
+    }
+
+    // Polish 16: open-task tab strip — focus a pinned tab by switching
+    // the active task to it. Cheap because the underlying state lives
+    // in AppState already; we just rebuild the right-pane surfaces the
+    // same way on_select_task does.
+    {
+        let state = state.clone();
+        let weak = window.as_weak();
+        let refresh = refresh_kanban.clone();
+        let refresh_panels = refresh_active_panels.clone();
+        window.on_open_task_tab(move |id| {
+            let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
+            match state.select_task(uuid) {
+                Ok(changed) if !changed => {}
+                Ok(_) => {
+                    if let Some(window) = weak.upgrade() {
+                        let store = crate::kanban::TaskStore::new(&state.db.conn);
+                        let task_opt = store.get(uuid);
+                        if let Ok(Some(ref t)) = task_opt {
+                            if let Some(wt) = t.worktree_path.as_deref() {
+                                window.set_file_current_dir(
+                                    wt.to_string_lossy().into_owned().into(),
+                                );
+                            } else {
+                                window.set_file_current_dir("".into());
+                            }
+                        }
+                        let card_data = if let Ok(Some(task)) = task_opt {
+                            let all = state.list_tasks().unwrap_or_default();
+                            let mut sorted = all.clone();
+                            sorted.sort_by_key(|t| t.created_at);
+                            let display_id = sorted
+                                .iter()
+                                .position(|t| t.id == uuid)
+                                .map(|i| i + 1)
+                                .unwrap_or(0);
+                            let kind = TaskKind::from_title(&task.title);
+                            window.set_active_task_kind(kind_to_str(kind).into());
+                            Some((
+                                format!("#{display_id}"),
+                                task.title.clone(),
+                                task.description.clone().unwrap_or_default(),
+                                task.instructions.clone().unwrap_or_default(),
+                                task.session_state.as_str().to_string(),
+                            ))
+                        } else {
+                            None
+                        };
+                        let (display, title, description, instructions, sess_state) =
+                            card_data.unwrap_or_default();
+                        window.set_active_task_id(id.clone());
+                        window.set_active_task_display(display.into());
+                        window.set_active_task_title(title.into());
+                        window.set_active_task_description(description.into());
+                        window.set_active_task_instructions(instructions.into());
+                        window.set_active_task_session_state(sess_state.into());
+                        window.set_active_task_tokens_text("".into());
+                        window.set_active_task_cost_text("".into());
+                        window.set_active_task_runtime_text("".into());
+                        window.set_active_task_message_count(0);
+                        if state.blit_active() {
+                            window.set_frame(Image::from_rgba8_premultiplied(
+                                state.framebuffer.borrow().buffer.clone(),
+                            ));
+                        }
+                    }
+                    refresh();
+                    refresh_panels();
+                }
+                Err(err) => tracing::error!(%err, "on_open_task_tab select failed"),
+            }
+        });
+    }
+
+    // Polish 16: close an open tab. Removes it from AppState's pinned
+    // list; if it was active, falls back to a neighbouring tab (or the
+    // empty-state view if no tabs remain). The PTY session is kept
+    // alive — closing a tab only hides it from the strip, it does not
+    // kill the underlying process. That matches how Lanes handles it.
+    {
+        let state = state.clone();
+        let weak = window.as_weak();
+        let refresh = refresh_kanban.clone();
+        let refresh_panels = refresh_active_panels.clone();
+        window.on_close_task_tab(move |id| {
+            let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
+            let fallback = state.close_open_tab(uuid);
+            if let Some(next) = fallback {
+                // Fall through to the same select-and-rebuild path the
+                // open callback uses so the right pane doesn't show
+                // a stale terminal frame.
+                match state.select_task(next) {
+                    Ok(_) => {
+                        if let Some(window) = weak.upgrade() {
+                            let store = crate::kanban::TaskStore::new(&state.db.conn);
+                            if let Ok(Some(task)) = store.get(next) {
+                                let all = state.list_tasks().unwrap_or_default();
+                                let mut sorted = all.clone();
+                                sorted.sort_by_key(|t| t.created_at);
+                                let display_id = sorted
+                                    .iter()
+                                    .position(|t| t.id == next)
+                                    .map(|i| i + 1)
+                                    .unwrap_or(0);
+                                let kind = TaskKind::from_title(&task.title);
+                                window.set_active_task_kind(kind_to_str(kind).into());
+                                window.set_active_task_id(next.to_string().into());
+                                window.set_active_task_display(
+                                    format!("#{display_id}").into(),
+                                );
+                                window.set_active_task_title(task.title.clone().into());
+                                window.set_active_task_description(
+                                    task.description.clone().unwrap_or_default().into(),
+                                );
+                                window.set_active_task_instructions(
+                                    task.instructions.clone().unwrap_or_default().into(),
+                                );
+                                window.set_active_task_session_state(
+                                    task.session_state.as_str().into(),
+                                );
+                                window.set_active_task_tokens_text("".into());
+                                window.set_active_task_cost_text("".into());
+                                window.set_active_task_runtime_text("".into());
+                                window.set_active_task_message_count(0);
+                            }
+                            if state.blit_active() {
+                                window.set_frame(Image::from_rgba8_premultiplied(
+                                    state.framebuffer.borrow().buffer.clone(),
+                                ));
+                            }
+                        }
+                    }
+                    Err(err) => tracing::error!(%err, "fallback select_task failed"),
+                }
+            } else if state.active_task.borrow().is_none() {
+                // No active task left at all — reset the detail panel.
+                if let Some(window) = weak.upgrade() {
+                    window.set_active_task_id("".into());
+                    window.set_active_task_display("".into());
+                    window.set_active_task_title("".into());
+                    window.set_active_task_description("".into());
+                    window.set_active_task_instructions("".into());
+                    window.set_active_task_session_state("idle".into());
+                    window.set_active_task_tokens_text("".into());
+                    window.set_active_task_cost_text("".into());
+                    window.set_active_task_runtime_text("".into());
+                    window.set_active_task_message_count(0);
+                }
+            }
+            refresh();
+            refresh_panels();
         });
     }
 
@@ -1538,8 +1747,70 @@ fn main() -> Result<()> {
         );
     }
 
+    // Polish 15 — agent metadata refresh timer. Fires every 2s; when the
+    // active task has a captured `claude_session_id`, parse its JSONL
+    // transcript with `agents::claude_stats::read_session_stats` and push
+    // the totals into the four UI properties the chips render from.
+    // When there's no active task or no session id yet, reset to the
+    // empty display (message_count==0 hides the whole row).
+    let stats_refresh_timer = Timer::default();
+    {
+        let weak = window.as_weak();
+        let state = state.clone();
+        stats_refresh_timer.start(
+            TimerMode::Repeated,
+            Duration::from_secs(2),
+            move || {
+                let Some(window) = weak.upgrade() else { return };
+                let Some(active_id) = *state.active_task.borrow() else {
+                    window.set_active_task_tokens_text("".into());
+                    window.set_active_task_cost_text("".into());
+                    window.set_active_task_runtime_text("".into());
+                    window.set_active_task_message_count(0);
+                    return;
+                };
+                let store = crate::kanban::TaskStore::new(&state.db.conn);
+                let Ok(Some(task)) = store.get(active_id) else { return };
+                let Some(session_id) = task.claude_session_id.as_deref() else {
+                    window.set_active_task_tokens_text("".into());
+                    window.set_active_task_cost_text("".into());
+                    window.set_active_task_runtime_text("".into());
+                    window.set_active_task_message_count(0);
+                    return;
+                };
+                // Claude Code encodes the session cwd into the project
+                // directory name — we pass the worktree path if we
+                // created one, otherwise the original repo path.
+                let cwd = task
+                    .worktree_path
+                    .as_deref()
+                    .unwrap_or(task.repo_path.as_path());
+                let Some(jsonl_path) =
+                    crate::agents::claude_stats::resolve_session_path(cwd, session_id)
+                else {
+                    return;
+                };
+                let stats = match crate::agents::claude_stats::read_session_stats(&jsonl_path) {
+                    Ok(s) => s,
+                    Err(err) => {
+                        tracing::debug!(%err, "read_session_stats failed");
+                        return;
+                    }
+                };
+                window.set_active_task_tokens_text(
+                    format_tokens(stats.total_tokens()).into(),
+                );
+                window.set_active_task_cost_text(format_cost(stats.cost_cents).into());
+                window
+                    .set_active_task_runtime_text(format_runtime(stats.runtime_secs.unwrap_or(0)).into());
+                window.set_active_task_message_count(stats.message_count as i32);
+            },
+        );
+    }
+
     window.run()?;
     drop(poll_timer);
+    drop(stats_refresh_timer);
     Ok(())
 }
 
@@ -1737,6 +2008,41 @@ fn auto_tag_seed_tasks(state: &AppState) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Polish 15 — compact token count: 1_234 → "1.2k tok", 3_450_000 → "3.4M tok".
+/// The `◇` glyph sits in the chip to echo Claude Code's own transcript marker.
+fn format_tokens(n: u64) -> String {
+    if n >= 1_000_000 {
+        format!("◇ {:.1}M tok", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("◇ {:.1}k tok", n as f64 / 1_000.0)
+    } else {
+        format!("◇ {n} tok")
+    }
+}
+
+/// Polish 15 — cost in cents → "$0.04" / "$12.35". Sub-cent totals
+/// stay at "$0.00" to keep the chip width stable.
+fn format_cost(cents: u64) -> String {
+    let dollars = cents / 100;
+    let remainder = cents % 100;
+    format!("$ {dollars}.{remainder:02}")
+}
+
+/// Polish 15 — runtime in seconds → "42s" / "7m 12s" / "2h 03m".
+fn format_runtime(secs: u64) -> String {
+    if secs < 60 {
+        format!("⏱ {secs}s")
+    } else if secs < 3600 {
+        let m = secs / 60;
+        let s = secs % 60;
+        format!("⏱ {m}m {s:02}s")
+    } else {
+        let h = secs / 3600;
+        let m = (secs % 3600) / 60;
+        format!("⏱ {h}h {m:02}m")
+    }
 }
 
 /// Human-friendly relative time for commit timestamps.

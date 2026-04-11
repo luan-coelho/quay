@@ -21,9 +21,14 @@ global Tokens {
     out property <color> bg-tab-active: #202329;
     out property <color> bg-hover: rgba(255, 255, 255, 5%);
     out property <color> bg-card-selected: rgba(255, 255, 255, 4%);
+    // Polish 16 — hover/active shades for open-task tab chips.
+    out property <color> bg-card-hover: rgba(255, 255, 255, 3%);
 
     out property <color> border-soft: rgba(150, 160, 180, 14%);
     out property <color> border-very-soft: rgba(150, 160, 180, 7%);
+    // Polish 16 — stronger border for the active task tab in the
+    // right-pane open-tabs strip. Same hue as kind-feature but thinner.
+    out property <color> border-accent: rgba(96, 165, 250, 45%);
 
     out property <color> text-primary: #e6e8eb;
     out property <color> text-secondary: #a7afb8;
@@ -134,6 +139,18 @@ export struct MenuItemData {
 export struct ProjectData {
     id: string,
     name: string,
+}
+
+// Polish 16 — one entry in the right-pane "open task tabs" strip.
+// A separate struct (rather than reusing TaskCardData) because the tab
+// strip only needs a compact subset + an `is-active` bit.
+export struct OpenTaskTabData {
+    id: string,           // UUID — used by open/close callbacks
+    display-id: int,      // "#12" prefix
+    title: string,
+    kind: string,         // drives the diamond glyph colour
+    is-active: bool,      // currently focused tab
+    session-state: string,// "busy" / "idle" / … — drives the dot
 }
 
 // ── Helper components ───────────────────────────────────────────────────────
@@ -577,6 +594,97 @@ component RightTab inherits Rectangle {
     }
 }
 
+// Polish 16 — one pinned-task chip in the right-pane tab strip.
+// Kind glyph, "#N Title", session dot, × close button. Active tab gets
+// a filled background + brighter text. Clicking the body fires
+// `clicked()`; clicking × fires `close-clicked()`.
+component OpenTaskTab inherits Rectangle {
+    in property <string> display-label;   // "#12 Dark mode"
+    in property <string> kind;             // "feature" / "bug" / "enhancement"
+    in property <string> session-state;    // "busy" / "idle" / …
+    in property <bool> active;
+    callback clicked();
+    callback close-clicked();
+
+    height: 26px;
+    width: body.preferred-width + 14px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: active ? Tokens.border-accent : Tokens.border-soft;
+    background: active ? Tokens.bg-tab-active : (ta.has-hover ? Tokens.bg-card-hover : transparent);
+
+    ta := TouchArea { clicked => { root.clicked(); } }
+
+    body := HorizontalLayout {
+        padding-left: 7px;
+        padding-right: 4px;
+        spacing: 6px;
+        alignment: center;
+
+        // Kind diamond — same palette used on CardRow.
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "◆";
+                font-size: 9px;
+                color:
+                    root.kind == "bug"         ? Tokens.kind-bug
+                  : root.kind == "enhancement" ? Tokens.kind-enhancement
+                                               : Tokens.kind-feature;
+                vertical-alignment: center;
+            }
+        }
+
+        // Display id + title.
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.display-label;
+                color: active ? Tokens.text-primary : Tokens.text-secondary;
+                font-size: 11px;
+                font-weight: active ? 600 : 500;
+                vertical-alignment: center;
+            }
+        }
+
+        // Session dot — only visible when the session is actually running.
+        if root.session-state == "busy" || root.session-state == "awaiting" || root.session-state == "error": VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 6px;
+                height: 6px;
+                border-radius: 3px;
+                background:
+                    root.session-state == "busy"     ? Tokens.kind-enhancement
+                  : root.session-state == "awaiting" ? #f5b54e
+                  : root.session-state == "error"    ? Tokens.kind-bug
+                                                     : Tokens.text-muted;
+            }
+        }
+
+        // × close button.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 14px;
+                height: 14px;
+                border-radius: 7px;
+                background: close-ta.has-hover ? rgba(248, 113, 113, 20%) : transparent;
+                close-ta := TouchArea { clicked => { root.close-clicked(); } }
+                Text {
+                    text: "×";
+                    color: close-ta.has-hover ? Tokens.kind-bug : Tokens.text-tertiary;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
+            }
+        }
+    }
+}
+
 // ── Main window ─────────────────────────────────────────────────────────────
 
 export component MainWindow inherits Window {
@@ -599,6 +707,18 @@ export component MainWindow inherits Window {
     in-out property <string> active-task-instructions: "";
     // Session state for the active task: one of idle/busy/awaiting/stopped/exited/error.
     in property <string> active-task-session-state: "idle";
+
+    // Polish 15 — live stats parsed from the Claude Code session JSONL
+    // transcript at ~/.claude/projects/<cwd>/<session-id>.jsonl. A 2s
+    // Timer in main.rs refreshes these for the active task whenever
+    // it has a captured `claude_session_id`. Display strings are
+    // pre-formatted in Rust (Slint's formatting story is limited).
+    // `active-task-message-count` stays numeric so the row can hide
+    // itself when there's no data yet.
+    in property <string> active-task-tokens-text: "";
+    in property <string> active-task-cost-text: "";
+    in property <string> active-task-runtime-text: "";
+    in property <int> active-task-message-count: 0;
 
     // Kanban data — one VecModel per column. Phase 2 expanded this from
     // 3 combined sections to 6 (matching Lanes' workflow).
@@ -682,6 +802,15 @@ export component MainWindow inherits Window {
     // Right pane tab selection.
     in-out property <string> active-right-tab: "terminal";
 
+    // Polish 16 — open task tabs at the top of the right pane. Each
+    // entry is a task the user has "pinned" into the workspace. The
+    // `is-active` flag on exactly one entry mirrors `active-task-id`.
+    // The strip hides entirely when <2 tabs are open — a single task
+    // does not need a tab bar.
+    in property <[OpenTaskTabData]> open-task-tabs;
+    callback open-task-tab(string);    // task id — make tab active
+    callback close-task-tab(string);   // task id — close & fall back
+
     callback select-task(string);
     callback move-task-back(string);
     callback move-task-forward(string);
@@ -728,10 +857,15 @@ export component MainWindow inherits Window {
 
     property <length> status-bar-h: 22px;
 
+    // Polish 16 — height of the open-task tabs strip above the inner
+    // Terminal/Description/… strip. Collapses to 0 when ≤1 task is
+    // open, so a single-task workflow keeps the original compact look.
+    property <length> open-tabs-strip-h: root.open-task-tabs.length >= 2 ? 34px : 0px;
+
     preferred-width: sidebar-w + middle-w + term-w + right-pad-h * 2 + 2px;
-    preferred-height: title-bar-h + tab-strip-h + term-h + right-pad-v * 2 + 14px + status-bar-h;
+    preferred-height: title-bar-h + tab-strip-h + open-tabs-strip-h + term-h + right-pad-v * 2 + 14px + status-bar-h;
     min-width: sidebar-w + middle-w + term-w + right-pad-h * 2 + 2px;
-    min-height: title-bar-h + tab-strip-h + term-h + right-pad-v * 2 + 14px + status-bar-h;
+    min-height: title-bar-h + tab-strip-h + open-tabs-strip-h + term-h + right-pad-v * 2 + 14px + status-bar-h;
 
     init => { focus-scope.focus(); }
 
@@ -1010,9 +1144,51 @@ export component MainWindow inherits Window {
         height: parent.height - title-bar-h;
         background: Tokens.bg-base;
 
+        // Polish 16 — open-task tabs strip. Only visible when ≥2 tabs
+        // are pinned; a single-task workflow skips this row entirely so
+        // the usual Terminal/Description/Git/Files/History strip stays
+        // at the top. The strip scrolls horizontally when many tabs
+        // are open so we never truncate the tab text.
+        if root.open-task-tabs.length >= 2: Rectangle {
+            x: 0; y: 0;
+            width: parent.width;
+            height: open-tabs-strip-h;
+            background: Tokens.bg-base;
+
+            // Bottom separator — visual continuation of the tab strip below.
+            Rectangle {
+                x: 0; y: parent.height - 1px;
+                width: parent.width; height: 1px;
+                background: Tokens.border-very-soft;
+            }
+
+            Flickable {
+                x: 8px;
+                y: 4px;
+                width: parent.width - 16px;
+                height: parent.height - 8px;
+                viewport-height: parent.height - 8px;
+                viewport-width: tab-row.preferred-width;
+
+                tab-row := HorizontalLayout {
+                    spacing: 6px;
+                    alignment: start;
+
+                    for tab in root.open-task-tabs: OpenTaskTab {
+                        display-label: "#" + tab.display-id + "  " + tab.title;
+                        kind: tab.kind;
+                        session-state: tab.session-state;
+                        active: tab.is-active;
+                        clicked => { root.open-task-tab(tab.id); }
+                        close-clicked => { root.close-task-tab(tab.id); }
+                    }
+                }
+            }
+        }
+
         // Tab strip
         Rectangle {
-            x: 0; y: 0;
+            x: 0; y: open-tabs-strip-h;
             width: parent.width;
             height: tab-strip-h;
             background: Tokens.bg-base;
@@ -1050,7 +1226,7 @@ export component MainWindow inherits Window {
         // Terminal area (only visible when active-right-tab == "terminal")
         focus-scope := FocusScope {
             x: right-pad-h;
-            y: tab-strip-h + right-pad-v;
+            y: tab-strip-h + open-tabs-strip-h + right-pad-v;
             width: term-w;
             height: term-h;
 
@@ -1109,9 +1285,9 @@ export component MainWindow inherits Window {
         Rectangle {
             visible: root.active-right-tab == "description";
             x: right-pad-h;
-            y: tab-strip-h + right-pad-v;
+            y: tab-strip-h + open-tabs-strip-h + right-pad-v;
             width: parent.width - right-pad-h * 2;
-            height: parent.height - tab-strip-h - right-pad-v * 2 - 22px;
+            height: parent.height - tab-strip-h - open-tabs-strip-h - right-pad-v * 2 - 22px;
             background: #14161a;
             border-radius: 6px;
             border-width: 1px;
@@ -1215,6 +1391,104 @@ export component MainWindow inherits Window {
                             }
                         }
                     }
+                }
+
+                // Polish 15 — live agent stats row: tokens, cost, runtime,
+                // message count. Only rendered when there's something to
+                // show (message_count > 0). The refresh_active_stats timer
+                // in main.rs pushes new values every 2s while the task has
+                // a captured claude_session_id.
+                if root.active-task-message-count > 0: HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+
+                    // Tokens chip.
+                    Rectangle {
+                        width: tokens-text.preferred-width + 16px;
+                        height: 18px;
+                        border-radius: 9px;
+                        border-width: 1px;
+                        border-color: Tokens.border-soft;
+                        background: rgba(96, 165, 250, 8%);
+                        tokens-text := Text {
+                            x: 8px;
+                            y: 0;
+                            width: parent.width - 16px;
+                            height: parent.height;
+                            text: root.active-task-tokens-text;
+                            color: #9bbcf2;
+                            font-size: 9px;
+                            font-weight: 500;
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    // Cost chip.
+                    Rectangle {
+                        width: cost-text.preferred-width + 16px;
+                        height: 18px;
+                        border-radius: 9px;
+                        border-width: 1px;
+                        border-color: Tokens.border-soft;
+                        background: rgba(16, 185, 129, 8%);
+                        cost-text := Text {
+                            x: 8px;
+                            y: 0;
+                            width: parent.width - 16px;
+                            height: parent.height;
+                            text: root.active-task-cost-text;
+                            color: Tokens.kind-enhancement;
+                            font-size: 9px;
+                            font-weight: 500;
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    // Runtime chip.
+                    Rectangle {
+                        width: runtime-text.preferred-width + 16px;
+                        height: 18px;
+                        border-radius: 9px;
+                        border-width: 1px;
+                        border-color: Tokens.border-soft;
+                        background: transparent;
+                        runtime-text := Text {
+                            x: 8px;
+                            y: 0;
+                            width: parent.width - 16px;
+                            height: parent.height;
+                            text: root.active-task-runtime-text;
+                            color: Tokens.text-tertiary;
+                            font-size: 9px;
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    // Message count chip.
+                    Rectangle {
+                        width: msgs-text.preferred-width + 16px;
+                        height: 18px;
+                        border-radius: 9px;
+                        border-width: 1px;
+                        border-color: Tokens.border-soft;
+                        background: transparent;
+                        msgs-text := Text {
+                            x: 8px;
+                            y: 0;
+                            width: parent.width - 16px;
+                            height: parent.height;
+                            text: root.active-task-message-count + " msgs";
+                            color: Tokens.text-tertiary;
+                            font-size: 9px;
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
                 }
 
                 // Editable title.
@@ -1609,9 +1883,9 @@ export component MainWindow inherits Window {
         Rectangle {
             visible: root.active-right-tab == "git";
             x: right-pad-h;
-            y: tab-strip-h + right-pad-v;
+            y: tab-strip-h + open-tabs-strip-h + right-pad-v;
             width: parent.width - right-pad-h * 2;
-            height: parent.height - tab-strip-h - right-pad-v * 2 - 22px;
+            height: parent.height - tab-strip-h - open-tabs-strip-h - right-pad-v * 2 - 22px;
             background: #14161a;
             border-radius: 6px;
             border-width: 1px;
@@ -1836,9 +2110,9 @@ export component MainWindow inherits Window {
         Rectangle {
             visible: root.active-right-tab == "files";
             x: right-pad-h;
-            y: tab-strip-h + right-pad-v;
+            y: tab-strip-h + open-tabs-strip-h + right-pad-v;
             width: parent.width - right-pad-h * 2;
-            height: parent.height - tab-strip-h - right-pad-v * 2 - 22px;
+            height: parent.height - tab-strip-h - open-tabs-strip-h - right-pad-v * 2 - 22px;
             background: #14161a;
             border-radius: 6px;
             border-width: 1px;
@@ -2090,9 +2364,9 @@ export component MainWindow inherits Window {
         Rectangle {
             visible: root.active-right-tab == "history";
             x: right-pad-h;
-            y: tab-strip-h + right-pad-v;
+            y: tab-strip-h + open-tabs-strip-h + right-pad-v;
             width: parent.width - right-pad-h * 2;
-            height: parent.height - tab-strip-h - right-pad-v * 2 - 22px;
+            height: parent.height - tab-strip-h - open-tabs-strip-h - right-pad-v * 2 - 22px;
             background: #14161a;
             border-radius: 6px;
             border-width: 1px;

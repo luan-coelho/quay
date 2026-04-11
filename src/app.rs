@@ -45,6 +45,13 @@ pub struct AppState {
     /// mutate without giving up `Rc<AppState>`.
     pub sessions: RefCell<HashMap<Uuid, PtySession>>,
     pub active_task: RefCell<Option<Uuid>>,
+    /// Polish 16 — ordered list of tasks the user has "pinned" into the
+    /// right pane as open tabs. The tab strip in `ui/main.slint` renders
+    /// one chip per entry here. Exactly one entry matches `active_task`
+    /// at any time; closing the active tab falls back to the nearest
+    /// remaining entry. Not persisted — rebuilt from an empty state on
+    /// each app launch.
+    pub open_tabs: RefCell<Vec<Uuid>>,
 }
 
 impl AppState {
@@ -72,7 +79,34 @@ impl AppState {
             rows,
             sessions: RefCell::new(HashMap::new()),
             active_task: RefCell::new(None),
+            open_tabs: RefCell::new(Vec::new()),
         })
+    }
+
+    /// Polish 16 — ensure `id` is present in `open_tabs` (appended if
+    /// absent) and return true if the tab list actually changed. The
+    /// caller uses this to decide whether to rebuild the Slint tab
+    /// model without an unnecessary refresh.
+    pub fn pin_open_tab(&self, id: Uuid) -> bool {
+        let mut tabs = self.open_tabs.borrow_mut();
+        pin_tab_in_place(&mut tabs, id)
+    }
+
+    /// Polish 16 — remove `id` from `open_tabs`. Returns `Some(next_id)`
+    /// if the caller should switch the active task to a different tab
+    /// (only the case when the closed tab was the active one and
+    /// other tabs remain), or `None` otherwise. The fallback picks the
+    /// tab at the same index, or the previous one if we closed the
+    /// tail — so closing a tab always leaves the focus on a neighbour
+    /// rather than jumping to an unrelated tab.
+    pub fn close_open_tab(&self, id: Uuid) -> Option<Uuid> {
+        let mut tabs = self.open_tabs.borrow_mut();
+        let was_active = *self.active_task.borrow() == Some(id);
+        let next = close_tab_in_place(&mut tabs, id, was_active);
+        if was_active && next.is_none() {
+            *self.active_task.borrow_mut() = None;
+        }
+        next
     }
 
     /// Read every task from the DB, ordered for kanban display.
@@ -633,4 +667,102 @@ fn resolve_base_branch(repo: &Path) -> Result<String> {
          or create the branch manually",
         repo.display()
     )
+}
+
+// ── Polish 16 pure helpers ───────────────────────────────────────────────
+//
+// Exposed as free functions so tests can exercise the open-tab list
+// logic without having to build an `AppState` (which needs a full
+// `Database`, `GlyphAtlas` and `QuayDirs`).
+
+/// Append `id` to `tabs` if not already present. Returns true if the
+/// list was changed.
+fn pin_tab_in_place(tabs: &mut Vec<Uuid>, id: Uuid) -> bool {
+    if tabs.contains(&id) {
+        return false;
+    }
+    tabs.push(id);
+    true
+}
+
+/// Remove `id` from `tabs`. When `was_active` is true and the list is
+/// still non-empty after the removal, returns the neighbouring tab id
+/// the caller should focus (same index, clamped to the new tail).
+/// Otherwise returns `None`.
+fn close_tab_in_place(tabs: &mut Vec<Uuid>, id: Uuid, was_active: bool) -> Option<Uuid> {
+    let Some(idx) = tabs.iter().position(|t| *t == id) else {
+        return None;
+    };
+    tabs.remove(idx);
+    if !was_active {
+        return None;
+    }
+    if tabs.is_empty() {
+        return None;
+    }
+    let fallback_idx = idx.min(tabs.len() - 1);
+    Some(tabs[fallback_idx])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Four stable uuids so fail messages point at the right tab.
+    fn u(n: u128) -> Uuid {
+        Uuid::from_u128(n)
+    }
+
+    #[test]
+    fn pin_appends_missing_and_ignores_duplicates() {
+        let mut tabs = Vec::new();
+        assert!(pin_tab_in_place(&mut tabs, u(1)));
+        assert!(pin_tab_in_place(&mut tabs, u(2)));
+        assert!(!pin_tab_in_place(&mut tabs, u(1)), "duplicate should no-op");
+        assert_eq!(tabs, vec![u(1), u(2)]);
+    }
+
+    #[test]
+    fn close_non_active_tab_keeps_focus_and_returns_none() {
+        let mut tabs = vec![u(1), u(2), u(3)];
+        let next = close_tab_in_place(&mut tabs, u(2), false);
+        assert_eq!(next, None);
+        assert_eq!(tabs, vec![u(1), u(3)]);
+    }
+
+    #[test]
+    fn close_active_middle_tab_falls_back_to_same_index() {
+        // Closing #2 (active) from [1,2,3] → focus lands on what sits
+        // at index 1, i.e. tab #3, which slid into the slot.
+        let mut tabs = vec![u(1), u(2), u(3)];
+        let next = close_tab_in_place(&mut tabs, u(2), true);
+        assert_eq!(next, Some(u(3)));
+        assert_eq!(tabs, vec![u(1), u(3)]);
+    }
+
+    #[test]
+    fn close_active_tail_tab_falls_back_to_previous() {
+        // Closing #3 (active) from [1,2,3] → no slot-1 anymore, so
+        // we clamp back to index 1 in the reduced list and land on #2.
+        let mut tabs = vec![u(1), u(2), u(3)];
+        let next = close_tab_in_place(&mut tabs, u(3), true);
+        assert_eq!(next, Some(u(2)));
+        assert_eq!(tabs, vec![u(1), u(2)]);
+    }
+
+    #[test]
+    fn close_only_tab_returns_none() {
+        let mut tabs = vec![u(1)];
+        let next = close_tab_in_place(&mut tabs, u(1), true);
+        assert_eq!(next, None);
+        assert!(tabs.is_empty());
+    }
+
+    #[test]
+    fn close_missing_tab_is_noop() {
+        let mut tabs = vec![u(1), u(2)];
+        let next = close_tab_in_place(&mut tabs, u(99), true);
+        assert_eq!(next, None);
+        assert_eq!(tabs, vec![u(1), u(2)]);
+    }
 }
