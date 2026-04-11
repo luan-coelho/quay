@@ -224,6 +224,33 @@ component KindChip inherits Rectangle {
     }
 }
 
+// Polish 20 — small circular avatar shown in the title bar (and
+// reusable for any future "user" / "agent" identity slot). The
+// initial defaults to "L" because Quay has no user system yet —
+// the slot exists purely as a visual anchor matching the Lanes
+// reference screenshot.
+component Avatar inherits Rectangle {
+    in property <length> size: 22px;
+    in property <string> initial: "L";
+    in property <color> bg: Tokens.accent-pink-coral;
+
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    background: bg;
+
+    Text {
+        text: initial;
+        color: #1a0a0a;
+        font-size: 11px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
 // Polish 19 — reusable × close button for modal headers and inline
 // clear actions. Matches the existing open-coded blocks (rounded
 // circle, red-tinted hover, kind-bug glyph color on hover) so all
@@ -252,6 +279,11 @@ component CloseButton inherits Rectangle {
 component MenuRow inherits Rectangle {
     in property <MenuItemData> item;
     callback clicked();
+
+    // Polish 20 — when the shortcut slot carries a `▸` chevron the
+    // row is acting as a submenu indicator (e.g. Quick Action), so
+    // render the glyph larger and brighter than a regular ⌘N hint.
+    property <bool> is-submenu: item.shortcut == "▸";
 
     height: 26px;
     border-radius: 6px;
@@ -287,8 +319,8 @@ component MenuRow inherits Rectangle {
             alignment: center;
             Text {
                 text: item.shortcut;
-                color: Tokens.text-muted;
-                font-size: 10px;
+                color: is-submenu ? Tokens.text-secondary : Tokens.text-muted;
+                font-size: is-submenu ? 13px : 10px;
                 vertical-alignment: center;
             }
         }
@@ -846,6 +878,10 @@ export component MainWindow inherits Window {
     callback open-task-tab(string);    // task id — make tab active
     callback close-task-tab(string);   // task id — close & fall back
 
+    // Polish 20 — sidebar collapse stub. Wired to a no-op for now;
+    // a future polish will actually shrink `sidebar-w` when toggled.
+    callback toggle-sidebar();
+
     callback select-task(string);
     callback move-task-back(string);
     callback move-task-forward(string);
@@ -927,6 +963,24 @@ export component MainWindow inherits Window {
             Rectangle { width: 11px; height: 11px; border-radius: 5.5px; background: #28c840; }
         }
 
+        // Polish 20 — sidebar toggle (hamburger). Stub callback for now.
+        TouchArea {
+            x: sidebar-w + 8px;
+            y: (parent.height - self.height) / 2;
+            width: 22px;
+            height: 22px;
+            clicked => { root.toggle-sidebar(); }
+            Text {
+                text: "☰";
+                color: Tokens.text-tertiary;
+                font-size: 13px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+
         // Centered app name.
         Text {
             x: (parent.width - self.width) / 2;
@@ -937,13 +991,20 @@ export component MainWindow inherits Window {
             font-weight: 600;
         }
 
-        // Active task display id on the right.
+        // Active task display id on the right (shifted left to make
+        // room for the Avatar — Polish 20).
         Text {
-            x: parent.width - self.width - 18px;
+            x: parent.width - self.width - 44px;
             y: (parent.height - self.height) / 2;
             text: root.active-task-display;
             color: Tokens.text-secondary;
             font-size: 11px;
+        }
+
+        // Polish 20 — user avatar circle (visual stub, no user system).
+        Avatar {
+            x: parent.width - self.width - 14px;
+            y: (parent.height - self.height) / 2;
         }
     }
 
@@ -980,6 +1041,12 @@ export component MainWindow inherits Window {
                         if (item.id == "sessions") { root.toggle-settings(); }
                     }
                 }
+            }
+
+            // Polish 20 — hairline divider before Projects section.
+            Rectangle {
+                height: 1px;
+                background: Tokens.border-very-soft;
             }
 
             // Projects section.
