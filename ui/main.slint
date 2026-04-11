@@ -1695,16 +1695,38 @@ export component MainWindow inherits Window {
                     image-rendering: pixelated;
                 }
 
-                // Empty state.
+                // Polish 29 — empty state. Used to be a single line
+                // of text; now a glyph + title + actionable hint
+                // matching the kanban empty state from Polish 28.
                 Rectangle {
                     visible: root.active-task-id == "";
                     background: #07080b;
-                    Text {
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        text: "Select a task or create one to begin";
-                        color: Tokens.text-tertiary;
-                        font-size: 12px;
+                    VerticalLayout {
+                        x: 0;
+                        y: (parent.height - self.preferred-height) / 2;
+                        width: parent.width;
+                        spacing: 10px;
+                        alignment: center;
+
+                        Text {
+                            text: "▶";
+                            color: Tokens.text-muted;
+                            font-size: 48px;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: "No active session";
+                            color: Tokens.text-secondary;
+                            font-size: 14px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: "Click a task in the kanban, then press Plan or Implement.";
+                            color: Tokens.text-tertiary;
+                            font-size: 11px;
+                            horizontal-alignment: center;
+                        }
                     }
                 }
             }
