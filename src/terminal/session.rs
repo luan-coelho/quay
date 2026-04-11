@@ -50,7 +50,13 @@ pub struct PtySession {
 }
 
 impl PtySession {
-    /// Spawn `command` under a fresh PTY of `cols × rows`.
+    /// Spawn a child process under a fresh PTY of `cols × rows`.
+    ///
+    /// `argv` is the full command line, with index 0 being the binary to
+    /// execute and the rest being arguments (exactly the shape produced by
+    /// [`crate::agents::AgentProvider::argv`]). `env` is a set of
+    /// `(key, value)` pairs appended on top of Quay's baseline
+    /// `TERM=xterm-256color` / `COLORTERM=truecolor` / `LANG` env.
     ///
     /// If `log_path` is `Some`, existing bytes in that file (from a previous
     /// run of the same task) are replayed into the Term before the new PTY
@@ -58,10 +64,14 @@ impl PtySession {
     pub fn spawn(
         cols: usize,
         rows: usize,
-        command: &str,
+        argv: &[String],
+        env: &[(String, String)],
         cwd: &Path,
         log_path: Option<PathBuf>,
     ) -> Result<Self> {
+        if argv.is_empty() {
+            anyhow::bail!("PtySession::spawn requires at least a binary path in argv");
+        }
         // ── 1. Build a fresh Term and, if a log file exists, replay it. ──
         let mut term: Term<VoidListener> = Term::new(
             Config::default(),
@@ -106,11 +116,22 @@ impl PtySession {
             })
             .context("openpty failed")?;
 
-        let mut cmd = CommandBuilder::new(command);
+        let mut cmd = CommandBuilder::new(&argv[0]);
+        for arg in &argv[1..] {
+            cmd.arg(arg);
+        }
         cmd.cwd(cwd);
+
+        // Baseline terminal env — agents and shells behave far better when
+        // TERM / COLORTERM / LANG are set. Caller-provided `env` overrides
+        // these (applied after) so a provider can force a different TERM if
+        // needed.
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
         cmd.env("LANG", std::env::var("LANG").unwrap_or_else(|_| "C.UTF-8".into()));
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
 
         let child = pair
             .slave

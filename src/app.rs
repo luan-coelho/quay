@@ -158,10 +158,17 @@ impl AppState {
                 log_path = %log_path.display(),
                 "spawning PTY session for task"
             );
+            // Phase 1 Commit 4: PtySession::spawn now takes argv + env. The
+            // legacy `select_task` path still spawns a bare shell here —
+            // Commit 5 retires this path entirely in favour of the explicit
+            // `start_session(mode)` entry point.
+            let argv = vec![self.default_shell.clone()];
+            let env: Vec<(String, String)> = Vec::new();
             let session = PtySession::spawn(
                 self.cols,
                 self.rows,
-                &self.default_shell,
+                &argv,
+                &env,
                 &cwd,
                 Some(log_path.clone()),
             )?;
