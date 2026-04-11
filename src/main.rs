@@ -571,6 +571,10 @@ fn main() -> Result<()> {
         });
     }
     {
+        // Legacy `on_create_task` path — still wired for the
+        // Cmd/Ctrl+N shortcut which creates a task immediately
+        // without opening the modal. Auto-names so the user gets
+        // a row instantly.
         let state = state.clone();
         let refresh = refresh_kanban.clone();
         window.on_create_task(move || {
@@ -579,6 +583,49 @@ fn main() -> Result<()> {
             if let Err(err) = state.create_task(title) {
                 tracing::error!(%err, "create_task failed");
             }
+            refresh();
+        });
+    }
+    {
+        // Polish 10: user submitted the New Task modal. Insert using
+        // the title + instructions they typed, then reset the form
+        // fields, close the modal, and refresh the kanban.
+        let state = state.clone();
+        let weak = window.as_weak();
+        let refresh = refresh_kanban.clone();
+        window.on_submit_new_task(move || {
+            let Some(w) = weak.upgrade() else { return };
+            let title = w.get_new_task_title().to_string().trim().to_string();
+            let instructions = w.get_new_task_instructions().to_string().trim().to_string();
+
+            if title.is_empty() {
+                tracing::warn!("submit_new_task: title is required");
+                return;
+            }
+
+            match state.create_task(title) {
+                Ok(task) => {
+                    if !instructions.is_empty() {
+                        let store = crate::kanban::TaskStore::new(&state.db.conn);
+                        if let Ok(Some(mut t)) = store.get(task.id) {
+                            t.instructions = Some(instructions);
+                            t.updated_at = crate::kanban::unix_millis_now();
+                            if let Err(err) = store.update(&t) {
+                                tracing::warn!(%err, "set instructions on new task failed");
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    tracing::error!(%err, "create_task via modal failed");
+                    return;
+                }
+            }
+
+            // Reset form + close modal.
+            w.set_new_task_title("".into());
+            w.set_new_task_instructions("".into());
+            w.set_new_task_open(false);
             refresh();
         });
     }

@@ -628,6 +628,11 @@ export component MainWindow inherits Window {
     in-out property <string> new-project-repo-path: "";
     in-out property <string> new-project-base-branch: "main";
 
+    // Polish 10: New Task modal state.
+    in-out property <bool> new-task-open: false;
+    in-out property <string> new-task-title: "";
+    in-out property <string> new-task-instructions: "";
+
     // File browser state for the Files tab (Phase 6).
     in property <[FileEntryData]> file-entries;
     in-out property <string> file-current-dir: "";
@@ -688,6 +693,7 @@ export component MainWindow inherits Window {
     callback delete-task(string);    // task id
     callback create-project();
     callback project-clicked(string);   // project id
+    callback submit-new-task();         // actually inserts the task from the modal fields
     // text, ctrl, alt, shift, meta. Meta added in Polish 6 for
     // Cmd-based shortcuts on macOS.
     callback key-pressed(string, bool, bool, bool, bool);
@@ -780,7 +786,7 @@ export component MainWindow inherits Window {
                 for item in root.menu-items: MenuRow {
                     item: item;
                     clicked => {
-                        if (item.id == "new-task") { root.create-task(); }
+                        if (item.id == "new-task") { root.new-task-open = true; }
                         if (item.id == "configure") { root.toggle-settings(); }
                         if (item.id == "sessions") { root.toggle-settings(); }
                     }
@@ -2054,6 +2060,147 @@ export component MainWindow inherits Window {
                     color: Tokens.text-tertiary;
                     font-size: 11px;
                     horizontal-alignment: center;
+                }
+            }
+        }
+    }
+
+    // ── New Task modal overlay (Polish 10) ──────────────────────────────
+    Rectangle {
+        visible: root.new-task-open;
+        x: 0; y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: rgba(0, 0, 0, 60%);
+
+        TouchArea {
+            clicked => { root.new-task-open = false; }
+        }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 460px;
+            height: 320px;
+            background: #14161a;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Tokens.border-soft;
+            clip: true;
+
+            TouchArea { }
+
+            VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        text: "New Task";
+                        color: Tokens.text-primary;
+                        font-size: 15px;
+                        font-weight: 700;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    TouchArea {
+                        width: 22px;
+                        height: 22px;
+                        clicked => { root.new-task-open = false; }
+                        Rectangle {
+                            background: parent.has-hover ? #1f2331 : transparent;
+                            border-radius: 4px;
+                            Text {
+                                text: "×";
+                                color: Tokens.text-secondary;
+                                font-size: 17px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { height: 1px; background: Tokens.border-very-soft; }
+
+                VerticalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "Title";
+                        color: Tokens.text-secondary;
+                        font-size: 10px;
+                    }
+                    LineEdit {
+                        text: root.new-task-title;
+                        placeholder-text: "e.g. Add dark mode";
+                        font-size: 13px;
+                        edited(t) => { root.new-task-title = t; }
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "Initial instructions (sent to the agent on start)";
+                        color: Tokens.text-secondary;
+                        font-size: 10px;
+                    }
+                    LineEdit {
+                        text: root.new-task-instructions;
+                        placeholder-text: "optional — what should the agent do first?";
+                        font-size: 12px;
+                        edited(t) => { root.new-task-instructions = t; }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    Rectangle { horizontal-stretch: 1; }
+                    TouchArea {
+                        width: 72px;
+                        height: 28px;
+                        clicked => { root.new-task-open = false; }
+                        Rectangle {
+                            background: parent.has-hover ? #1f2331 : transparent;
+                            border-radius: 6px;
+                            border-width: 1px;
+                            border-color: Tokens.border-soft;
+                            Text {
+                                text: "Cancel";
+                                color: Tokens.text-secondary;
+                                font-size: 11px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        width: 84px;
+                        height: 28px;
+                        clicked => { root.submit-new-task(); }
+                        Rectangle {
+                            background: parent.has-hover ? rgba(96, 165, 250, 20%) : rgba(96, 165, 250, 12%);
+                            border-radius: 6px;
+                            border-width: 1px;
+                            border-color: rgba(96, 165, 250, 40%);
+                            Text {
+                                text: "Create";
+                                color: Tokens.kind-feature;
+                                font-size: 11px;
+                                font-weight: 600;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
                 }
             }
         }
