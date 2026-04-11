@@ -1,21 +1,17 @@
-//! In-app text editor — **stub for Phase 7**.
+//! In-app text editor — Phase 7.
 //!
-//! This module is intentionally empty in Phase 6. It exists so that
-//! Phase 7's editor implementation has a predictable place to land
-//! without having to refactor the tree.
+//! The editor stack is intentionally minimal: `ropey` for the text
+//! buffer (so edits to large files stay O(log n)) and `syntect` for
+//! syntax highlighting with bundled TextMate grammars. Neither has C
+//! dependencies — the whole thing stays pure Rust and cross-platform.
 //!
-//! Phase 7 will introduce:
-//!
-//! - `EditorBuffer` — a `ropey::Rope`-backed buffer with open/save/edit
-//!   operations, dirty tracking, and undo/redo.
-//! - `HighlightTheme` — a small typed colour palette for token classes,
-//!   sourced from `syntect`'s built-in themes.
-//! - `OpenFile` — the (path, buffer, cursor, scroll) state of one tab.
-//! - A Slint-side custom widget that re-uses the terminal's `GlyphAtlas`
-//!   to rasterize syntax-highlighted tokens into a `SharedPixelBuffer`,
-//!   so the editor and the terminal share the same rendering pipeline.
-//!
-//! Until then, clicking a file in the file browser shells out to
-//! `$EDITOR` (see [`crate::file_tree::open_in_editor`]).
+//! See [`buffer::EditorBuffer`] for the core type. The Slint-side
+//! widget that renders highlighted lines lives in `src/main.rs` /
+//! `ui/main.slint` alongside the Files tab; it opens files from the
+//! file browser click handler.
 
 #![allow(dead_code)]
+
+pub mod buffer;
+
+pub use buffer::{EditorBuffer, HlSpan};
