@@ -103,12 +103,17 @@ export struct TaskCardData {
     blocked-count: int,
 }
 
+export struct DiffLineData {
+    origin: string,   // "+" | "-" | " " | "H" | "F"
+    text: string,
+}
+
 export struct DiffFileData {
     path: string,
     status: string,       // "M" | "A" | "D" | "R" | "?" | "T"
     additions: int,
     deletions: int,
-    patch: string,
+    lines: [DiffLineData],
 }
 
 export struct CommitEntryData {
@@ -1720,17 +1725,42 @@ export component MainWindow inherits Window {
                                     }
                                 }
 
-                                // Patch text (monospaced). Slint's Text
-                                // element handles basic wrapping; per-line
-                                // colouring by origin char would need a
-                                // custom widget — deferred to a polish
-                                // iteration.
-                                if f.patch != "": Text {
-                                    text: f.patch;
-                                    color: Tokens.text-secondary;
-                                    font-size: 10px;
-                                    font-family: "JetBrains Mono";
-                                    wrap: no-wrap;
+                                // Per-line diff rendering (Polish 14):
+                                // each physical line is one Text element
+                                // coloured by its origin char — green for
+                                // +, red for -, muted grey for context.
+                                // Slint handles a few hundred elements
+                                // per file comfortably; large diffs may
+                                // benefit from virtualisation later.
+                                for dl in f.lines: HorizontalLayout {
+                                    spacing: 0px;
+                                    Rectangle {
+                                        width: 10px;
+                                        Text {
+                                            text: dl.origin;
+                                            color: dl.origin == "+" ? Tokens.kind-enhancement
+                                                 : dl.origin == "-" ? Tokens.kind-bug
+                                                                    : Tokens.text-muted;
+                                            font-size: 10px;
+                                            font-family: "JetBrains Mono";
+                                            font-weight: 700;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            width: parent.width;
+                                            height: parent.height;
+                                        }
+                                    }
+                                    Text {
+                                        text: dl.text;
+                                        color: dl.origin == "+" ? Tokens.kind-enhancement
+                                             : dl.origin == "-" ? Tokens.kind-bug
+                                             : dl.origin == "H" ? Tokens.kind-feature
+                                             : dl.origin == "F" ? Tokens.text-secondary
+                                                                : Tokens.text-tertiary;
+                                        font-size: 10px;
+                                        font-family: "JetBrains Mono";
+                                        wrap: no-wrap;
+                                    }
                                 }
                             }
                         }

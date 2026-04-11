@@ -9,8 +9,22 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use git2::{DiffFormat, DiffOptions, Repository};
 
-/// One file in the diff view with summary counts and the full patch text
-/// ready to render as monospaced text with per-line +/-/context colours.
+/// One line of a diff hunk with its origin marker.
+///
+/// `origin` is:
+/// - `'+'` for added lines (render in green)
+/// - `'-'` for deleted lines (render in red)
+/// - `' '` for context lines (render in muted text)
+/// - `'H'` or `'F'` for hunk/file headers (render in dimmed text)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiffLine {
+    pub origin: char,
+    pub text: String,
+}
+
+/// One file in the diff view with summary counts and the full patch
+/// broken into structured lines so the Slint renderer can colour each
+/// line independently.
 #[derive(Debug, Clone, Default)]
 pub struct DiffFile {
     /// Path relative to the repo root.
@@ -19,8 +33,10 @@ pub struct DiffFile {
     pub status: char,
     pub additions: usize,
     pub deletions: usize,
-    /// Full patch text for this file including the hunk headers.
-    pub patch: String,
+    /// One entry per physical line in the patch, in the order git2
+    /// emits them. Each carries its origin char and the line text
+    /// without the origin prefix or trailing newline.
+    pub lines: Vec<DiffLine>,
 }
 
 /// Single commit entry for the History view.
@@ -103,21 +119,18 @@ pub fn read_diff(worktree_path: &Path, base_branch: &str) -> Result<Vec<DiffFile
             current_path = Some(path);
         }
 
-        match line.origin() {
+        let origin = line.origin();
+        match origin {
             '+' => current_file.additions += 1,
             '-' => current_file.deletions += 1,
             _ => {}
         }
 
-        match line.origin() {
-            '+' | '-' | ' ' => {
-                current_file.patch.push(line.origin());
-            }
-            _ => {}
-        }
-        current_file
-            .patch
-            .push_str(&String::from_utf8_lossy(line.content()));
+        // Decode one physical line and strip the trailing newline so
+        // the Slint renderer can wrap it in its own Text element.
+        let raw = String::from_utf8_lossy(line.content());
+        let text = raw.trim_end_matches('\n').to_string();
+        current_file.lines.push(DiffLine { origin, text });
         true
     })
     .context("walk diff")?;
@@ -241,7 +254,12 @@ mod tests {
         assert_eq!(f.path, "README.md");
         assert_eq!(f.status, 'M');
         assert!(f.additions > 0);
-        assert!(f.patch.contains("world"));
+        // At least one line with origin '+' containing "world".
+        assert!(
+            f.lines.iter().any(|l| l.origin == '+' && l.text.contains("world")),
+            "expected a '+' line mentioning 'world' in {:?}",
+            f.lines
+        );
     }
 
     #[test]

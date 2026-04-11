@@ -1494,12 +1494,21 @@ fn main() -> Result<()> {
                 let diff_files = match crate::git::diff::read_diff(worktree_path, base) {
                     Ok(v) => v
                         .into_iter()
-                        .map(|f| DiffFileData {
-                            path: SharedString::from(f.path),
-                            status: SharedString::from(f.status.to_string()),
-                            additions: f.additions as i32,
-                            deletions: f.deletions as i32,
-                            patch: SharedString::from(f.patch),
+                        .map(|f| {
+                            let lines_model = Rc::new(VecModel::<DiffLineData>::default());
+                            for l in f.lines {
+                                lines_model.push(DiffLineData {
+                                    origin: SharedString::from(l.origin.to_string()),
+                                    text: SharedString::from(l.text),
+                                });
+                            }
+                            DiffFileData {
+                                path: SharedString::from(f.path),
+                                status: SharedString::from(f.status.to_string()),
+                                additions: f.additions as i32,
+                                deletions: f.deletions as i32,
+                                lines: ModelRc::from(lines_model),
+                            }
                         })
                         .collect(),
                     Err(err) => {
