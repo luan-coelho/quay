@@ -213,6 +213,10 @@ fn main() -> Result<()> {
     let open_tabs_model = Rc::new(VecModel::<OpenTaskTabData>::default());
     window.set_open_task_tabs(ModelRc::from(open_tabs_model.clone()));
 
+    // Polish 35: Cmd+P task quick switcher results model.
+    let task_search_model = Rc::new(VecModel::<TaskCardData>::default());
+    window.set_task_search_results(ModelRc::from(task_search_model.clone()));
+
     // Files tab state. Populated on select_task if the task has a
     // worktree; empty otherwise.
     let file_entries_model = Rc::new(VecModel::<FileEntryData>::default());
@@ -482,9 +486,16 @@ fn main() -> Result<()> {
             let tasks_by_id: HashMap<Uuid, &Task> =
                 tasks.iter().map(|t| (t.id, t)).collect();
             let mut pinned = state.open_tabs.borrow_mut();
+            let before = pinned.len();
             pinned.retain(|id| tasks_by_id.contains_key(id));
+            let purged = pinned.len() != before;
             let snapshot: Vec<Uuid> = pinned.clone();
             drop(pinned);
+            // Polish 34: if we purged stale ids, persist the trimmed
+            // list so the next launch doesn't re-hydrate them.
+            if purged {
+                state.persist_open_tabs();
+            }
             while open_tabs.row_count() > 0 {
                 open_tabs.remove(open_tabs.row_count() - 1);
             }
@@ -983,17 +994,19 @@ fn main() -> Result<()> {
         });
     }
 
-    // ── Polish 3 label/dep attach+detach wiring ─────────────────────────
+    // ── Polish 3 label/dep attach+detach wiring (Polish 36 toasts) ──────
     {
         let state = state.clone();
         let refresh_panels = refresh_active_panels.clone();
         let refresh = refresh_kanban.clone();
+        let toast = show_toast.clone();
         window.on_attach_label(move |label_id| {
             let Some(active_id) = *state.active_task.borrow() else { return };
             let Ok(label_uuid) = Uuid::from_str(label_id.as_str()) else { return };
             let store = LabelStore::new(&state.db.conn);
             if let Err(err) = store.attach(active_id, label_uuid) {
                 tracing::warn!(%err, "attach_label failed");
+                toast("error", format!("Attach label failed: {err}"));
                 return;
             }
             refresh_panels();
@@ -1004,12 +1017,14 @@ fn main() -> Result<()> {
         let state = state.clone();
         let refresh_panels = refresh_active_panels.clone();
         let refresh = refresh_kanban.clone();
+        let toast = show_toast.clone();
         window.on_detach_label(move |label_id| {
             let Some(active_id) = *state.active_task.borrow() else { return };
             let Ok(label_uuid) = Uuid::from_str(label_id.as_str()) else { return };
             let store = LabelStore::new(&state.db.conn);
             if let Err(err) = store.detach(active_id, label_uuid) {
                 tracing::warn!(%err, "detach_label failed");
+                toast("error", format!("Detach label failed: {err}"));
                 return;
             }
             refresh_panels();
@@ -1018,22 +1033,25 @@ fn main() -> Result<()> {
     }
     {
         // Polish 7: add_dependency — validated via DependencyStore's
-        // cycle detection. On cycle reject we log a warning and leave
-        // the UI unchanged so the user can pick a different prereq.
+        // cycle detection. Polish 36: cycle rejection now surfaces as
+        // an error toast instead of silently failing.
         let state = state.clone();
         let refresh_panels = refresh_active_panels.clone();
         let refresh = refresh_kanban.clone();
+        let toast = show_toast.clone();
         window.on_add_dependency(move |dep_id| {
             let Some(active_id) = *state.active_task.borrow() else { return };
             let Ok(dep_uuid) = Uuid::from_str(dep_id.as_str()) else { return };
             let store = DependencyStore::new(&state.db.conn);
             match store.add(active_id, dep_uuid) {
                 Ok(()) => {
+                    toast("success", "Dependency added".to_string());
                     refresh_panels();
                     refresh();
                 }
                 Err(err) => {
                     tracing::warn!(%err, "add_dependency rejected");
+                    toast("error", format!("Cannot add dependency: {err}"));
                 }
             }
         });
@@ -1042,12 +1060,14 @@ fn main() -> Result<()> {
         let state = state.clone();
         let refresh_panels = refresh_active_panels.clone();
         let refresh = refresh_kanban.clone();
+        let toast = show_toast.clone();
         window.on_remove_dependency(move |dep_id| {
             let Some(active_id) = *state.active_task.borrow() else { return };
             let Ok(dep_uuid) = Uuid::from_str(dep_id.as_str()) else { return };
             let store = DependencyStore::new(&state.db.conn);
             if let Err(err) = store.remove(active_id, dep_uuid) {
                 tracing::warn!(%err, "remove_dependency failed");
+                toast("error", format!("Remove dependency failed: {err}"));
                 return;
             }
             refresh_panels();
@@ -1080,6 +1100,7 @@ fn main() -> Result<()> {
         let state = state.clone();
         let weak = window.as_weak();
         let refresh_projects = refresh_projects.clone();
+        let toast = show_toast.clone();
         window.on_create_project(move || {
             let Some(w) = weak.upgrade() else { return };
             let name = w.get_new_project_name().to_string();
@@ -1088,11 +1109,13 @@ fn main() -> Result<()> {
 
             if name.trim().is_empty() || repo_path_str.trim().is_empty() {
                 tracing::warn!("create_project: name and repo_path are required");
+                toast("error", "Name and repo path are required".to_string());
                 return;
             }
             let repo_path = PathBuf::from(repo_path_str.trim());
             if !repo_path.is_absolute() {
                 tracing::warn!("create_project: repo_path must be absolute");
+                toast("error", "Repo path must be absolute".to_string());
                 return;
             }
             let base = if base_branch.trim().is_empty() {
@@ -1101,13 +1124,15 @@ fn main() -> Result<()> {
                 base_branch.trim().to_string()
             };
 
+            let project_name = name.trim().to_string();
             let project = crate::kanban::Project::new(
-                name.trim(),
+                &project_name,
                 repo_path,
                 base,
             );
             if let Err(err) = crate::kanban::ProjectStore::new(&state.db.conn).insert(&project) {
                 tracing::warn!(%err, "create_project insert failed");
+                toast("error", format!("Create project failed: {err}"));
                 return;
             }
 
@@ -1117,6 +1142,7 @@ fn main() -> Result<()> {
             w.set_new_project_base_branch("main".into());
             w.set_new_project_open(false);
 
+            toast("success", format!("Created project “{project_name}”"));
             refresh_projects();
         });
     }
@@ -1149,8 +1175,18 @@ fn main() -> Result<()> {
                 *active = None;
             }
             drop(active);
-            // Polish 16: also drop it from the open-tabs strip.
-            state.open_tabs.borrow_mut().retain(|t| *t != uuid);
+            // Polish 16 + 34: drop the deleted task from the open-tabs
+            // strip and persist the new list to settings.
+            {
+                let mut tabs = state.open_tabs.borrow_mut();
+                let before = tabs.len();
+                tabs.retain(|t| *t != uuid);
+                let changed = tabs.len() != before;
+                drop(tabs);
+                if changed {
+                    state.persist_open_tabs();
+                }
+            }
             // Reset UI panels to empty-state.
             if let Some(window) = weak.upgrade() {
                 window.set_active_task_id("".into());
@@ -1321,6 +1357,65 @@ fn main() -> Result<()> {
             }
             refresh();
             refresh_panels();
+        });
+    }
+
+    // Polish 35: task quick switcher — rebuild the filtered results
+    // model on every keystroke. Substring case-insensitive match
+    // against `#NN` display id and `title`. Empty query shows all
+    // tasks (most recently updated first), capped at 50 for sanity.
+    {
+        let state = state.clone();
+        let model = task_search_model.clone();
+        window.on_task_search_changed(move |query| {
+            let q = query.to_string().to_lowercase();
+            let mut tasks = state.list_tasks().unwrap_or_default();
+            // Build a stable display-id map (same as refresh_kanban).
+            tasks.sort_by_key(|t| t.created_at);
+            let display_ids: HashMap<Uuid, i32> = tasks
+                .iter()
+                .enumerate()
+                .map(|(i, t)| (t.id, (i + 1) as i32))
+                .collect();
+            // Re-sort for the search ranking: most recently updated first.
+            tasks.sort_by_key(|t| std::cmp::Reverse(t.updated_at));
+
+            let filtered: Vec<TaskCardData> = tasks
+                .iter()
+                .filter(|t| {
+                    if q.is_empty() {
+                        return true;
+                    }
+                    let display = display_ids
+                        .get(&t.id)
+                        .map(|i| format!("#{i}"))
+                        .unwrap_or_default();
+                    t.title.to_lowercase().contains(&q) || display.contains(&q)
+                })
+                .take(50)
+                .map(|t| {
+                    let display_id = display_ids.get(&t.id).copied().unwrap_or(0);
+                    task_to_card(t, display_id, false, false, Vec::new(), 0)
+                })
+                .collect();
+
+            while model.row_count() > 0 {
+                model.remove(model.row_count() - 1);
+            }
+            for card in filtered {
+                model.push(card);
+            }
+        });
+    }
+    // Polish 35: clicking a result fires open-task-tab via the
+    // existing pinned-tabs callback so the selected task pops into
+    // the right pane the same way clicking a kanban card would.
+    {
+        let weak = window.as_weak();
+        window.on_task_search_select(move |id| {
+            if let Some(w) = weak.upgrade() {
+                w.invoke_open_task_tab(id);
+            }
         });
     }
 
@@ -1653,9 +1748,13 @@ fn main() -> Result<()> {
                 }
             }
 
-            // 2. Escape — close any open modal. Polish 12 + 26.
+            // 2. Escape — close any open modal. Polish 12 + 26 + 35.
             if text == "\u{001b}" {
                 if let Some(w) = weak.upgrade() {
+                    if w.get_task_search_open() {
+                        w.set_task_search_open(false);
+                        return;
+                    }
                     if w.get_shortcuts_open() {
                         w.set_shortcuts_open(false);
                         return;
@@ -1718,6 +1817,18 @@ fn main() -> Result<()> {
                             if let Some(w) = weak.upgrade() {
                                 w.invoke_close_task_tab(active_id.to_string().into());
                             }
+                        }
+                        return;
+                    }
+                    'p' | 'P' => {
+                        // Polish 35: Cmd/Ctrl+P — open the task quick
+                        // switcher. Pre-populates the result list with
+                        // every task by firing a search with an empty
+                        // query, then opens the modal.
+                        if let Some(w) = weak.upgrade() {
+                            w.set_task_search_query("".into());
+                            w.invoke_task_search_changed("".into());
+                            w.set_task_search_open(true);
                         }
                         return;
                     }

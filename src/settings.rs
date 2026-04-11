@@ -19,6 +19,9 @@ pub const KEY_DEFAULT_BASE_BRANCH: &str = "default_base_branch";
 pub const KEY_DEFAULT_AGENT: &str = "default_agent";
 pub const KEY_DEFAULT_SHELL: &str = "default_shell";
 pub const KEY_THEME: &str = "theme";
+// Polish 34: persisted list of pinned task UUIDs (right-pane open
+// tabs strip). Stored as a JSON array of strings.
+pub const KEY_OPEN_TABS: &str = "open_tabs";
 
 impl<'a> Settings<'a> {
     pub fn new(conn: &'a Connection) -> Self {

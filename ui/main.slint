@@ -294,20 +294,36 @@ component Toast inherits Rectangle {
         spacing: 10px;
         alignment: start;
 
-        // Kind dot.
+        // Polish 38 — kind glyph instead of a bare dot. ✓ / ✕ / ℹ
+        // are far easier to parse at a glance than a colored circle.
         VerticalLayout {
             alignment: center;
             Rectangle {
-                width: 8px;
-                height: 8px;
-                border-radius: 4px;
-                background: kind == "error" ? Tokens.kind-bug
-                          : kind == "success" ? Tokens.kind-enhancement
-                                              : Tokens.kind-feature;
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                background: kind == "error" ? rgba(248, 113, 113, 22%)
+                          : kind == "success" ? rgba(16, 185, 129, 22%)
+                                              : rgba(96, 165, 250, 22%);
+                Text {
+                    text: kind == "error" ? "✕"
+                        : kind == "success" ? "✓"
+                                            : "i";
+                    color: kind == "error" ? Tokens.kind-bug
+                         : kind == "success" ? Tokens.kind-enhancement
+                                             : Tokens.kind-feature;
+                    font-size: 11px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    width: parent.width;
+                    height: parent.height;
+                }
             }
         }
         VerticalLayout {
             alignment: center;
+            horizontal-stretch: 1;
             Text {
                 text: message;
                 color: Tokens.text-primary;
@@ -634,6 +650,21 @@ component CardRow inherits Rectangle {
         // Top divider line.
         x: 0; y: 0; width: parent.width; height: 1px;
         background: Tokens.border-very-soft;
+    }
+
+    // Polish 37 — left accent bar when the card is selected. Gives
+    // a stronger "this is the active task" cue than the background
+    // tint alone. The width grows from 0 → 3px so it slides in.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: selected ? 3px : 0px;
+        height: parent.height;
+        background:
+            task.kind == "bug"         ? Tokens.kind-bug
+          : task.kind == "enhancement" ? Tokens.kind-enhancement
+                                       : Tokens.kind-feature;
+        animate width { duration: 140ms; easing: ease-out; }
     }
 
     ta := TouchArea { clicked => { root.clicked(); } }
@@ -978,6 +1009,15 @@ export component MainWindow inherits Window {
     // the key dispatcher in main.rs. Esc closes (handled in the
     // existing modal escape branch).
     in-out property <bool> shortcuts-open: false;
+
+    // Polish 35 — Cmd+P fuzzy task quick switcher. Modal overlay
+    // with a search input and a filtered list of tasks. The Rust
+    // side rebuilds `task-search-results` on every keystroke.
+    in-out property <bool> task-search-open: false;
+    in-out property <string> task-search-query: "";
+    in property <[TaskCardData]> task-search-results;
+    callback task-search-changed(string);
+    callback task-search-select(string);
 
     // Polish 28 — true when every kanban model is empty (after the
     // active label/project filters are applied in Rust). Drives the
@@ -2009,7 +2049,10 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                // Plan / Implement action row.
+                // Plan / Implement action row (Polish 39 — smooth
+                // hover animations + Implement gets a stronger
+                // accent border that brightens on hover for a more
+                // affirmative "this is the primary action" look).
                 HorizontalLayout {
                     spacing: 8px;
 
@@ -2022,6 +2065,8 @@ export component MainWindow inherits Window {
                             border-radius: 6px;
                             border-width: 1px;
                             border-color: parent.has-hover ? #2b3144 : #23262f;
+                            animate background { duration: 120ms; easing: ease-out; }
+                            animate border-color { duration: 120ms; easing: ease-out; }
                             HorizontalLayout {
                                 alignment: center;
                                 Text {
@@ -2040,10 +2085,12 @@ export component MainWindow inherits Window {
                         height: 30px;
                         clicked => { root.start-implement(root.active-task-id); }
                         Rectangle {
-                            background: parent.has-hover ? rgba(16, 185, 129, 18%) : rgba(16, 185, 129, 12%);
+                            background: parent.has-hover ? rgba(16, 185, 129, 24%) : rgba(16, 185, 129, 12%);
                             border-radius: 6px;
                             border-width: 1px;
-                            border-color: rgba(16, 185, 129, 40%);
+                            border-color: parent.has-hover ? rgba(16, 185, 129, 70%) : rgba(16, 185, 129, 40%);
+                            animate background { duration: 120ms; easing: ease-out; }
+                            animate border-color { duration: 120ms; easing: ease-out; }
                             HorizontalLayout {
                                 alignment: center;
                                 Text {
@@ -3712,6 +3759,7 @@ export component MainWindow inherits Window {
                             font-size: 9px;
                             font-weight: 700;
                         }
+                        ShortcutRow { keys: "⌘P"; label: "Quick task switcher"; }
                         ShortcutRow { keys: "⌘,"; label: "Open Settings"; }
                         ShortcutRow { keys: "⌘?"; label: "Show this overlay"; }
                         ShortcutRow { keys: "Esc"; label: "Close any open modal"; }
@@ -3722,6 +3770,119 @@ export component MainWindow inherits Window {
 
                 Text {
                     text: "Tip: ⌘ on macOS, Ctrl elsewhere. Esc closes this overlay.";
+                    color: Tokens.text-tertiary;
+                    font-size: 9px;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+
+    // ── Polish 35: Cmd+P task quick switcher ────────────────────────────
+    Rectangle {
+        visible: root.task-search-open;
+        x: 0; y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: rgba(0, 0, 0, 60%);
+        opacity: root.task-search-open ? 1.0 : 0.0;
+        animate opacity { duration: 160ms; easing: ease-out; }
+
+        TouchArea {
+            clicked => { root.task-search-open = false; }
+        }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            // Anchor near the top — search modals feel right at ~18% of viewport.
+            y: parent.height * 0.16 + (root.task-search-open ? 0px : -12px);
+            opacity: root.task-search-open ? 1.0 : 0.0;
+            animate y { duration: 200ms; easing: ease-out; }
+            animate opacity { duration: 180ms; easing: ease-out; }
+            width: 540px;
+            height: 380px;
+            background: #14161a;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Tokens.border-soft;
+            clip: true;
+
+            TouchArea { }   // swallow clicks so the backdrop close doesn't fire
+
+            VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
+
+                // Search input.
+                LineEdit {
+                    text: root.task-search-query;
+                    placeholder-text: "Type to search tasks…";
+                    font-size: 13px;
+                    edited(new-text) => {
+                        root.task-search-query = new-text;
+                        root.task-search-changed(new-text);
+                    }
+                }
+
+                Rectangle { height: 1px; background: Tokens.border-very-soft; }
+
+                // Results list.
+                ScrollView {
+                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        spacing: 1px;
+
+                        if root.task-search-results.length == 0: VerticalLayout {
+                            padding-top: 40px;
+                            spacing: 6px;
+                            alignment: start;
+                            Text {
+                                text: "No matches";
+                                color: Tokens.text-tertiary;
+                                font-size: 12px;
+                                horizontal-alignment: center;
+                            }
+                        }
+
+                        for task in root.task-search-results: TouchArea {
+                            height: 28px;
+                            clicked => {
+                                root.task-search-select(task.id);
+                                root.task-search-open = false;
+                            }
+                            Rectangle {
+                                background: parent.has-hover ? Tokens.bg-hover : transparent;
+                                border-radius: 4px;
+                                animate background { duration: 100ms; easing: ease-out; }
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 10px;
+                                    spacing: 10px;
+                                    alignment: start;
+                                    Text {
+                                        text: "#" + task.display-id;
+                                        color: Tokens.text-tertiary;
+                                        font-size: 10px;
+                                        font-family: "JetBrains Mono";
+                                        vertical-alignment: center;
+                                    }
+                                    KindDiamond { kind: task.kind; }
+                                    Text {
+                                        text: task.title;
+                                        color: Tokens.text-primary;
+                                        font-size: 12px;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Text {
+                    text: "Esc to dismiss · click a result to open";
                     color: Tokens.text-tertiary;
                     font-size: 9px;
                     horizontal-alignment: center;

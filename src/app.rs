@@ -49,8 +49,10 @@ pub struct AppState {
     /// right pane as open tabs. The tab strip in `ui/main.slint` renders
     /// one chip per entry here. Exactly one entry matches `active_task`
     /// at any time; closing the active tab falls back to the nearest
-    /// remaining entry. Not persisted — rebuilt from an empty state on
-    /// each app launch.
+    /// remaining entry. Polish 34: persisted as a JSON array in the
+    /// `settings` KV table under `KEY_OPEN_TABS`, so the user's pinned
+    /// tabs survive restarts. Stale ids (tasks deleted between runs)
+    /// are filtered on load against the current task list.
     pub open_tabs: RefCell<Vec<Uuid>>,
     /// Polish 17 — absolute paths of directories the user has expanded
     /// in the Files tab tree. Passed to `file_tree::build_tree` on
@@ -73,6 +75,30 @@ impl AppState {
         let db = Database::open(&dirs.db_path)?;
         let framebuffer = Framebuffer::new(cols, rows, &atlas);
 
+        // Polish 34: hydrate persisted open-tabs from settings. Stale
+        // ids whose task no longer exists are filtered against the
+        // current task list, so a task deleted between runs doesn't
+        // leave a phantom chip on next launch.
+        let open_tabs = {
+            let settings = crate::settings::Settings::new(&db.conn);
+            let raw = settings
+                .get(crate::settings::KEY_OPEN_TABS)
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+            let parsed: Vec<Uuid> = serde_json::from_str::<Vec<String>>(&raw)
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|s| Uuid::parse_str(&s).ok())
+                .collect();
+            // Filter against existing task ids to drop stale entries.
+            let existing_ids: std::collections::HashSet<Uuid> = TaskStore::new(&db.conn)
+                .list_all()
+                .map(|tasks| tasks.into_iter().map(|t| t.id).collect())
+                .unwrap_or_default();
+            parsed.into_iter().filter(|id| existing_ids.contains(id)).collect()
+        };
+
         Ok(Self {
             atlas,
             framebuffer: RefCell::new(framebuffer),
@@ -85,18 +111,46 @@ impl AppState {
             rows,
             sessions: RefCell::new(HashMap::new()),
             active_task: RefCell::new(None),
-            open_tabs: RefCell::new(Vec::new()),
+            open_tabs: RefCell::new(open_tabs),
             expanded_dirs: RefCell::new(HashSet::new()),
         })
+    }
+
+    /// Polish 34: write the current `open_tabs` to the settings KV
+    /// table as a JSON array. Called whenever the list mutates
+    /// (`pin_open_tab`, `close_open_tab`, and the kanban refresh
+    /// purges stale entries). Failures are logged but not propagated
+    /// — losing tab persistence shouldn't crash the UI.
+    pub fn persist_open_tabs(&self) {
+        let tabs = self.open_tabs.borrow();
+        let payload: Vec<String> = tabs.iter().map(|u| u.to_string()).collect();
+        drop(tabs);
+        let json = match serde_json::to_string(&payload) {
+            Ok(s) => s,
+            Err(err) => {
+                tracing::warn!(%err, "open_tabs serialise failed");
+                return;
+            }
+        };
+        let settings = crate::settings::Settings::new(&self.db.conn);
+        if let Err(err) = settings.set(crate::settings::KEY_OPEN_TABS, &json) {
+            tracing::warn!(%err, "open_tabs persist failed");
+        }
     }
 
     /// Polish 16 — ensure `id` is present in `open_tabs` (appended if
     /// absent) and return true if the tab list actually changed. The
     /// caller uses this to decide whether to rebuild the Slint tab
-    /// model without an unnecessary refresh.
+    /// model without an unnecessary refresh. Polish 34: persists on
+    /// every successful pin.
     pub fn pin_open_tab(&self, id: Uuid) -> bool {
         let mut tabs = self.open_tabs.borrow_mut();
-        pin_tab_in_place(&mut tabs, id)
+        let changed = pin_tab_in_place(&mut tabs, id);
+        drop(tabs);
+        if changed {
+            self.persist_open_tabs();
+        }
+        changed
     }
 
     /// Polish 16 — remove `id` from `open_tabs`. Returns `Some(next_id)`
@@ -105,7 +159,7 @@ impl AppState {
     /// other tabs remain), or `None` otherwise. The fallback picks the
     /// tab at the same index, or the previous one if we closed the
     /// tail — so closing a tab always leaves the focus on a neighbour
-    /// rather than jumping to an unrelated tab.
+    /// rather than jumping to an unrelated tab. Polish 34: persists.
     pub fn close_open_tab(&self, id: Uuid) -> Option<Uuid> {
         let mut tabs = self.open_tabs.borrow_mut();
         let was_active = *self.active_task.borrow() == Some(id);
@@ -113,6 +167,8 @@ impl AppState {
         if was_active && next.is_none() {
             *self.active_task.borrow_mut() = None;
         }
+        drop(tabs);
+        self.persist_open_tabs();
         next
     }
 
