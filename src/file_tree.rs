@@ -147,6 +147,78 @@ fn append_children(
     Ok(())
 }
 
+/// Polish 40 — pick a glyph + RGB color for a file tree entry based
+/// on its kind and (for files) its lowercase extension. The result
+/// is consumed by the Slint side via `FileEntryData::icon` /
+/// `icon_r` / `icon_g` / `icon_b`.
+///
+/// Returns `(glyph, (r, g, b))`.
+///
+/// Glyph palette:
+/// - Directory: `▤` in Lanes blue
+/// - Code (rust/ts/js/py/go/rb/c/cpp/etc): `◆` colored by language
+/// - Markdown / text docs: `≡` muted
+/// - Config (json/toml/yaml/ini): `▦` muted
+/// - Image / media: `▣` pink
+/// - Default file: `·` muted gray
+pub fn pick_file_icon(name: &str, kind: &EntryKind) -> (&'static str, (u8, u8, u8)) {
+    if matches!(kind, EntryKind::Directory) {
+        return ("▤", (96, 165, 250)); // kind-feature blue
+    }
+    let ext = name
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase())
+        .unwrap_or_default();
+
+    match ext.as_str() {
+        // Rust
+        "rs" => ("◆", (206, 66, 43)),
+        // TypeScript / JavaScript
+        "ts" | "tsx" => ("◆", (49, 120, 198)),
+        "js" | "jsx" | "mjs" | "cjs" => ("◆", (240, 219, 79)),
+        // Python
+        "py" | "pyi" => ("◆", (55, 118, 171)),
+        // Go
+        "go" => ("◆", (0, 173, 216)),
+        // Ruby
+        "rb" | "erb" => ("◆", (204, 52, 45)),
+        // C / C++
+        "c" | "h" => ("◆", (85, 85, 85)),
+        "cpp" | "cc" | "cxx" | "hpp" | "hxx" => ("◆", (243, 75, 125)),
+        // Java / Kotlin / Scala
+        "java" => ("◆", (176, 114, 25)),
+        "kt" | "kts" => ("◆", (160, 116, 206)),
+        "scala" | "sc" => ("◆", (220, 50, 47)),
+        // Web markup / styles
+        "html" | "htm" => ("◆", (227, 79, 38)),
+        "css" | "scss" | "sass" | "less" => ("◆", (38, 77, 228)),
+        // Shell
+        "sh" | "bash" | "zsh" | "fish" => ("◆", (137, 224, 81)),
+        // Slint
+        "slint" => ("◆", (43, 161, 199)),
+        // Markdown / docs
+        "md" | "markdown" | "rst" | "txt" => ("≡", (167, 175, 184)),
+        // Config files
+        "json" | "json5" | "jsonc" => ("▦", (133, 161, 199)),
+        "toml" => ("▦", (158, 124, 89)),
+        "yaml" | "yml" => ("▦", (203, 75, 22)),
+        "ini" | "cfg" | "conf" | "env" => ("▦", (153, 153, 153)),
+        // Lock files
+        "lock" => ("▦", (108, 113, 124)),
+        // Images / media
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "ico" => ("▣", (245, 138, 130)),
+        "svg" => ("▣", (255, 178, 47)),
+        "pdf" => ("▣", (220, 50, 47)),
+        // Audio / video
+        "mp3" | "wav" | "flac" | "ogg" => ("▣", (147, 112, 219)),
+        "mp4" | "mov" | "mkv" | "webm" | "avi" => ("▣", (147, 112, 219)),
+        // Archives
+        "zip" | "tar" | "gz" | "bz2" | "xz" | "7z" => ("◫", (180, 156, 96)),
+        // Default
+        _ => ("·", (108, 113, 124)),
+    }
+}
+
 /// Open a file in the user's preferred external editor.
 ///
 /// Resolution order:
@@ -318,5 +390,56 @@ mod tests {
         assert_eq!(entries[0].kind, EntryKind::Directory);
         assert_eq!(entries[1].name, "a_file.txt");
         assert_eq!(entries[1].kind, EntryKind::File);
+    }
+
+    // Polish 40 — pick_file_icon coverage.
+
+    #[test]
+    fn pick_icon_directory_returns_blue_grid() {
+        let (g, c) = pick_file_icon("anything", &EntryKind::Directory);
+        assert_eq!(g, "▤");
+        assert_eq!(c, (96, 165, 250));
+    }
+
+    #[test]
+    fn pick_icon_known_extensions() {
+        let cases = [
+            ("main.rs", "◆", (206, 66, 43)),
+            ("App.tsx", "◆", (49, 120, 198)),
+            ("index.js", "◆", (240, 219, 79)),
+            ("setup.py", "◆", (55, 118, 171)),
+            ("go.go", "◆", (0, 173, 216)),
+            ("README.md", "≡", (167, 175, 184)),
+            ("Cargo.toml", "▦", (158, 124, 89)),
+            ("config.yaml", "▦", (203, 75, 22)),
+            ("logo.svg", "▣", (255, 178, 47)),
+            ("photo.png", "▣", (245, 138, 130)),
+            ("Cargo.lock", "▦", (108, 113, 124)),
+        ];
+        for (name, glyph, color) in cases {
+            let (g, c) = pick_file_icon(name, &EntryKind::File);
+            assert_eq!(g, glyph, "glyph for {name}");
+            assert_eq!(c, color, "color for {name}");
+        }
+    }
+
+    #[test]
+    fn pick_icon_unknown_extension_falls_back_to_dot() {
+        let (g, c) = pick_file_icon("mystery.xyz", &EntryKind::File);
+        assert_eq!(g, "·");
+        assert_eq!(c, (108, 113, 124));
+    }
+
+    #[test]
+    fn pick_icon_no_extension_falls_back_to_dot() {
+        let (g, _) = pick_file_icon("Makefile", &EntryKind::File);
+        assert_eq!(g, "·");
+    }
+
+    #[test]
+    fn pick_icon_extension_is_case_insensitive() {
+        let (g1, _) = pick_file_icon("File.RS", &EntryKind::File);
+        let (g2, _) = pick_file_icon("file.rs", &EntryKind::File);
+        assert_eq!(g1, g2);
     }
 }

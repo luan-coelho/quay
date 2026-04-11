@@ -172,6 +172,61 @@ impl AppState {
         next
     }
 
+    /// Polish 41 — keep only `keep_id` in the open-tabs strip,
+    /// dropping every other entry. Returns `Some(keep_id)` if the
+    /// active task should switch (which happens when the previously
+    /// active task wasn't `keep_id`), or `None` if nothing needs to
+    /// move. No-op when `keep_id` isn't in the list.
+    pub fn close_other_open_tabs(&self, keep_id: Uuid) -> Option<Uuid> {
+        let mut tabs = self.open_tabs.borrow_mut();
+        let changed = close_others_in_place(&mut tabs, keep_id);
+        drop(tabs);
+        if !changed {
+            return None;
+        }
+        let active = *self.active_task.borrow();
+        let switch_to = if active != Some(keep_id) {
+            *self.active_task.borrow_mut() = Some(keep_id);
+            Some(keep_id)
+        } else {
+            None
+        };
+        self.persist_open_tabs();
+        switch_to
+    }
+
+    /// Polish 41 — close every open tab. Clears `active_task` so the
+    /// right pane reverts to the empty state.
+    pub fn close_all_open_tabs(&self) {
+        self.open_tabs.borrow_mut().clear();
+        *self.active_task.borrow_mut() = None;
+        self.persist_open_tabs();
+    }
+
+    /// Polish 41 — close every tab strictly after `anchor_id` in the
+    /// strip order, keeping `anchor_id` and everything to its left.
+    /// Returns `Some(anchor_id)` if the active task should switch
+    /// (when the previously active task got closed), or `None`.
+    pub fn close_tabs_right_of(&self, anchor_id: Uuid) -> Option<Uuid> {
+        let mut tabs = self.open_tabs.borrow_mut();
+        let changed = close_right_of_in_place(&mut tabs, anchor_id);
+        if !changed {
+            return None;
+        }
+        let kept: std::collections::HashSet<Uuid> = tabs.iter().copied().collect();
+        drop(tabs);
+        let active = *self.active_task.borrow();
+        let switch_to = match active {
+            Some(active_id) if !kept.contains(&active_id) => {
+                *self.active_task.borrow_mut() = Some(anchor_id);
+                Some(anchor_id)
+            }
+            _ => None,
+        };
+        self.persist_open_tabs();
+        switch_to
+    }
+
     /// Read every task from the DB, ordered for kanban display.
     pub fn list_tasks(&self) -> Result<Vec<Task>> {
         TaskStore::new(&self.db.conn).list_all()
@@ -767,6 +822,35 @@ fn close_tab_in_place(tabs: &mut Vec<Uuid>, id: Uuid, was_active: bool) -> Optio
     Some(tabs[fallback_idx])
 }
 
+/// Polish 41 — keep only `keep_id` in `tabs`. Returns true if the
+/// list actually changed (false if it already contained only that id
+/// or if `keep_id` wasn't present at all).
+fn close_others_in_place(tabs: &mut Vec<Uuid>, keep_id: Uuid) -> bool {
+    if !tabs.contains(&keep_id) {
+        return false;
+    }
+    if tabs.len() == 1 {
+        return false;
+    }
+    tabs.clear();
+    tabs.push(keep_id);
+    true
+}
+
+/// Polish 41 — drop every element strictly after `anchor_id`,
+/// keeping the anchor and everything to its left. Returns true if
+/// the list actually changed.
+fn close_right_of_in_place(tabs: &mut Vec<Uuid>, anchor_id: Uuid) -> bool {
+    let Some(anchor_idx) = tabs.iter().position(|t| *t == anchor_id) else {
+        return false;
+    };
+    if anchor_idx + 1 >= tabs.len() {
+        return false;
+    }
+    tabs.truncate(anchor_idx + 1);
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -827,5 +911,65 @@ mod tests {
         let next = close_tab_in_place(&mut tabs, u(99), true);
         assert_eq!(next, None);
         assert_eq!(tabs, vec![u(1), u(2)]);
+    }
+
+    // Polish 41 — close-others helper.
+
+    #[test]
+    fn close_others_keeps_only_target() {
+        let mut tabs = vec![u(1), u(2), u(3), u(4)];
+        let changed = close_others_in_place(&mut tabs, u(2));
+        assert!(changed);
+        assert_eq!(tabs, vec![u(2)]);
+    }
+
+    #[test]
+    fn close_others_noop_when_already_alone() {
+        let mut tabs = vec![u(1)];
+        let changed = close_others_in_place(&mut tabs, u(1));
+        assert!(!changed);
+        assert_eq!(tabs, vec![u(1)]);
+    }
+
+    #[test]
+    fn close_others_noop_when_target_missing() {
+        let mut tabs = vec![u(1), u(2), u(3)];
+        let changed = close_others_in_place(&mut tabs, u(99));
+        assert!(!changed);
+        assert_eq!(tabs, vec![u(1), u(2), u(3)]);
+    }
+
+    // Polish 41 — close-right-of helper.
+
+    #[test]
+    fn close_right_of_drops_tail() {
+        let mut tabs = vec![u(1), u(2), u(3), u(4), u(5)];
+        let changed = close_right_of_in_place(&mut tabs, u(2));
+        assert!(changed);
+        assert_eq!(tabs, vec![u(1), u(2)]);
+    }
+
+    #[test]
+    fn close_right_of_anchor_at_tail_is_noop() {
+        let mut tabs = vec![u(1), u(2), u(3)];
+        let changed = close_right_of_in_place(&mut tabs, u(3));
+        assert!(!changed);
+        assert_eq!(tabs, vec![u(1), u(2), u(3)]);
+    }
+
+    #[test]
+    fn close_right_of_missing_anchor_is_noop() {
+        let mut tabs = vec![u(1), u(2)];
+        let changed = close_right_of_in_place(&mut tabs, u(99));
+        assert!(!changed);
+        assert_eq!(tabs, vec![u(1), u(2)]);
+    }
+
+    #[test]
+    fn close_right_of_first_tab_keeps_only_first() {
+        let mut tabs = vec![u(1), u(2), u(3)];
+        let changed = close_right_of_in_place(&mut tabs, u(1));
+        assert!(changed);
+        assert_eq!(tabs, vec![u(1)]);
     }
 }

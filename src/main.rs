@@ -635,12 +635,20 @@ fn main() -> Result<()> {
                     crate::file_tree::EntryKind::Directory => "directory",
                     crate::file_tree::EntryKind::File => "file",
                 };
+                // Polish 40: pick icon glyph + RGB color from the
+                // file extension via the file_tree helper.
+                let (icon, (r, g, b)) =
+                    crate::file_tree::pick_file_icon(&e.name, &e.kind);
                 model.push(FileEntryData {
                     name: SharedString::from(e.name),
                     path: SharedString::from(e.path.to_string_lossy().into_owned()),
                     kind: SharedString::from(kind),
                     depth: e.depth as i32,
                     expanded: e.expanded,
+                    icon: SharedString::from(icon),
+                    icon_r: r as i32,
+                    icon_g: g as i32,
+                    icon_b: b as i32,
                 });
             }
         }
@@ -1360,6 +1368,75 @@ fn main() -> Result<()> {
         });
     }
 
+    // Polish 41: bulk tab management. Three callbacks — close
+    // others, close all, close right-of. Each delegates to the
+    // matching AppState method (which handles persistence + active
+    // task fallback) then triggers the standard select-and-rebuild
+    // path via `invoke_open_task_tab` so the right pane reflects the
+    // new active tab without ad-hoc duplication of the rebuild
+    // logic. The toast helper surfaces what just happened.
+    {
+        let state = state.clone();
+        let weak = window.as_weak();
+        let refresh = refresh_kanban.clone();
+        let toast = show_toast.clone();
+        window.on_close_other_task_tabs(move |id| {
+            let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
+            let switch = state.close_other_open_tabs(uuid);
+            if let Some(window) = weak.upgrade() {
+                if let Some(next) = switch {
+                    window.invoke_open_task_tab(next.to_string().into());
+                }
+            }
+            toast("info", "Closed other tabs".to_string());
+            refresh();
+        });
+    }
+    {
+        let state = state.clone();
+        let weak = window.as_weak();
+        let refresh = refresh_kanban.clone();
+        let refresh_panels = refresh_active_panels.clone();
+        let toast = show_toast.clone();
+        window.on_close_all_task_tabs(move || {
+            state.close_all_open_tabs();
+            // Mirror the empty-state reset that on_close_task_tab does
+            // when there's no fallback target.
+            if let Some(window) = weak.upgrade() {
+                window.set_active_task_id("".into());
+                window.set_active_task_display("".into());
+                window.set_active_task_title("".into());
+                window.set_active_task_description("".into());
+                window.set_active_task_instructions("".into());
+                window.set_active_task_session_state("idle".into());
+                window.set_active_task_tokens_text("".into());
+                window.set_active_task_cost_text("".into());
+                window.set_active_task_runtime_text("".into());
+                window.set_active_task_message_count(0);
+            }
+            toast("info", "Closed all tabs".to_string());
+            refresh();
+            refresh_panels();
+        });
+    }
+    {
+        let state = state.clone();
+        let weak = window.as_weak();
+        let refresh = refresh_kanban.clone();
+        let toast = show_toast.clone();
+        window.on_close_task_tabs_right_of(move |id| {
+            let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
+            let switch = state.close_tabs_right_of(uuid);
+            if let Some(window) = weak.upgrade() {
+                if let Some(next) = switch {
+                    window.invoke_open_task_tab(next.to_string().into());
+                }
+            }
+            toast("info", "Closed tabs to the right".to_string());
+            refresh();
+        });
+    }
+
     // Polish 35: task quick switcher — rebuild the filtered results
     // model on every keystroke. Substring case-insensitive match
     // against `#NN` display id and `title`. Empty query shows all
@@ -1843,6 +1920,27 @@ fn main() -> Result<()> {
                 if let Some(w) = weak.upgrade() {
                     let open = !w.get_shortcuts_open();
                     w.set_shortcuts_open(open);
+                }
+                return;
+            }
+
+            // Polish 41: Cmd+Shift+W → close all OTHER open tabs
+            // (keep the active one). The capital `W` is what arrives
+            // when shift is held with `w` on most keyboards.
+            if primary && shift && (text == "W" || text == "w") {
+                if let Some(w) = weak.upgrade() {
+                    let active_id = w.get_active_task_id().to_string();
+                    if !active_id.is_empty() {
+                        w.invoke_close_other_task_tabs(active_id.into());
+                    }
+                }
+                return;
+            }
+
+            // Polish 41: Cmd+Alt+W → close ALL tabs.
+            if primary && alt && (text == "w" || text == "W") {
+                if let Some(w) = weak.upgrade() {
+                    w.invoke_close_all_task_tabs();
                 }
                 return;
             }

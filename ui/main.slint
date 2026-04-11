@@ -87,6 +87,14 @@ export struct FileEntryData {
     // Polish 17 — true when `kind == "directory"` and the user has
     // expanded this row. Drives the chevron glyph (▸/▾).
     expanded: bool,
+    // Polish 40 — per-extension icon glyph and 24-bit color.
+    // Computed in `file_tree::pick_file_icon` so the Slint side
+    // doesn't have to do string manipulation. Color is split into
+    // r/g/b ints because Slint has no string-to-brush parser.
+    icon: string,
+    icon-r: int,
+    icon-g: int,
+    icon-b: int,
 }
 
 export struct HlSpanData {
@@ -330,6 +338,54 @@ component Toast inherits Rectangle {
                 font-size: 11px;
                 vertical-alignment: center;
                 overflow: elide;
+            }
+        }
+    }
+}
+
+// Polish 41 — single row in the tab management dropdown menu.
+// Left: action label (full-width). Right: optional shortcut hint.
+// `enabled: bool` greys out + disables the click when the action
+// doesn't apply (e.g. "Close other tabs" with only 1 tab open).
+component TabMenuRow inherits Rectangle {
+    in property <string> label;
+    in property <string> shortcut;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    height: 26px;
+    border-radius: 4px;
+    background: enabled && ta.has-hover ? Tokens.bg-hover : transparent;
+    animate background { duration: 100ms; easing: ease-out; }
+
+    ta := TouchArea {
+        clicked => { if root.enabled { root.clicked(); } }
+    }
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 8px;
+        alignment: start;
+
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: label;
+                color: enabled ? Tokens.text-secondary : Tokens.text-muted;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: shortcut;
+                color: enabled ? Tokens.text-tertiary : Tokens.text-muted;
+                font-size: 10px;
+                font-family: "JetBrains Mono";
+                vertical-alignment: center;
             }
         }
     }
@@ -1143,6 +1199,16 @@ export component MainWindow inherits Window {
     callback open-task-tab(string);    // task id — make tab active
     callback close-task-tab(string);   // task id — close & fall back
 
+    // Polish 41 — bulk tab management actions. Wired to the dropdown
+    // menu at the right of the open-tabs strip and to keyboard
+    // shortcuts (Cmd+Shift+W close others, etc.).
+    callback close-other-task-tabs(string);   // keep only the given id
+    callback close-all-task-tabs();
+    callback close-task-tabs-right-of(string); // keep up to and including the given id
+
+    // Polish 41 — dropdown menu state.
+    in-out property <bool> tab-menu-open: false;
+
     // Polish 20 — sidebar collapse stub. Wired to a no-op for now;
     // a future polish will actually shrink `sidebar-w` when toggled.
     callback toggle-sidebar();
@@ -1663,7 +1729,9 @@ export component MainWindow inherits Window {
             Flickable {
                 x: 8px;
                 y: 4px;
-                width: parent.width - 16px;
+                // Polish 41: leave room on the right for the "···"
+                // dropdown menu trigger button.
+                width: parent.width - 16px - 32px;
                 height: parent.height - 8px;
                 viewport-height: parent.height - 8px;
                 viewport-width: tab-row.preferred-width;
@@ -1680,6 +1748,39 @@ export component MainWindow inherits Window {
                         spinner-glyph: root.spinner-glyph;
                         clicked => { root.open-task-tab(tab.id); }
                         close-clicked => { root.close-task-tab(tab.id); }
+                    }
+                }
+            }
+
+            // Polish 41 — "···" trigger for the tab-management menu.
+            // Sits absolutely at the right edge of the strip so it
+            // doesn't move as tabs scroll horizontally.
+            menu-trigger := TouchArea {
+                x: parent.width - self.width - 8px;
+                y: (parent.height - self.height) / 2;
+                width: 26px;
+                height: 22px;
+                clicked => { root.tab-menu-open = !root.tab-menu-open; }
+                Rectangle {
+                    background: parent.has-hover || root.tab-menu-open
+                                ? Tokens.bg-card-hover
+                                : transparent;
+                    border-radius: 4px;
+                    border-width: 1px;
+                    border-color: root.tab-menu-open
+                                ? Tokens.border-accent
+                                : Tokens.border-soft;
+                    animate background { duration: 120ms; easing: ease-out; }
+                    animate border-color { duration: 120ms; easing: ease-out; }
+                    Text {
+                        text: "···";
+                        color: Tokens.text-secondary;
+                        font-size: 13px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
                     }
                 }
             }
@@ -2689,12 +2790,16 @@ export component MainWindow inherits Window {
                                         vertical-alignment: center;
                                         width: 10px;
                                     }
+                                    // Polish 40 — per-extension icon
+                                    // glyph + colored to match the
+                                    // file type. Computed in Rust so
+                                    // we don't fight Slint's limited
+                                    // string ops.
                                     Text {
-                                        text: entry.kind == "directory" ? "▤" : "·";
-                                        color: entry.kind == "directory"
-                                               ? Tokens.kind-feature
-                                               : Tokens.text-tertiary;
+                                        text: entry.icon;
+                                        color: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
                                         font-size: 11px;
+                                        font-weight: 600;
                                         vertical-alignment: center;
                                     }
                                     Text {
@@ -3734,6 +3839,8 @@ export component MainWindow inherits Window {
                             font-weight: 700;
                         }
                         ShortcutRow { keys: "⌘W"; label: "Close active tab"; }
+                        ShortcutRow { keys: "⌘⇧W"; label: "Close all OTHER tabs"; }
+                        ShortcutRow { keys: "⌘⌥W"; label: "Close ALL tabs"; }
                         ShortcutRow { keys: "⌘⇧]"; label: "Cycle to next tab"; }
                         ShortcutRow { keys: "⌘⇧["; label: "Cycle to previous tab"; }
                     }
@@ -3886,6 +3993,96 @@ export component MainWindow inherits Window {
                     color: Tokens.text-tertiary;
                     font-size: 9px;
                     horizontal-alignment: center;
+                }
+            }
+        }
+    }
+
+    // ── Polish 41: tab management dropdown menu ─────────────────────────
+    // Anchored just below the "···" trigger button at the right edge
+    // of the open-tabs strip. Click outside dismisses (full-screen
+    // backdrop TouchArea handles that). Each item invokes the
+    // matching callback then closes the menu. The 4 items match the
+    // browser convention: Close current / Close others / Close to
+    // the right / Close all.
+    if root.tab-menu-open: Rectangle {
+        x: 0; y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+
+        // Click anywhere outside the menu card dismisses.
+        TouchArea {
+            clicked => { root.tab-menu-open = false; }
+        }
+
+        Rectangle {
+            // Position below the "···" button: right edge of the
+            // right pane (~12 px inset from window edge), top edge
+            // ~4 px below the open-tabs strip (title-bar-h + open-tabs-strip-h + 4).
+            x: parent.width - self.width - 12px;
+            y: title-bar-h + open-tabs-strip-h + 4px;
+            width: 220px;
+            height: menu-stack.preferred-height + 12px;
+            background: #1a1d24;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Tokens.border-soft;
+            opacity: root.tab-menu-open ? 1.0 : 0.0;
+            animate opacity { duration: 140ms; easing: ease-out; }
+
+            // Block click-through.
+            TouchArea {}
+
+            menu-stack := VerticalLayout {
+                padding: 6px;
+                spacing: 2px;
+
+                TabMenuRow {
+                    label: "Close active tab";
+                    shortcut: "⌘W";
+                    enabled: root.active-task-id != "";
+                    clicked => {
+                        if root.active-task-id != "" {
+                            root.close-task-tab(root.active-task-id);
+                        }
+                        root.tab-menu-open = false;
+                    }
+                }
+                TabMenuRow {
+                    label: "Close other tabs";
+                    shortcut: "⌘⇧W";
+                    enabled: root.open-task-tabs.length >= 2;
+                    clicked => {
+                        if root.active-task-id != "" {
+                            root.close-other-task-tabs(root.active-task-id);
+                        }
+                        root.tab-menu-open = false;
+                    }
+                }
+                TabMenuRow {
+                    label: "Close tabs to the right";
+                    shortcut: "";
+                    enabled: root.open-task-tabs.length >= 2;
+                    clicked => {
+                        if root.active-task-id != "" {
+                            root.close-task-tabs-right-of(root.active-task-id);
+                        }
+                        root.tab-menu-open = false;
+                    }
+                }
+                Rectangle {
+                    height: 1px;
+                    background: Tokens.border-very-soft;
+                }
+                TabMenuRow {
+                    label: "Close all tabs";
+                    shortcut: "⌘⌥W";
+                    enabled: root.open-task-tabs.length >= 1;
+                    clicked => {
+                        root.close-all-task-tabs();
+                        root.tab-menu-open = false;
+                    }
                 }
             }
         }
