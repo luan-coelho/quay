@@ -16,7 +16,9 @@ import { ScrollView, TextEdit, LineEdit } from "std-widgets.slint";
 
 // ── Design tokens ───────────────────────────────────────────────────────────
 global Tokens {
-    out property <color> bg-base: #1e2024;
+    // Polish 19 — base bg darkened from #1e2024 to match the Lanes
+    // reference screenshot more closely.
+    out property <color> bg-base: #1a1d22;
     out property <color> bg-section-header: #222428;
     out property <color> bg-tab-active: #202329;
     out property <color> bg-hover: rgba(255, 255, 255, 5%);
@@ -41,6 +43,9 @@ global Tokens {
     out property <color> kind-done: #34d399;
 
     out property <color> accent-warm: #c87533;
+    // Polish 19 — pink/coral fill for the user avatar circle in the
+    // title bar (introduced visually in Polish 20).
+    out property <color> accent-pink-coral: #f58a82;
 }
 
 // ── Data structures ─────────────────────────────────────────────────────────
@@ -216,6 +221,31 @@ component KindChip inherits Rectangle {
             font-size: 9px;
             vertical-alignment: center;
         }
+    }
+}
+
+// Polish 19 — reusable × close button for modal headers and inline
+// clear actions. Matches the existing open-coded blocks (rounded
+// circle, red-tinted hover, kind-bug glyph color on hover) so all
+// modal close affordances stay visually consistent.
+component CloseButton inherits Rectangle {
+    in property <length> size: 22px;
+    callback clicked();
+
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    background: ta.has-hover ? rgba(248, 113, 113, 18%) : transparent;
+
+    ta := TouchArea { clicked => { root.clicked(); } }
+    Text {
+        text: "×";
+        color: ta.has-hover ? Tokens.kind-bug : Tokens.text-tertiary;
+        font-size: 13px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
     }
 }
 
@@ -1839,23 +1869,9 @@ export component MainWindow inherits Window {
                             overflow: elide;
                         }
                         Rectangle { horizontal-stretch: 1; }
-                        TouchArea {
-                            width: 16px;
-                            height: 16px;
+                        CloseButton {
+                            size: 16px;
                             clicked => { root.remove-dependency(dep.id); }
-                            Rectangle {
-                                background: parent.has-hover ? rgba(248, 113, 113, 15%) : transparent;
-                                border-radius: 3px;
-                                Text {
-                                    text: "×";
-                                    color: Tokens.kind-bug;
-                                    font-size: 10px;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                    width: parent.width;
-                                    height: parent.height;
-                                }
-                            }
                         }
                     }
                 }
@@ -2527,23 +2543,8 @@ export component MainWindow inherits Window {
                         font-weight: 700;
                     }
                     Rectangle { horizontal-stretch: 1; }
-                    TouchArea {
-                        width: 22px;
-                        height: 22px;
+                    CloseButton {
                         clicked => { root.new-task-open = false; }
-                        Rectangle {
-                            background: parent.has-hover ? #1f2331 : transparent;
-                            border-radius: 4px;
-                            Text {
-                                text: "×";
-                                color: Tokens.text-secondary;
-                                font-size: 17px;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                                width: parent.width;
-                                height: parent.height;
-                            }
-                        }
                     }
                 }
 
@@ -2670,23 +2671,8 @@ export component MainWindow inherits Window {
                         font-weight: 700;
                     }
                     Rectangle { horizontal-stretch: 1; }
-                    TouchArea {
-                        width: 22px;
-                        height: 22px;
+                    CloseButton {
                         clicked => { root.new-project-open = false; }
-                        Rectangle {
-                            background: parent.has-hover ? #1f2331 : transparent;
-                            border-radius: 4px;
-                            Text {
-                                text: "×";
-                                color: Tokens.text-secondary;
-                                font-size: 17px;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                                width: parent.width;
-                                height: parent.height;
-                            }
-                        }
                     }
                 }
 
@@ -2836,23 +2822,9 @@ export component MainWindow inherits Window {
                         font-weight: 700;
                     }
                     Rectangle { horizontal-stretch: 1; }
-                    TouchArea {
-                        width: 24px;
-                        height: 24px;
+                    CloseButton {
+                        size: 24px;
                         clicked => { root.settings-open = false; }
-                        Rectangle {
-                            background: parent.has-hover ? #1f2331 : transparent;
-                            border-radius: 4px;
-                            Text {
-                                text: "×";
-                                color: Tokens.text-secondary;
-                                font-size: 18px;
-                                horizontal-alignment: center;
-                                vertical-alignment: center;
-                                width: parent.width;
-                                height: parent.height;
-                            }
-                        }
                     }
                 }
 
@@ -2994,23 +2966,9 @@ export component MainWindow inherits Window {
                                     }
 
                                     // Delete button.
-                                    TouchArea {
-                                        width: 20px;
-                                        height: 20px;
+                                    CloseButton {
+                                        size: 20px;
                                         clicked => { root.delete-quick-action(qa.id); }
-                                        Rectangle {
-                                            background: parent.has-hover ? rgba(248, 113, 113, 15%) : transparent;
-                                            border-radius: 3px;
-                                            Text {
-                                                text: "×";
-                                                color: Tokens.kind-bug;
-                                                font-size: 12px;
-                                                horizontal-alignment: center;
-                                                vertical-alignment: center;
-                                                width: parent.width;
-                                                height: parent.height;
-                                            }
-                                        }
                                     }
                                 }
 
