@@ -633,6 +633,16 @@ export component MainWindow inherits Window {
     in-out property <string> new-task-title: "";
     in-out property <string> new-task-instructions: "";
 
+    // Polish 13: status bar counts, updated on every refresh_kanban.
+    in property <int> stats-backlog: 0;
+    in property <int> stats-planning: 0;
+    in property <int> stats-implementation: 0;
+    in property <int> stats-review: 0;
+    in property <int> stats-done: 0;
+    in property <int> stats-misc: 0;
+    in property <int> stats-sessions: 0;
+    in property <int> stats-total: 0;
+
     // File browser state for the Files tab (Phase 6).
     in property <[FileEntryData]> file-entries;
     in-out property <string> file-current-dir: "";
@@ -711,10 +721,12 @@ export component MainWindow inherits Window {
     property <length> right-pad-h: 18px;
     property <length> right-pad-v: 14px;
 
+    property <length> status-bar-h: 22px;
+
     preferred-width: sidebar-w + middle-w + term-w + right-pad-h * 2 + 2px;
-    preferred-height: title-bar-h + tab-strip-h + term-h + right-pad-v * 2 + 14px;
+    preferred-height: title-bar-h + tab-strip-h + term-h + right-pad-v * 2 + 14px + status-bar-h;
     min-width: sidebar-w + middle-w + term-w + right-pad-h * 2 + 2px;
-    min-height: title-bar-h + tab-strip-h + term-h + right-pad-v * 2 + 14px;
+    min-height: title-bar-h + tab-strip-h + term-h + right-pad-v * 2 + 14px + status-bar-h;
 
     init => { focus-scope.focus(); }
 
@@ -2071,6 +2083,86 @@ export component MainWindow inherits Window {
                     font-size: 11px;
                     horizontal-alignment: center;
                 }
+            }
+        }
+    }
+
+    // ── Status bar (Polish 13) ──────────────────────────────────────────
+    Rectangle {
+        x: 0;
+        y: parent.height - status-bar-h;
+        width: parent.width;
+        height: status-bar-h;
+        background: #11131a;
+
+        Rectangle {
+            x: 0; y: 0;
+            width: parent.width; height: 1px;
+            background: Tokens.border-soft;
+        }
+
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 12px;
+            spacing: 12px;
+            alignment: start;
+
+            Text {
+                text: "Backlog " + root.stats-backlog;
+                color: Tokens.text-tertiary;
+                font-size: 9px;
+                vertical-alignment: center;
+            }
+            Text { text: "·"; color: Tokens.text-muted; font-size: 9px; vertical-alignment: center; }
+            Text {
+                text: "Planning " + root.stats-planning;
+                color: Tokens.text-tertiary;
+                font-size: 9px;
+                vertical-alignment: center;
+            }
+            Text { text: "·"; color: Tokens.text-muted; font-size: 9px; vertical-alignment: center; }
+            Text {
+                text: "Impl " + root.stats-implementation;
+                color: Tokens.text-tertiary;
+                font-size: 9px;
+                vertical-alignment: center;
+            }
+            Text { text: "·"; color: Tokens.text-muted; font-size: 9px; vertical-alignment: center; }
+            Text {
+                text: "Review " + root.stats-review;
+                color: Tokens.text-tertiary;
+                font-size: 9px;
+                vertical-alignment: center;
+            }
+            Text { text: "·"; color: Tokens.text-muted; font-size: 9px; vertical-alignment: center; }
+            Text {
+                text: "Done " + root.stats-done;
+                color: Tokens.text-tertiary;
+                font-size: 9px;
+                vertical-alignment: center;
+            }
+            Text { text: "·"; color: Tokens.text-muted; font-size: 9px; vertical-alignment: center; }
+            Text {
+                text: "Misc " + root.stats-misc;
+                color: Tokens.text-tertiary;
+                font-size: 9px;
+                vertical-alignment: center;
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+
+            Text {
+                text: root.stats-sessions + " live session" + (root.stats-sessions == 1 ? "" : "s");
+                color: root.stats-sessions > 0 ? Tokens.kind-enhancement : Tokens.text-tertiary;
+                font-size: 9px;
+                vertical-alignment: center;
+            }
+            Text { text: "·"; color: Tokens.text-muted; font-size: 9px; vertical-alignment: center; }
+            Text {
+                text: root.stats-total + " tasks total";
+                color: Tokens.text-tertiary;
+                font-size: 9px;
+                vertical-alignment: center;
             }
         }
     }

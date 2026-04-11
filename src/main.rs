@@ -390,6 +390,34 @@ fn main() -> Result<()> {
                 }
             }
 
+            // Polish 13: update the status bar stats before the models
+            // are replaced. We use the raw task list (pre-filter) for
+            // the totals so the bar reflects the whole board even when
+            // a label or project filter is active — the user wants to
+            // know what they have, not just what's visible.
+            if let Some(w) = weak.upgrade() {
+                let mut counts = [0i32; 6];
+                for t in &tasks {
+                    let idx = match t.state {
+                        TaskState::Backlog => 0,
+                        TaskState::Planning => 1,
+                        TaskState::Implementation => 2,
+                        TaskState::Review => 3,
+                        TaskState::Done => 4,
+                        TaskState::Misc => 5,
+                    };
+                    counts[idx] += 1;
+                }
+                w.set_stats_backlog(counts[0]);
+                w.set_stats_planning(counts[1]);
+                w.set_stats_implementation(counts[2]);
+                w.set_stats_review(counts[3]);
+                w.set_stats_done(counts[4]);
+                w.set_stats_misc(counts[5]);
+                w.set_stats_total(tasks.len() as i32);
+                w.set_stats_sessions(state.sessions.borrow().len() as i32);
+            }
+
             replace_model(&backlog, backlog_v);
             replace_model(&planning, planning_v);
             replace_model(&implementation, implementation_v);
