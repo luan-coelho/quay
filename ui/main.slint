@@ -73,10 +73,15 @@ export struct ProcessRowData {
 export struct FileEntryData {
     name: string,
     /// Absolute path — passed back in the click callback so Rust can
-    /// figure out whether to navigate into a directory or shell out to
-    /// $EDITOR for a file.
+    /// figure out whether to toggle a directory or open a file.
     path: string,
-    kind: string,        // "directory" | "file" | "parent"
+    kind: string,        // "directory" | "file"
+    // Polish 17 — depth in the flattened tree, used by the Files tab
+    // to indent each row (10 px + depth × 14 px left padding).
+    depth: int,
+    // Polish 17 — true when `kind == "directory"` and the user has
+    // expanded this row. Drives the chevron glyph (▸/▾).
+    expanded: bool,
 }
 
 export struct HlSpanData {
@@ -2149,8 +2154,12 @@ export component MainWindow inherits Window {
                     vertical-stretch: 1;
                     VerticalLayout {
                         spacing: 1px;
+                        // Polish 17 — each row is one entry in the
+                        // flattened tree. Left padding scales with
+                        // `depth` so nested entries indent. Directory
+                        // chevron flips ▸ ↔ ▾ based on `expanded`.
                         for entry in root.file-entries: TouchArea {
-                            height: 24px;
+                            height: 22px;
                             clicked => {
                                 root.file-entry-clicked(entry.path, entry.kind);
                             }
@@ -2158,15 +2167,24 @@ export component MainWindow inherits Window {
                                 background: parent.has-hover ? #1f2331 : transparent;
                                 border-radius: 3px;
                                 HorizontalLayout {
-                                    padding-left: 10px;
+                                    padding-left: 10px + entry.depth * 14px;
                                     padding-right: 8px;
-                                    spacing: 8px;
+                                    spacing: 6px;
                                     alignment: start;
                                     Text {
-                                        text: entry.kind == "directory" ? "▸"
-                                             : entry.kind == "parent" ? "⇧"
-                                                                       : "·";
-                                        color: entry.kind == "file" ? Tokens.text-tertiary : Tokens.kind-feature;
+                                        text: entry.kind == "directory"
+                                               ? (entry.expanded ? "▾" : "▸")
+                                               : " ";
+                                        color: Tokens.text-secondary;
+                                        font-size: 10px;
+                                        vertical-alignment: center;
+                                        width: 10px;
+                                    }
+                                    Text {
+                                        text: entry.kind == "directory" ? "▤" : "·";
+                                        color: entry.kind == "directory"
+                                               ? Tokens.kind-feature
+                                               : Tokens.text-tertiary;
                                         font-size: 11px;
                                         vertical-alignment: center;
                                     }

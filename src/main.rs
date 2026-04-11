@@ -551,12 +551,59 @@ fn main() -> Result<()> {
     };
     refresh_active_panels();
 
+    // Polish 17 — hoisted ahead of select_task so that switching tasks
+    // can rebuild the flattened tree against the new worktree root
+    // without needing a second user click. The closure reads the
+    // current root from the Slint `file-current-dir` property (which
+    // select_task updates) and walks it via `file_tree::build_tree`
+    // using `AppState::expanded_dirs`.
+    let refresh_files = {
+        let state = state.clone();
+        let model = file_entries_model.clone();
+        let weak = window.as_weak();
+        move || {
+            let root_str = match weak.upgrade() {
+                Some(w) => w.get_file_current_dir().to_string(),
+                None => return,
+            };
+            while model.row_count() > 0 {
+                model.remove(model.row_count() - 1);
+            }
+            if root_str.is_empty() {
+                return;
+            }
+            let root = PathBuf::from(&root_str);
+            let expanded = state.expanded_dirs.borrow();
+            let entries = match crate::file_tree::build_tree(&root, &expanded) {
+                Ok(v) => v,
+                Err(err) => {
+                    tracing::debug!(%err, "build_tree failed");
+                    Vec::new()
+                }
+            };
+            for e in entries {
+                let kind = match e.kind {
+                    crate::file_tree::EntryKind::Directory => "directory",
+                    crate::file_tree::EntryKind::File => "file",
+                };
+                model.push(FileEntryData {
+                    name: SharedString::from(e.name),
+                    path: SharedString::from(e.path.to_string_lossy().into_owned()),
+                    kind: SharedString::from(kind),
+                    depth: e.depth as i32,
+                    expanded: e.expanded,
+                });
+            }
+        }
+    };
+
     // ── Callbacks ────────────────────────────────────────────────────────────
     {
         let state = state.clone();
         let weak = window.as_weak();
         let refresh = refresh_kanban.clone();
         let refresh_panels = refresh_active_panels.clone();
+        let refresh_files_click = refresh_files.clone();
         window.on_select_task(move |id| {
             let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
             // Polish 16: clicking a card always pins the task into
@@ -569,22 +616,14 @@ fn main() -> Result<()> {
                 Ok(changed) if !changed => {}
                 Ok(_) => {
                     if let Some(window) = weak.upgrade() {
-                        // Phase 6: if the task has a worktree, populate the
-                        // file browser with its root. Otherwise clear it.
+                        // Phase 6 / Polish 17: if the task has a
+                        // worktree, point the Files tab at its root
+                        // and rebuild the flattened tree immediately
+                        // so the user doesn't need a second click.
                         let task_opt =
                             crate::kanban::TaskStore::new(&state.db.conn).get(uuid);
                         if let Ok(Some(ref t)) = task_opt {
                             if let Some(wt) = t.worktree_path.as_deref() {
-                                let entries = crate::file_tree::list_dir(wt)
-                                    .unwrap_or_default();
-                                // We don't have easy access to the file
-                                // model here (it lives in a different
-                                // closure). Instead, set the current dir
-                                // property and let a subsequent click
-                                // or tab switch repopulate via the same
-                                // handler. For an immediate refresh, the
-                                // Files tab re-selects on next click.
-                                let _ = entries;
                                 window.set_file_current_dir(
                                     wt.to_string_lossy().into_owned().into(),
                                 );
@@ -592,6 +631,7 @@ fn main() -> Result<()> {
                                 window.set_file_current_dir("".into());
                             }
                         }
+                        refresh_files_click();
 
                         let card_data = if let Ok(Some(task)) = task_opt {
                             // Compute display-id by scanning all tasks ordered
@@ -1086,6 +1126,7 @@ fn main() -> Result<()> {
         let weak = window.as_weak();
         let refresh = refresh_kanban.clone();
         let refresh_panels = refresh_active_panels.clone();
+        let refresh_files_for_tab = refresh_files.clone();
         window.on_open_task_tab(move |id| {
             let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
             match state.select_task(uuid) {
@@ -1103,6 +1144,7 @@ fn main() -> Result<()> {
                                 window.set_file_current_dir("".into());
                             }
                         }
+                        refresh_files_for_tab();
                         let card_data = if let Ok(Some(task)) = task_opt {
                             let all = state.list_tasks().unwrap_or_default();
                             let mut sorted = all.clone();
@@ -1402,54 +1444,35 @@ fn main() -> Result<()> {
         });
     }
 
-    // ── Phase 6 file browser wiring ─────────────────────────────────────
-
-    // Helper to rebuild the file entries model for a given directory.
-    let refresh_files = {
-        let model = file_entries_model.clone();
-        let weak = window.as_weak();
-        move |dir: PathBuf| {
-            let entries = match crate::file_tree::list_dir(&dir) {
-                Ok(v) => v,
-                Err(err) => {
-                    tracing::debug!(%err, "list_dir failed");
-                    Vec::new()
-                }
-            };
-            while model.row_count() > 0 {
-                model.remove(model.row_count() - 1);
-            }
-            for e in entries {
-                let kind = match e.kind {
-                    crate::file_tree::EntryKind::Directory => "directory",
-                    crate::file_tree::EntryKind::File => "file",
-                    crate::file_tree::EntryKind::Parent => "parent",
-                };
-                model.push(FileEntryData {
-                    name: SharedString::from(e.name),
-                    path: SharedString::from(e.path.to_string_lossy().into_owned()),
-                    kind: SharedString::from(kind),
-                });
-            }
-            if let Some(w) = weak.upgrade() {
-                w.set_file_current_dir(dir.to_string_lossy().into_owned().into());
-            }
-        }
-    };
+    // ── Phase 6 / Polish 17 file browser wiring ─────────────────────────
+    // (The `refresh_files` closure is hoisted earlier so select_task can
+    //  invoke it too; this block only wires the click handler.)
 
     {
         // Click handler for file tree entries.
-        // - Parent / Directory → refresh the listing against the new dir.
+        // Polish 17:
+        // - Directory → toggle its presence in `state.expanded_dirs`
+        //   and rebuild the flattened tree model.
         // - File → try to open inline in the editor. If the file is
         //   binary or too large (>1 MB), fall back to $EDITOR.
         let refresh = refresh_files.clone();
+        let state_for_click = state.clone();
         let weak = window.as_weak();
         let buffer = editor_buffer.clone();
         let editor_lines_clone = editor_lines_model.clone();
         window.on_file_entry_clicked(move |path_str, kind_str| {
             let path = PathBuf::from(path_str.as_str());
             match kind_str.as_str() {
-                "directory" | "parent" => refresh(path),
+                "directory" => {
+                    let mut expanded = state_for_click.expanded_dirs.borrow_mut();
+                    if expanded.contains(&path) {
+                        expanded.remove(&path);
+                    } else {
+                        expanded.insert(path);
+                    }
+                    drop(expanded);
+                    refresh();
+                }
                 "file" => {
                     // Open inline if readable as UTF-8 and under 1 MB.
                     let open_inline = match std::fs::metadata(&path) {

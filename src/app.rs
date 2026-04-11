@@ -12,7 +12,7 @@
 //! boundary thin and easy to test.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -52,6 +52,12 @@ pub struct AppState {
     /// remaining entry. Not persisted — rebuilt from an empty state on
     /// each app launch.
     pub open_tabs: RefCell<Vec<Uuid>>,
+    /// Polish 17 — absolute paths of directories the user has expanded
+    /// in the Files tab tree. Passed to `file_tree::build_tree` on
+    /// each refresh so the flattened output contains the right
+    /// children. Keyed by absolute path so the set survives switching
+    /// across tasks that share overlapping subtrees.
+    pub expanded_dirs: RefCell<HashSet<PathBuf>>,
 }
 
 impl AppState {
@@ -80,6 +86,7 @@ impl AppState {
             sessions: RefCell::new(HashMap::new()),
             active_task: RefCell::new(None),
             open_tabs: RefCell::new(Vec::new()),
+            expanded_dirs: RefCell::new(HashSet::new()),
         })
     }
 
