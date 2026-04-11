@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use rusqlite::Connection;
 
 /// Current target schema version. Equals the number of migrations below.
-pub const CURRENT_VERSION: i64 = 4;
+pub const CURRENT_VERSION: i64 = 5;
 
 /// Each entry corresponds to one schema version. Index 0 is migration v0→v1,
 /// index 1 is v1→v2, etc. Each script must be idempotent in the sense that
@@ -140,6 +140,36 @@ const MIGRATIONS: &[&str] = &[
     // their first session, or Opencode/Bare which don't support resume).
     r#"
     ALTER TABLE tasks ADD COLUMN claude_session_id TEXT;
+    "#,
+    // v4 → v5: labels + task dependencies for Phase 4.
+    //
+    // `labels` holds the name/color definitions (13 Lanes-style presets +
+    // any user-created custom labels). `task_labels` is the many-to-many
+    // join. `task_dependencies` is an explicit directed edge: B depends
+    // on A means B cannot proceed until A is Done. Cycle detection is
+    // enforced in Rust via a recursive CTE at insert time, not via a
+    // SQLite constraint — SQLite has no way to express acyclicity.
+    r#"
+    CREATE TABLE IF NOT EXISTS labels (
+        id    TEXT PRIMARY KEY,        -- uuid
+        name  TEXT NOT NULL UNIQUE,
+        color TEXT NOT NULL             -- hex #rrggbb
+    );
+
+    CREATE TABLE IF NOT EXISTS task_labels (
+        task_id  TEXT NOT NULL REFERENCES tasks(id)  ON DELETE CASCADE,
+        label_id TEXT NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
+        PRIMARY KEY (task_id, label_id)
+    );
+    CREATE INDEX IF NOT EXISTS task_labels_label  ON task_labels(label_id);
+
+    CREATE TABLE IF NOT EXISTS task_dependencies (
+        task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        depends_on TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        PRIMARY KEY (task_id, depends_on),
+        CHECK (task_id <> depends_on)   -- no self-edges
+    );
+    CREATE INDEX IF NOT EXISTS task_dependencies_deps ON task_dependencies(depends_on);
     "#,
 ];
 
