@@ -251,6 +251,44 @@ fn main() -> Result<()> {
         }
     }
 
+    // Polish 25: notification toast helper. Wrapped in `Rc<dyn Fn>`
+    // so it can be cloned into the many callback closures that need
+    // to surface errors. A monotonic generation counter cancels
+    // older auto-dismiss timers when a newer toast lands.
+    let toast_generation: Rc<std::cell::Cell<u32>> = Rc::new(std::cell::Cell::new(0));
+    let show_toast: Rc<dyn Fn(&str, String)> = {
+        let weak = window.as_weak();
+        let gen_cell = toast_generation.clone();
+        Rc::new(move |kind: &str, msg: String| {
+            let Some(window) = weak.upgrade() else { return };
+            let my_gen = gen_cell.get().wrapping_add(1);
+            gen_cell.set(my_gen);
+            window.set_toast_kind(SharedString::from(kind));
+            window.set_toast_message(msg.into());
+            window.set_toast_visible(true);
+            // Schedule auto-dismiss after 3.2 s. We leak the Timer so
+            // it survives this closure call — Slint's runtime cleans
+            // up dropped timers itself, but the safest pattern here
+            // is to keep one strong reference alive via mem::forget.
+            let dismiss_weak = weak.clone();
+            let dismiss_gen = gen_cell.clone();
+            let timer = Box::new(Timer::default());
+            timer.start(
+                TimerMode::SingleShot,
+                Duration::from_millis(3200),
+                move || {
+                    if dismiss_gen.get() == my_gen {
+                        if let Some(w) = dismiss_weak.upgrade() {
+                            w.set_toast_visible(false);
+                        }
+                    }
+                },
+            );
+            // Outlive the closure call.
+            Box::leak(timer);
+        })
+    };
+
     // Refresh closure: re-query DB and rebuild every column model.
     //
     // Reads the current `filter-label-id` from the window — if set, only
@@ -695,11 +733,16 @@ fn main() -> Result<()> {
         // a row instantly.
         let state = state.clone();
         let refresh = refresh_kanban.clone();
+        let toast = show_toast.clone();
         window.on_create_task(move || {
             let count = state.list_tasks().map(|t| t.len()).unwrap_or(0) + 1;
             let title = format!("New task {count}");
-            if let Err(err) = state.create_task(title) {
-                tracing::error!(%err, "create_task failed");
+            match state.create_task(title.clone()) {
+                Ok(_) => toast("success", format!("Created “{title}”")),
+                Err(err) => {
+                    tracing::error!(%err, "create_task failed");
+                    toast("error", format!("Create failed: {err}"));
+                }
             }
             refresh();
         });
@@ -861,6 +904,7 @@ fn main() -> Result<()> {
         let state = state.clone();
         let weak = window.as_weak();
         let refresh = refresh_kanban.clone();
+        let toast = show_toast.clone();
         window.on_start_plan(move |id| {
             let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
             match state.start_session(uuid, StartMode::Plan) {
@@ -877,6 +921,7 @@ fn main() -> Result<()> {
                         // Jump to Terminal tab so the user sees the agent start.
                         window.set_active_right_tab("terminal".into());
                     }
+                    toast("success", "Plan session started".to_string());
                     refresh();
                 }
                 Err(err) => {
@@ -886,6 +931,7 @@ fn main() -> Result<()> {
                             SessionState::Error.as_str().into(),
                         );
                     }
+                    toast("error", format!("Plan failed: {err}"));
                 }
             }
         });
@@ -895,6 +941,7 @@ fn main() -> Result<()> {
         let state = state.clone();
         let weak = window.as_weak();
         let refresh = refresh_kanban.clone();
+        let toast = show_toast.clone();
         window.on_start_implement(move |id| {
             let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
             match state.start_session(uuid, StartMode::Implement) {
@@ -910,6 +957,7 @@ fn main() -> Result<()> {
                         }
                         window.set_active_right_tab("terminal".into());
                     }
+                    toast("success", "Implement session started".to_string());
                     refresh();
                 }
                 Err(err) => {
@@ -919,6 +967,7 @@ fn main() -> Result<()> {
                             SessionState::Error.as_str().into(),
                         );
                     }
+                    toast("error", format!("Implement failed: {err}"));
                 }
             }
         });
@@ -1082,6 +1131,7 @@ fn main() -> Result<()> {
         let weak = window.as_weak();
         let refresh = refresh_kanban.clone();
         let refresh_panels = refresh_active_panels.clone();
+        let toast = show_toast.clone();
         window.on_delete_task(move |id| {
             let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
             // Drop the live session if one exists — PtySession::drop
@@ -1089,8 +1139,10 @@ fn main() -> Result<()> {
             state.sessions.borrow_mut().remove(&uuid);
             if let Err(err) = crate::kanban::TaskStore::new(&state.db.conn).delete(uuid) {
                 tracing::warn!(%err, %uuid, "delete task failed");
+                toast("error", format!("Delete failed: {err}"));
                 return;
             }
+            toast("info", "Task deleted".to_string());
             // Clear active task if we just deleted it.
             let mut active = state.active_task.borrow_mut();
             if *active == Some(uuid) {

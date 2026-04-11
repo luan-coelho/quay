@@ -261,6 +261,56 @@ component KindChip inherits Rectangle {
     }
 }
 
+// Polish 25 — transient notification toast. Floats above the
+// status bar at the bottom of the window. Shows for ~3 s then
+// fades out via the `visible: bool` property (driven by a
+// Slint Timer in main.rs). Color stripe on the left edge keys
+// the message kind.
+component Toast inherits Rectangle {
+    in property <string> message;
+    in property <string> kind;  // "success" | "error" | "info"
+    in property <bool> visible-toast: false;
+
+    visible: visible-toast;
+    height: 32px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: kind == "error" ? Tokens.kind-bug
+                : kind == "success" ? Tokens.kind-enhancement
+                                     : Tokens.kind-feature;
+    background: #14161a;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 14px;
+        spacing: 10px;
+        alignment: start;
+
+        // Kind dot.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: kind == "error" ? Tokens.kind-bug
+                          : kind == "success" ? Tokens.kind-enhancement
+                                              : Tokens.kind-feature;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: message;
+                color: Tokens.text-primary;
+                font-size: 11px;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+}
+
 // Polish 20 — small circular avatar shown in the title bar (and
 // reusable for any future "user" / "agent" identity slot). The
 // initial defaults to "L" because Quay has no user system yet —
@@ -850,6 +900,14 @@ export component MainWindow inherits Window {
     // spinner stays in lockstep — same convention every CLI spinner
     // (cargo, npm, rustup, …) follows.
     in property <string> spinner-glyph: "⣾";
+
+    // Polish 25 — transient notification state. The Toast component
+    // at the bottom of the window reads these. A Slint Timer in
+    // main.rs (started by `show_toast`) clears `toast-visible` after
+    // ~3 s.
+    in-out property <string> toast-message: "";
+    in-out property <string> toast-kind: "info";
+    in-out property <bool> toast-visible: false;
 
     // Selection / context.
     in property <string> active-task-id: "";
@@ -2646,6 +2704,20 @@ export component MainWindow inherits Window {
                 }
             }
         }
+    }
+
+    // ── Polish 25: notification toast ───────────────────────────────────
+    // Floats above the status bar, anchored bottom-right with a small
+    // inset. Width is auto-fit via preferred-width on the inner
+    // HorizontalLayout — long messages elide via the Toast component's
+    // own Text overflow rule.
+    toast := Toast {
+        x: parent.width - self.width - 16px;
+        y: parent.height - status-bar-h - self.height - 12px;
+        width: 320px;
+        message: root.toast-message;
+        kind: root.toast-kind;
+        visible-toast: root.toast-visible;
     }
 
     // ── Status bar (Polish 13) ──────────────────────────────────────────
