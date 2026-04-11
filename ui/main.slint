@@ -958,6 +958,17 @@ export component MainWindow inherits Window {
     // existing modal escape branch).
     in-out property <bool> shortcuts-open: false;
 
+    // Polish 28 — true when every kanban model is empty (after the
+    // active label/project filters are applied in Rust). Drives the
+    // empty-state placeholder in the middle pane.
+    property <bool> kanban-empty:
+        root.tasks-backlog.length == 0
+        && root.tasks-planning.length == 0
+        && root.tasks-implementation.length == 0
+        && root.tasks-review.length == 0
+        && root.tasks-done.length == 0
+        && root.tasks-misc.length == 0;
+
     // Selection / context.
     in property <string> active-task-id: "";
     in property <string> active-task-display: "";
@@ -1431,8 +1442,44 @@ export component MainWindow inherits Window {
                 VerticalLayout {
                     spacing: 0px;
 
+                    // Polish 28 — friendly placeholder when every
+                    // section is empty (no tasks at all, or filter
+                    // returned zero results). Centered glyph + title +
+                    // hint text.
+                    if root.kanban-empty: VerticalLayout {
+                        padding-top: 80px;
+                        padding-left: 24px;
+                        padding-right: 24px;
+                        spacing: 12px;
+                        alignment: start;
+
+                        Text {
+                            text: "✦";
+                            color: Tokens.text-muted;
+                            font-size: 56px;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: root.filter-label-id == "" && root.active-project-id == ""
+                                ? "No tasks yet"
+                                : "No tasks match the current filter";
+                            color: Tokens.text-secondary;
+                            font-size: 14px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                        }
+                        Text {
+                            text: root.filter-label-id == "" && root.active-project-id == ""
+                                ? "Press ⌘N to create your first task"
+                                : "Click the active filter chip again to clear it";
+                            color: Tokens.text-tertiary;
+                            font-size: 11px;
+                            horizontal-alignment: center;
+                        }
+                    }
+
                     // Polish 21: Backlog — always visible.
-                    VerticalLayout {
+                    if !root.kanban-empty: VerticalLayout {
                         spacing: 0px;
                         SectionHeader { label: "Backlog"; count: root.tasks-backlog.length; }
                         for task in root.tasks-backlog: CardRow {
@@ -1450,8 +1497,10 @@ export component MainWindow inherits Window {
                     // render contiguously — same visual as one combined
                     // model, with zero schema/Rust changes and a single
                     // source of truth (still backed by the original two
-                    // VecModels). Always visible.
-                    VerticalLayout {
+                    // VecModels). Always visible — except when the
+                    // whole kanban is empty (Polish 28), in which case
+                    // the empty-state placeholder takes over.
+                    if !root.kanban-empty: VerticalLayout {
                         spacing: 0px;
                         SectionHeader {
                             label: "Planning & Implementation";
