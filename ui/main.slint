@@ -694,6 +694,9 @@ export component MainWindow inherits Window {
     callback create-project();
     callback project-clicked(string);   // project id
     callback submit-new-task();         // actually inserts the task from the modal fields
+    callback add-quick-action();        // opens inline editor with blank row
+    callback delete-quick-action(string); // by id
+    callback update-quick-action(string, string, string, string); // id, name, kind, body
     // text, ctrl, alt, shift, meta. Meta added in Polish 6 for
     // Cmd-based shortcuts on macOS.
     callback key-pressed(string, bool, bool, bool, bool);
@@ -2468,66 +2471,135 @@ export component MainWindow inherits Window {
                         color: Tokens.text-tertiary;
                         font-size: 9px;
                         font-weight: 700;
+                        vertical-alignment: center;
                     }
                     Rectangle { horizontal-stretch: 1; height: 1px; }
                     Text {
                         text: root.settings-quick-actions.length;
                         color: Tokens.text-tertiary;
                         font-size: 9px;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        width: 20px;
+                        height: 16px;
+                        clicked => { root.add-quick-action(); }
+                        Rectangle {
+                            background: parent.has-hover ? #1f2331 : transparent;
+                            border-radius: 3px;
+                            border-width: 1px;
+                            border-color: Tokens.border-soft;
+                            Text {
+                                text: "+";
+                                color: Tokens.text-secondary;
+                                font-size: 11px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
                     }
                 }
 
                 ScrollView {
-                    height: 160px;
+                    height: 180px;
                     VerticalLayout {
                         spacing: 4px;
                         for qa in root.settings-quick-actions: Rectangle {
-                            height: 28px;
+                            height: 48px;
                             background: #0e0f13;
                             border-radius: 4px;
                             border-width: 1px;
                             border-color: Tokens.border-soft;
-                            HorizontalLayout {
+
+                            VerticalLayout {
+                                padding: 6px;
                                 padding-left: 10px;
                                 padding-right: 10px;
-                                spacing: 8px;
-                                alignment: start;
-                                VerticalLayout {
-                                    alignment: center;
-                                    Text {
-                                        text: qa.shortcut;
-                                        color: Tokens.text-tertiary;
-                                        font-size: 10px;
-                                        font-family: "JetBrains Mono";
-                                    }
-                                }
-                                VerticalLayout {
-                                    alignment: center;
-                                    horizontal-stretch: 1;
-                                    Text {
-                                        text: qa.name;
-                                        color: Tokens.text-primary;
-                                        font-size: 11px;
-                                        overflow: elide;
-                                    }
-                                }
-                                VerticalLayout {
-                                    alignment: center;
-                                    Rectangle {
-                                        width: kind-text.preferred-width + 10px;
-                                        height: 14px;
-                                        border-radius: 7px;
-                                        border-width: 1px;
-                                        border-color: Tokens.border-soft;
-                                        kind-text := Text {
-                                            text: qa.kind;
-                                            color: qa.kind == "claude" ? Tokens.kind-feature : Tokens.kind-enhancement;
+                                spacing: 2px;
+
+                                // Top row: shortcut + name input + kind toggle + delete.
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+                                    VerticalLayout {
+                                        alignment: center;
+                                        width: 34px;
+                                        Text {
+                                            text: qa.shortcut == "" ? "—" : qa.shortcut;
+                                            color: Tokens.text-tertiary;
                                             font-size: 9px;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
-                                            width: parent.width;
-                                            height: parent.height;
+                                            font-family: "JetBrains Mono";
                                         }
+                                    }
+                                    qa-name := LineEdit {
+                                        horizontal-stretch: 1;
+                                        text: qa.name;
+                                        font-size: 11px;
+                                        placeholder-text: "name";
+                                        edited(t) => {
+                                            root.update-quick-action(qa.id, t, qa.kind, qa-body.text);
+                                        }
+                                    }
+
+                                    // Kind toggle: click to flip claude ↔ shell.
+                                    TouchArea {
+                                        width: 56px;
+                                        height: 20px;
+                                        clicked => {
+                                            root.update-quick-action(
+                                                qa.id,
+                                                qa-name.text,
+                                                qa.kind == "claude" ? "shell" : "claude",
+                                                qa-body.text,
+                                            );
+                                        }
+                                        Rectangle {
+                                            background: parent.has-hover ? #1f2331 : transparent;
+                                            border-radius: 3px;
+                                            border-width: 1px;
+                                            border-color: Tokens.border-soft;
+                                            Text {
+                                                text: qa.kind;
+                                                color: qa.kind == "claude" ? Tokens.kind-feature : Tokens.kind-enhancement;
+                                                font-size: 9px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                                width: parent.width;
+                                                height: parent.height;
+                                            }
+                                        }
+                                    }
+
+                                    // Delete button.
+                                    TouchArea {
+                                        width: 20px;
+                                        height: 20px;
+                                        clicked => { root.delete-quick-action(qa.id); }
+                                        Rectangle {
+                                            background: parent.has-hover ? rgba(248, 113, 113, 15%) : transparent;
+                                            border-radius: 3px;
+                                            Text {
+                                                text: "×";
+                                                color: Tokens.kind-bug;
+                                                font-size: 12px;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                                width: parent.width;
+                                                height: parent.height;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Bottom row: body input (prompt or shell command).
+                                qa-body := LineEdit {
+                                    text: qa.body;
+                                    font-size: 10px;
+                                    placeholder-text: qa.kind == "claude" ? "prompt text…" : "shell command…";
+                                    edited(t) => {
+                                        root.update-quick-action(qa.id, qa-name.text, qa.kind, t);
                                     }
                                 }
                             }

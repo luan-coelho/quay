@@ -1067,6 +1067,68 @@ fn main() -> Result<()> {
             }
         });
     }
+    // ── Polish 11 Quick Actions CRUD ───────────────────────────────────
+    {
+        // Add a new quick action with sensible defaults. Position is set
+        // to the bottom of the list so it picks up the next free Cmd+Alt
+        // slot. Refreshes the Settings list so the new row appears.
+        let state = state.clone();
+        let refresh_qa = refresh_settings_qa.clone();
+        window.on_add_quick_action(move || {
+            let store = crate::quick_actions::QuickActionStore::new(&state.db.conn);
+            let existing = store.list_all().unwrap_or_default();
+            let position = existing.iter().map(|a| a.position).max().unwrap_or(-1) + 1;
+            let action = crate::quick_actions::QuickAction::new(
+                "New action",
+                crate::quick_actions::QuickActionKind::Claude,
+                "",
+                crate::quick_actions::QuickActionCategory::General,
+                position,
+            );
+            if let Err(err) = store.insert(&action) {
+                tracing::warn!(%err, "add_quick_action insert failed");
+                return;
+            }
+            refresh_qa();
+        });
+    }
+    {
+        let state = state.clone();
+        let refresh_qa = refresh_settings_qa.clone();
+        window.on_delete_quick_action(move |id| {
+            let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
+            if let Err(err) = crate::quick_actions::QuickActionStore::new(&state.db.conn).delete(uuid) {
+                tracing::warn!(%err, "delete_quick_action failed");
+                return;
+            }
+            refresh_qa();
+        });
+    }
+    {
+        // Inline edit from the Settings row: name / kind / body. Loads
+        // the row, mutates the requested fields, and writes back. Fires
+        // on every LineEdit keystroke so the DB stays in sync.
+        let state = state.clone();
+        window.on_update_quick_action(move |id, name, kind, body| {
+            let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
+            let store = crate::quick_actions::QuickActionStore::new(&state.db.conn);
+            let Ok(list) = store.list_all() else { return };
+            let Some(mut action) = list.into_iter().find(|a| a.id == uuid) else { return };
+            action.name = name.to_string();
+            action.body = body.to_string();
+            action.kind = match kind.as_str() {
+                "shell" => crate::quick_actions::QuickActionKind::Shell,
+                _ => crate::quick_actions::QuickActionKind::Claude,
+            };
+            if let Err(err) = store.update(&action) {
+                tracing::warn!(%err, "update_quick_action failed");
+            }
+            // NB: we don't refresh_qa here because the current
+            // LineEdit is already showing the updated text. Refreshing
+            // would replace the model mid-edit and lose focus.
+        });
+    }
+
     {
         let state = state.clone();
         window.on_settings_base_branch_changed(move |new_value| {
