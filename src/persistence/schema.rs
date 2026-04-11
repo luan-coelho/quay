@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use rusqlite::Connection;
 
 /// Current target schema version. Equals the number of migrations below.
-pub const CURRENT_VERSION: i64 = 5;
+pub const CURRENT_VERSION: i64 = 6;
 
 /// Each entry corresponds to one schema version. Index 0 is migration v0→v1,
 /// index 1 is v1→v2, etc. Each script must be idempotent in the sense that
@@ -170,6 +170,36 @@ const MIGRATIONS: &[&str] = &[
         CHECK (task_id <> depends_on)   -- no self-edges
     );
     CREATE INDEX IF NOT EXISTS task_dependencies_deps ON task_dependencies(depends_on);
+    "#,
+    // v5 → v6: user settings (KV) + custom quick actions. Phase 5.
+    //
+    // `settings` is a simple key→value store. Everything is stored as
+    // TEXT; complex values (JSON blobs, structured config) round-trip via
+    // serde_json at the `settings::Settings` layer.
+    //
+    // `quick_actions` holds the user's custom shortcut commands. `kind`
+    // distinguishes Claude-type (inject a prompt into the active session)
+    // from Shell-type (run a shell command in the task's cwd). `position`
+    // keeps the list ordering stable so Cmd+Alt+N always targets the same
+    // action across runs.
+    r#"
+    CREATE TABLE IF NOT EXISTS settings (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS quick_actions (
+        id        TEXT PRIMARY KEY,
+        name      TEXT NOT NULL,
+        kind      TEXT NOT NULL CHECK (kind IN ('claude', 'shell')),
+        body      TEXT NOT NULL,
+        category  TEXT NOT NULL DEFAULT 'general'
+                  CHECK (category IN ('general', 'worktree')),
+        position  INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS quick_actions_position ON quick_actions(position);
     "#,
 ];
 

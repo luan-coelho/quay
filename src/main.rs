@@ -5,6 +5,8 @@ mod app;
 mod git;
 mod kanban;
 mod persistence;
+mod quick_actions;
+mod settings;
 mod terminal;
 mod util;
 
