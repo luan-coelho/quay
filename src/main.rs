@@ -214,6 +214,10 @@ fn main() -> Result<()> {
     window.set_editor_file_content("".into());
     window.set_editor_file_dirty(false);
     window.set_editor_syntax_name("Plain Text".into());
+    // Polish 5: coloured preview model for the syntect view.
+    let editor_lines_model = Rc::new(VecModel::<HighlightedLineData>::default());
+    window.set_editor_highlighted_lines(ModelRc::from(editor_lines_model.clone()));
+    window.set_editor_line_count(0);
 
     // Settings modal state — initial values loaded from SQLite.
     let settings_qa_model = Rc::new(VecModel::<QuickActionRowData>::default());
@@ -962,6 +966,7 @@ fn main() -> Result<()> {
         let refresh = refresh_files.clone();
         let weak = window.as_weak();
         let buffer = editor_buffer.clone();
+        let editor_lines_clone = editor_lines_model.clone();
         window.on_file_entry_clicked(move |path_str, kind_str| {
             let path = PathBuf::from(path_str.as_str());
             match kind_str.as_str() {
@@ -984,8 +989,11 @@ fn main() -> Result<()> {
                                         buf.syntax_name.clone().into(),
                                     );
                                     w.set_editor_file_dirty(false);
+                                    w.set_editor_line_count(buf.line_count() as i32);
                                     w.set_editor_open(true);
                                 }
+                                // Polish 5: populate the coloured preview.
+                                rebuild_editor_highlight(&buf, &editor_lines_clone);
                                 *buffer.borrow_mut() = Some(buf);
                                 return;
                             }
@@ -1017,6 +1025,7 @@ fn main() -> Result<()> {
     {
         let buffer = editor_buffer.clone();
         let weak = window.as_weak();
+        let lines_model = editor_lines_model.clone();
         window.on_editor_save(move || {
             let mut borrow = buffer.borrow_mut();
             let Some(buf) = borrow.as_mut() else { return };
@@ -1024,7 +1033,11 @@ fn main() -> Result<()> {
                 Ok(()) => {
                     if let Some(w) = weak.upgrade() {
                         w.set_editor_file_dirty(false);
+                        w.set_editor_line_count(buf.line_count() as i32);
                     }
+                    // Polish 5: refresh the coloured preview to reflect
+                    // the on-disk state.
+                    rebuild_editor_highlight(buf, &lines_model);
                     tracing::info!(
                         path = %buf.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default(),
                         "editor save ok"
@@ -1271,6 +1284,40 @@ fn parse_hex_rgb(hex: &str) -> Option<(u8, u8, u8)> {
     let g = u8::from_str_radix(&s[2..4], 16).ok()?;
     let b = u8::from_str_radix(&s[4..6], 16).ok()?;
     Some((r, g, b))
+}
+
+/// Polish 5: rebuild the `editor-highlighted-lines` VecModel from the
+/// current buffer. Caps at `MAX_PREVIEW_LINES` so huge files don't
+/// stall the UI. Called on open and on save.
+const MAX_PREVIEW_LINES: usize = 500;
+
+fn rebuild_editor_highlight(
+    buffer: &EditorBuffer,
+    model: &Rc<VecModel<HighlightedLineData>>,
+) {
+    while model.row_count() > 0 {
+        model.remove(model.row_count() - 1);
+    }
+    let total = buffer.line_count();
+    let render_count = total.min(MAX_PREVIEW_LINES);
+    for i in 0..render_count {
+        let spans = buffer.highlight_line(i);
+        let spans_model = Rc::new(VecModel::<HlSpanData>::default());
+        for s in spans {
+            spans_model.push(HlSpanData {
+                text: SharedString::from(s.text),
+                color_r: s.r as i32,
+                color_g: s.g as i32,
+                color_b: s.b as i32,
+                bold: s.bold,
+                italic: s.italic,
+            });
+        }
+        model.push(HighlightedLineData {
+            line_no: (i + 1) as i32,
+            spans: ModelRc::from(spans_model),
+        });
+    }
 }
 
 /// Heuristic: is this path likely a binary file the inline editor

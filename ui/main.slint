@@ -74,6 +74,20 @@ export struct FileEntryData {
     kind: string,        // "directory" | "file" | "parent"
 }
 
+export struct HlSpanData {
+    text: string,
+    color-r: int,
+    color-g: int,
+    color-b: int,
+    bold: bool,
+    italic: bool,
+}
+
+export struct HighlightedLineData {
+    line-no: int,
+    spans: [HlSpanData],
+}
+
 export struct TaskCardData {
     id: string,           // UUID for callbacks
     display-id: int,      // sequential numeric ID for display (#1, #2, …)
@@ -613,6 +627,10 @@ export component MainWindow inherits Window {
     in-out property <string> editor-file-content: "";
     in property <string> editor-syntax-name: "Plain Text";
     in property <bool> editor-file-dirty: false;
+    // Polish 5: syntect-coloured read-only preview of the last saved
+    // state of the file, rendered above the editable TextEdit.
+    in property <[HighlightedLineData]> editor-highlighted-lines;
+    in property <int> editor-line-count: 0;
 
     // Description tab: labels attached to the active task + dependencies.
     in property <[LabelPillData]> active-task-labels;
@@ -1817,16 +1835,65 @@ export component MainWindow inherits Window {
 
                 Rectangle { height: 1px; background: Tokens.border-very-soft; }
 
-                // The actual text area. Uses Slint's built-in TextEdit —
-                // multi-line, wraps, integrates with keyboard. Bound
-                // two-way: on edit we call back into Rust to update the
-                // EditorBuffer and mark it dirty.
+                // ── Syntect-coloured read-only preview ──────────────
+                // Shows the last saved state of the file with per-token
+                // colouring. Updates on save so it always reflects
+                // disk state.
+                Rectangle {
+                    height: 220px;
+                    background: #0a0b0e;
+                    border-radius: 4px;
+                    border-width: 1px;
+                    border-color: Tokens.border-soft;
+                    clip: true;
+
+                    ScrollView {
+                        VerticalLayout {
+                            padding: 8px;
+                            spacing: 0px;
+                            if root.editor-line-count == 0: Text {
+                                text: "(empty file)";
+                                color: Tokens.text-tertiary;
+                                font-size: 10px;
+                                font-family: "JetBrains Mono";
+                            }
+                            for line in root.editor-highlighted-lines: HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+                                Text {
+                                    text: line.line-no;
+                                    color: Tokens.text-muted;
+                                    font-size: 10px;
+                                    font-family: "JetBrains Mono";
+                                    width: 32px;
+                                    horizontal-alignment: right;
+                                }
+                                HorizontalLayout {
+                                    spacing: 0px;
+                                    alignment: start;
+                                    horizontal-stretch: 1;
+                                    for span in line.spans: Text {
+                                        text: span.text;
+                                        color: rgb(span.color-r, span.color-g, span.color-b);
+                                        font-size: 11px;
+                                        font-family: "JetBrains Mono";
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Editable TextEdit ───────────────────────────────
+                // Plain (non-coloured) text editing surface. Slint's
+                // built-in TextEdit doesn't support per-token colour so
+                // editing happens in uniform text; the preview above
+                // shows the colours for the last saved state.
                 TextEdit {
                     text: root.editor-file-content;
                     wrap: no-wrap;
                     horizontal-stretch: 1;
                     vertical-stretch: 1;
-                    font-family: "JetBrains Mono";
                     font-size: 12px;
                     edited => {
                         root.editor-content-changed(self.text);
@@ -1834,7 +1901,7 @@ export component MainWindow inherits Window {
                 }
 
                 Text {
-                    text: "Slint's built-in text editor. Press save to persist. Syntax highlighting will be enriched in a follow-up iteration.";
+                    text: "Top pane: syntect-coloured preview of the last saved state. Bottom pane: plain editable text. Save to refresh the preview.";
                     color: Tokens.text-tertiary;
                     font-size: 9px;
                 }
