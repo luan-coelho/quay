@@ -446,10 +446,14 @@ export component MainWindow inherits Window {
     // Session state for the active task: one of idle/busy/awaiting/stopped/exited/error.
     in property <string> active-task-session-state: "idle";
 
-    // Kanban data.
+    // Kanban data — one VecModel per column. Phase 2 expanded this from
+    // 3 combined sections to 6 (matching Lanes' workflow).
     in property <[TaskCardData]> tasks-backlog;
     in property <[TaskCardData]> tasks-planning;
+    in property <[TaskCardData]> tasks-implementation;
+    in property <[TaskCardData]> tasks-review;
     in property <[TaskCardData]> tasks-done;
+    in property <[TaskCardData]> tasks-misc;
 
     in property <[MenuItemData]> menu-items;
     in property <[ProjectData]> projects;
@@ -668,12 +672,29 @@ export component MainWindow inherits Window {
                         move-forward => { root.move-task-forward(task.id); }
                     }
 
-                    // PLANNING & IMPLEMENTATION
-                    SectionHeader {
-                        label: "Planning & Implementation";
-                        count: root.tasks-planning.length;
-                    }
+                    // PLANNING
+                    SectionHeader { label: "Planning"; count: root.tasks-planning.length; }
                     for task in root.tasks-planning: CardRow {
+                        task: task;
+                        selected: task.id == root.active-task-id;
+                        clicked => { root.select-task(task.id); }
+                        move-back => { root.move-task-back(task.id); }
+                        move-forward => { root.move-task-forward(task.id); }
+                    }
+
+                    // IMPLEMENTATION
+                    SectionHeader { label: "Implementation"; count: root.tasks-implementation.length; }
+                    for task in root.tasks-implementation: CardRow {
+                        task: task;
+                        selected: task.id == root.active-task-id;
+                        clicked => { root.select-task(task.id); }
+                        move-back => { root.move-task-back(task.id); }
+                        move-forward => { root.move-task-forward(task.id); }
+                    }
+
+                    // REVIEW
+                    SectionHeader { label: "Review"; count: root.tasks-review.length; }
+                    for task in root.tasks-review: CardRow {
                         task: task;
                         selected: task.id == root.active-task-id;
                         clicked => { root.select-task(task.id); }
@@ -684,6 +705,16 @@ export component MainWindow inherits Window {
                     // DONE
                     SectionHeader { label: "Done"; count: root.tasks-done.length; }
                     for task in root.tasks-done: CardRow {
+                        task: task;
+                        selected: task.id == root.active-task-id;
+                        clicked => { root.select-task(task.id); }
+                        move-back => { root.move-task-back(task.id); }
+                        move-forward => { root.move-task-forward(task.id); }
+                    }
+
+                    // MISC — sits outside the linear workflow.
+                    SectionHeader { label: "Misc"; count: root.tasks-misc.length; }
+                    for task in root.tasks-misc: CardRow {
                         task: task;
                         selected: task.id == root.active-task-id;
                         clicked => { root.select-task(task.id); }

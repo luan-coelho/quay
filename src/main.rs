@@ -107,20 +107,30 @@ fn main() -> Result<()> {
     }
     window.set_projects(ModelRc::from(projects_model));
 
-    // Kanban column models.
+    // Kanban column models — one VecModel per TaskState (6 total after
+    // Phase 2's Review + Misc addition).
     let backlog_model = Rc::new(VecModel::<TaskCardData>::default());
     let planning_model = Rc::new(VecModel::<TaskCardData>::default());
+    let implementation_model = Rc::new(VecModel::<TaskCardData>::default());
+    let review_model = Rc::new(VecModel::<TaskCardData>::default());
     let done_model = Rc::new(VecModel::<TaskCardData>::default());
+    let misc_model = Rc::new(VecModel::<TaskCardData>::default());
     window.set_tasks_backlog(ModelRc::from(backlog_model.clone()));
     window.set_tasks_planning(ModelRc::from(planning_model.clone()));
+    window.set_tasks_implementation(ModelRc::from(implementation_model.clone()));
+    window.set_tasks_review(ModelRc::from(review_model.clone()));
     window.set_tasks_done(ModelRc::from(done_model.clone()));
+    window.set_tasks_misc(ModelRc::from(misc_model.clone()));
 
     // Refresh closure: re-query DB and rebuild every column model.
     let refresh_kanban = {
         let state = state.clone();
         let backlog = backlog_model.clone();
         let planning = planning_model.clone();
+        let implementation = implementation_model.clone();
+        let review = review_model.clone();
         let done = done_model.clone();
+        let misc = misc_model.clone();
         move || {
             let tasks = match state.list_tasks() {
                 Ok(t) => t,
@@ -139,12 +149,14 @@ fn main() -> Result<()> {
                 display_ids.insert(t.id, (i + 1) as i32);
             }
 
-            let active_id = state.active_task.borrow().clone();
-            let active_uuid = active_id;
+            let active_uuid = *state.active_task.borrow();
 
             let mut backlog_v = Vec::new();
             let mut planning_v = Vec::new();
+            let mut implementation_v = Vec::new();
+            let mut review_v = Vec::new();
             let mut done_v = Vec::new();
+            let mut misc_v = Vec::new();
 
             for task in &tasks {
                 let display_id = display_ids.get(&task.id).copied().unwrap_or(0);
@@ -152,14 +164,20 @@ fn main() -> Result<()> {
                 let card = task_to_card(task, display_id, running);
                 match task.state {
                     TaskState::Backlog => backlog_v.push(card),
-                    TaskState::Planning | TaskState::Implementation => planning_v.push(card),
+                    TaskState::Planning => planning_v.push(card),
+                    TaskState::Implementation => implementation_v.push(card),
+                    TaskState::Review => review_v.push(card),
                     TaskState::Done => done_v.push(card),
+                    TaskState::Misc => misc_v.push(card),
                 }
             }
 
             replace_model(&backlog, backlog_v);
             replace_model(&planning, planning_v);
+            replace_model(&implementation, implementation_v);
+            replace_model(&review, review_v);
             replace_model(&done, done_v);
+            replace_model(&misc, misc_v);
         }
     };
     refresh_kanban();

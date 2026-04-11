@@ -90,25 +90,17 @@ impl AppState {
         Ok(task)
     }
 
-    /// Move a task one column forward (Backlog → Planning → Implementation → Done).
-    /// No-op when already in the rightmost column.
+    /// Move a task one column forward along the primary workflow
+    /// (Backlog → Planning → Implementation → Review → Done).
+    /// No-op when already in Done or when the task sits in Misc (which is
+    /// outside the linear flow).
     pub fn move_forward(&self, id: Uuid) -> Result<()> {
-        self.move_state(id, |s| match s {
-            TaskState::Backlog => Some(TaskState::Planning),
-            TaskState::Planning => Some(TaskState::Implementation),
-            TaskState::Implementation => Some(TaskState::Done),
-            TaskState::Done => None,
-        })
+        self.move_state(id, |s| s.next())
     }
 
-    /// Move a task one column backward.
+    /// Move a task one column backward along the primary workflow.
     pub fn move_backward(&self, id: Uuid) -> Result<()> {
-        self.move_state(id, |s| match s {
-            TaskState::Backlog => None,
-            TaskState::Planning => Some(TaskState::Backlog),
-            TaskState::Implementation => Some(TaskState::Planning),
-            TaskState::Done => Some(TaskState::Implementation),
-        })
+        self.move_state(id, |s| s.prev())
     }
 
     fn move_state(

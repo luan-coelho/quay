@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use rusqlite::Connection;
 
 /// Current target schema version. Equals the number of migrations below.
-pub const CURRENT_VERSION: i64 = 2;
+pub const CURRENT_VERSION: i64 = 3;
 
 /// Each entry corresponds to one schema version. Index 0 is migration v0→v1,
 /// index 1 is v1→v2, etc. Each script must be idempotent in the sense that
@@ -80,10 +80,70 @@ const MIGRATIONS: &[&str] = &[
 
     ALTER TABLE tasks ADD COLUMN process_pid INTEGER;
     "#,
+    // v2 → v3: expand the `state` CHECK constraint to include Review and
+    // Misc so the kanban can match Lanes' 6-column workflow.
+    //
+    // SQLite cannot ALTER an existing CHECK constraint, so we follow the
+    // standard 6-step table recreate pattern: create a new table with the
+    // updated constraint, copy data over with an explicit column list,
+    // drop the old table, rename, recreate indexes. `run_migrations`
+    // disables `foreign_keys` around the savepoint so dropping the
+    // referenced `tasks` table does not trip the FK check from `sessions`.
+    r#"
+    CREATE TABLE tasks_v3 (
+        id                TEXT PRIMARY KEY,
+        title             TEXT NOT NULL,
+        description       TEXT,
+        instructions      TEXT,
+        state             TEXT NOT NULL
+                              CHECK (state IN ('backlog','planning','implementation','review','done','misc')),
+        repo_path         TEXT NOT NULL,
+        worktree_path     TEXT,
+        branch_name       TEXT,
+        agent_kind        TEXT NOT NULL,
+        cli_selection     TEXT NOT NULL DEFAULT 'claude'
+                              CHECK (cli_selection IN ('claude','opencode','bare')),
+        start_mode        TEXT
+                              CHECK (start_mode IN ('plan','implement')),
+        worktree_strategy TEXT NOT NULL DEFAULT 'create'
+                              CHECK (worktree_strategy IN ('create','none','select')),
+        session_state     TEXT NOT NULL DEFAULT 'idle'
+                              CHECK (session_state IN ('idle','busy','awaiting','stopped','exited','error')),
+        process_pid       INTEGER,
+        position          INTEGER NOT NULL,
+        created_at        INTEGER NOT NULL,
+        updated_at        INTEGER NOT NULL
+    );
+
+    INSERT INTO tasks_v3 (
+        id, title, description, instructions, state, repo_path,
+        worktree_path, branch_name, agent_kind, cli_selection, start_mode,
+        worktree_strategy, session_state, process_pid, position,
+        created_at, updated_at
+    )
+    SELECT
+        id, title, description, instructions, state, repo_path,
+        worktree_path, branch_name, agent_kind, cli_selection, start_mode,
+        worktree_strategy, session_state, process_pid, position,
+        created_at, updated_at
+    FROM tasks;
+
+    DROP TABLE tasks;
+    ALTER TABLE tasks_v3 RENAME TO tasks;
+
+    CREATE INDEX IF NOT EXISTS tasks_state_position
+        ON tasks(state, position);
+    "#,
 ];
 
 /// Bring the database up to `CURRENT_VERSION`, applying any pending migrations
 /// in order. Idempotent — calling it on an already-migrated DB is a no-op.
+///
+/// Foreign key enforcement is temporarily disabled around the savepoint
+/// because some migrations (e.g. v3) recreate the `tasks` table, which
+/// would otherwise trip the FK check from `sessions.task_id`. The pragma
+/// is re-enabled unconditionally at the end so startup always leaves the
+/// connection in the same state regardless of success/failure.
 pub fn run_migrations(conn: &Connection) -> Result<()> {
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)",
@@ -103,45 +163,55 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         return Ok(());
     }
 
-    let tx_conn = conn;
+    // PRAGMA foreign_keys only takes effect OUTSIDE any active transaction
+    // or savepoint, so we must flip it before starting the savepoint.
+    conn.execute_batch("PRAGMA foreign_keys = OFF;")?;
+
+    let result = migrate_inner(conn, current);
+
+    // Always re-enable FK enforcement, even if the migration failed. This
+    // leaves the connection in the expected steady state so subsequent
+    // queries still enforce referential integrity.
+    if let Err(err) = conn.execute_batch("PRAGMA foreign_keys = ON;") {
+        tracing::warn!(%err, "failed to re-enable foreign_keys after migration");
+    }
+
+    result
+}
+
+fn migrate_inner(conn: &Connection, current: i64) -> Result<()> {
     let savepoint_name = "quay_migrate";
-    tx_conn.execute_batch(&format!("SAVEPOINT {savepoint_name};"))?;
+    conn.execute_batch(&format!("SAVEPOINT {savepoint_name};"))?;
 
     let result = (|| -> Result<()> {
         for (idx, sql) in MIGRATIONS.iter().enumerate() {
             let target = (idx + 1) as i64;
             if target > current {
-                tx_conn
-                    .execute_batch(sql)
+                conn.execute_batch(sql)
                     .with_context(|| format!("apply migration v{target}"))?;
             }
         }
 
-        tx_conn
-            .execute("DELETE FROM schema_version", [])
+        conn.execute("DELETE FROM schema_version", [])
             .context("clear schema_version row")?;
-        tx_conn
-            .execute(
-                "INSERT INTO schema_version (version) VALUES (?1)",
-                rusqlite::params![CURRENT_VERSION],
-            )
-            .context("write schema_version row")?;
+        conn.execute(
+            "INSERT INTO schema_version (version) VALUES (?1)",
+            rusqlite::params![CURRENT_VERSION],
+        )
+        .context("write schema_version row")?;
 
         Ok(())
     })();
 
     match result {
         Ok(()) => {
-            tx_conn.execute_batch(&format!("RELEASE {savepoint_name};"))?;
-            tracing::info!(
-                version = CURRENT_VERSION,
-                "schema migrated"
-            );
+            conn.execute_batch(&format!("RELEASE {savepoint_name};"))?;
+            tracing::info!(version = CURRENT_VERSION, "schema migrated");
             Ok(())
         }
         Err(e) => {
-            let _ = tx_conn.execute_batch(&format!("ROLLBACK TO {savepoint_name};"));
-            let _ = tx_conn.execute_batch(&format!("RELEASE {savepoint_name};"));
+            let _ = conn.execute_batch(&format!("ROLLBACK TO {savepoint_name};"));
+            let _ = conn.execute_batch(&format!("RELEASE {savepoint_name};"));
             Err(e)
         }
     }
@@ -281,10 +351,121 @@ mod tests {
         assert!(result.is_err(), "CHECK should reject unknown cli_selection");
     }
 
-    /// Simulate a v1 database upgrading to v2 — existing rows get the defaults
-    /// on the newly added NOT NULL columns.
     #[test]
-    fn migration_v1_to_v2_preserves_existing_rows() {
+    fn migration_v3_allows_review_and_misc_states() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        for state in ["backlog", "planning", "implementation", "review", "done", "misc"] {
+            let result = conn.execute(
+                "INSERT INTO tasks (id, title, state, repo_path, agent_kind, position, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, '/tmp', 'claude', 0, 0, 0)",
+                rusqlite::params![state, state, state],
+            );
+            assert!(
+                result.is_ok(),
+                "state {state:?} should be accepted after v3 migration: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn migration_v3_rejects_unknown_state_after_upgrade() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        let result = conn.execute(
+            "INSERT INTO tasks (id, title, state, repo_path, agent_kind, position, created_at, updated_at)
+             VALUES ('x', 'x', 'archived', '/tmp', 'claude', 0, 0, 0)",
+            [],
+        );
+        assert!(result.is_err(), "'archived' is still not a valid state");
+    }
+
+    /// Going v1 → v3 in one shot: check that the table recreate in v3
+    /// preserves the v2 rows we inserted along the way.
+    #[test]
+    fn migration_v1_to_v3_preserves_data() {
+        let conn = Connection::open_in_memory().unwrap();
+
+        // Set up an explicit v1 database with a row.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)",
+            [],
+        )
+        .unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        conn.execute("INSERT INTO schema_version (version) VALUES (1)", [])
+            .unwrap();
+        conn.execute(
+            "INSERT INTO tasks (id, title, state, repo_path, agent_kind, position, created_at, updated_at)
+             VALUES ('legacy', 'Legacy v1 task', 'planning', '/tmp', 'claude', 3, 100, 200)",
+            [],
+        )
+        .unwrap();
+
+        // Jump to head.
+        run_migrations(&conn).unwrap();
+
+        let v: i64 = conn
+            .query_row("SELECT version FROM schema_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(v, 3);
+
+        // Legacy row survived the v3 table recreate.
+        let (title, state, position, cli_selection, session_state): (String, String, i64, String, String) =
+            conn.query_row(
+                "SELECT title, state, position, cli_selection, session_state
+                 FROM tasks WHERE id = 'legacy'",
+                [],
+                |row| {
+                    Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+                },
+            )
+            .unwrap();
+        assert_eq!(title, "Legacy v1 task");
+        assert_eq!(state, "planning");
+        assert_eq!(position, 3);
+        assert_eq!(cli_selection, "claude");
+        assert_eq!(session_state, "idle");
+    }
+
+    #[test]
+    fn migration_v3_cascades_preserved_for_sessions() {
+        // After the v3 table recreate, the sessions.task_id -> tasks.id
+        // foreign key with ON DELETE CASCADE should still be functional:
+        // deleting a task removes its sessions.
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+
+        conn.execute(
+            "INSERT INTO tasks (id, title, state, repo_path, agent_kind, position, created_at, updated_at)
+             VALUES ('t1', 'T', 'backlog', '/tmp', 'claude', 0, 0, 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO sessions (id, task_id, pty_log_path, cols, rows, cwd, command, env_json, started_at)
+             VALUES ('s1', 't1', '/tmp/s.bin', 80, 24, '/tmp', '[]', '{}', 0)",
+            [],
+        )
+        .unwrap();
+
+        conn.execute("DELETE FROM tasks WHERE id = 't1'", []).unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM sessions WHERE id = 's1'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 0, "session should have cascaded away with its task");
+    }
+
+    /// Simulate a v1 database upgrading to head (currently v3). Existing
+    /// rows get the defaults on the newly added NOT NULL columns and
+    /// survive the v3 table recreate with all values intact.
+    #[test]
+    fn migration_v1_to_head_preserves_existing_rows() {
         let conn = Connection::open_in_memory().unwrap();
 
         // Manually run just the v1 migration.
@@ -305,13 +486,13 @@ mod tests {
         )
         .unwrap();
 
-        // Now run the full migration — should apply v2 on top.
+        // Now run the full migration — should apply v2 and v3 in sequence.
         run_migrations(&conn).unwrap();
 
         let v: i64 = conn
             .query_row("SELECT version FROM schema_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(v, 2);
+        assert_eq!(v, CURRENT_VERSION);
 
         // Legacy row still present, defaults applied.
         let (title, cli, strat, sess): (String, String, String, String) = conn

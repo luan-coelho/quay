@@ -9,25 +9,32 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// The four kanban columns. Stored as lowercase strings in SQLite to keep the
+/// The six kanban columns. Stored as lowercase strings in SQLite to keep the
 /// schema human-readable.
+///
+/// Phase 2 expanded this from 4 to 6 to match Lanes' workflow (adds Review
+/// and Misc alongside the original Backlog/Planning/Implementation/Done).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskState {
     Backlog,
     Planning,
     Implementation,
+    Review,
     Done,
+    Misc,
 }
 
 impl TaskState {
     /// All variants in display order — useful for iterating columns.
     #[allow(dead_code)]
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 6] = [
         Self::Backlog,
         Self::Planning,
         Self::Implementation,
+        Self::Review,
         Self::Done,
+        Self::Misc,
     ];
 
     /// SQL/string form. Round-trips with `parse`.
@@ -36,7 +43,9 @@ impl TaskState {
             Self::Backlog => "backlog",
             Self::Planning => "planning",
             Self::Implementation => "implementation",
+            Self::Review => "review",
             Self::Done => "done",
+            Self::Misc => "misc",
         }
     }
 
@@ -47,7 +56,9 @@ impl TaskState {
             "backlog" => Some(Self::Backlog),
             "planning" => Some(Self::Planning),
             "implementation" => Some(Self::Implementation),
+            "review" => Some(Self::Review),
             "done" => Some(Self::Done),
+            "misc" => Some(Self::Misc),
             _ => None,
         }
     }
@@ -59,7 +70,35 @@ impl TaskState {
             Self::Backlog => "Backlog",
             Self::Planning => "Planning",
             Self::Implementation => "Implementation",
+            Self::Review => "Review",
             Self::Done => "Done",
+            Self::Misc => "Misc",
+        }
+    }
+
+    /// Previous state in the primary workflow, if any.
+    /// Misc sits outside the linear flow — it has no neighbours and returns
+    /// `None` for both forward and backward.
+    pub fn prev(self) -> Option<Self> {
+        match self {
+            Self::Backlog => None,
+            Self::Planning => Some(Self::Backlog),
+            Self::Implementation => Some(Self::Planning),
+            Self::Review => Some(Self::Implementation),
+            Self::Done => Some(Self::Review),
+            Self::Misc => None,
+        }
+    }
+
+    /// Next state in the primary workflow, if any.
+    pub fn next(self) -> Option<Self> {
+        match self {
+            Self::Backlog => Some(Self::Planning),
+            Self::Planning => Some(Self::Implementation),
+            Self::Implementation => Some(Self::Review),
+            Self::Review => Some(Self::Done),
+            Self::Done => None,
+            Self::Misc => None,
         }
     }
 }
