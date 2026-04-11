@@ -3,6 +3,7 @@
 pub mod deps;
 pub mod labels;
 pub mod model;
+pub mod projects;
 pub mod store;
 
 pub use deps::DependencyStore;
@@ -11,4 +12,5 @@ pub use model::{
     AgentKind, SessionRecord, SessionState, StartMode, Task, TaskKind, TaskState,
     WorktreeStrategy, unix_millis_now,
 };
+pub use projects::{Project, ProjectStore};
 pub use store::{SessionStore, TaskStore};

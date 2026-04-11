@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use rusqlite::Connection;
 
 /// Current target schema version. Equals the number of migrations below.
-pub const CURRENT_VERSION: i64 = 6;
+pub const CURRENT_VERSION: i64 = 7;
 
 /// Each entry corresponds to one schema version. Index 0 is migration v0→v1,
 /// index 1 is v1→v2, etc. Each script must be idempotent in the sense that
@@ -200,6 +200,27 @@ const MIGRATIONS: &[&str] = &[
     );
 
     CREATE INDEX IF NOT EXISTS quick_actions_position ON quick_actions(position);
+    "#,
+    // v6 → v7: projects. A project groups tasks that share a repo_path
+    // and a base branch, so the sidebar can filter by project and the
+    // kanban can show a fresh task under the right repo without the
+    // user specifying paths every time.
+    //
+    // `tasks.project_id` is nullable so legacy and demo tasks without a
+    // project still work — they simply appear as "unassigned" in the
+    // sidebar filter view.
+    r#"
+    CREATE TABLE IF NOT EXISTS projects (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL UNIQUE,
+        repo_path   TEXT NOT NULL,
+        base_branch TEXT NOT NULL DEFAULT 'main',
+        created_at  INTEGER NOT NULL
+    );
+
+    ALTER TABLE tasks ADD COLUMN project_id TEXT
+        REFERENCES projects(id) ON DELETE SET NULL;
+    CREATE INDEX IF NOT EXISTS tasks_project_id ON tasks(project_id);
     "#,
 ];
 
