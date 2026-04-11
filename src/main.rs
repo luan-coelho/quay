@@ -818,6 +818,55 @@ fn main() -> Result<()> {
         });
     }
     {
+        // Polish 8: create a new project from the "New Project" modal.
+        // Validates name + repo_path (both required, non-empty, repo
+        // path must exist as a directory). On success, persists via
+        // ProjectStore, refreshes the sidebar list, closes the modal,
+        // and clears the fields.
+        let state = state.clone();
+        let weak = window.as_weak();
+        let refresh_projects = refresh_projects.clone();
+        window.on_create_project(move || {
+            let Some(w) = weak.upgrade() else { return };
+            let name = w.get_new_project_name().to_string();
+            let repo_path_str = w.get_new_project_repo_path().to_string();
+            let base_branch = w.get_new_project_base_branch().to_string();
+
+            if name.trim().is_empty() || repo_path_str.trim().is_empty() {
+                tracing::warn!("create_project: name and repo_path are required");
+                return;
+            }
+            let repo_path = PathBuf::from(repo_path_str.trim());
+            if !repo_path.is_absolute() {
+                tracing::warn!("create_project: repo_path must be absolute");
+                return;
+            }
+            let base = if base_branch.trim().is_empty() {
+                "main".to_string()
+            } else {
+                base_branch.trim().to_string()
+            };
+
+            let project = crate::kanban::Project::new(
+                name.trim(),
+                repo_path,
+                base,
+            );
+            if let Err(err) = crate::kanban::ProjectStore::new(&state.db.conn).insert(&project) {
+                tracing::warn!(%err, "create_project insert failed");
+                return;
+            }
+
+            // Reset form fields + close modal.
+            w.set_new_project_name("".into());
+            w.set_new_project_repo_path("".into());
+            w.set_new_project_base_branch("main".into());
+            w.set_new_project_open(false);
+
+            refresh_projects();
+        });
+    }
+    {
         // Polish 4: delete the currently-active task. Cascades handle
         // labels, dependencies, and sessions via the ON DELETE CASCADE
         // FKs already in the schema. The running PTY session (if any)

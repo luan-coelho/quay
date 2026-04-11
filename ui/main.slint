@@ -616,6 +616,12 @@ export component MainWindow inherits Window {
     in property <[QuickActionRowData]> settings-quick-actions;
     in property <[ProcessRowData]> settings-processes;
 
+    // Polish 8: New Project modal state.
+    in-out property <bool> new-project-open: false;
+    in-out property <string> new-project-name: "";
+    in-out property <string> new-project-repo-path: "";
+    in-out property <string> new-project-base-branch: "main";
+
     // File browser state for the Files tab (Phase 6).
     in property <[FileEntryData]> file-entries;
     in-out property <string> file-current-dir: "";
@@ -674,6 +680,7 @@ export component MainWindow inherits Window {
     callback remove-dependency(string);  // dep task id
     callback add-dependency(string);     // dep task id
     callback delete-task(string);    // task id
+    callback create-project();
     // text, ctrl, alt, shift, meta. Meta added in Polish 6 for
     // Cmd-based shortcuts on macOS.
     callback key-pressed(string, bool, bool, bool, bool);
@@ -794,13 +801,22 @@ export component MainWindow inherits Window {
                             vertical-alignment: center;
                         }
                     }
-                    VerticalLayout {
-                        alignment: center;
-                        Text {
-                            text: "+";
-                            color: Tokens.text-tertiary;
-                            font-size: 12px;
-                            vertical-alignment: center;
+                    TouchArea {
+                        width: 18px;
+                        height: 18px;
+                        clicked => { root.new-project-open = true; }
+                        Rectangle {
+                            background: parent.has-hover ? #1f2331 : transparent;
+                            border-radius: 4px;
+                            Text {
+                                text: "+";
+                                color: Tokens.text-tertiary;
+                                font-size: 12px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
                         }
                     }
                 }
@@ -2027,6 +2043,168 @@ export component MainWindow inherits Window {
                     color: Tokens.text-tertiary;
                     font-size: 11px;
                     horizontal-alignment: center;
+                }
+            }
+        }
+    }
+
+    // ── New Project modal overlay (Polish 8) ────────────────────────────
+    Rectangle {
+        visible: root.new-project-open;
+        x: 0; y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: rgba(0, 0, 0, 60%);
+
+        TouchArea {
+            clicked => { root.new-project-open = false; }
+        }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 420px;
+            height: 320px;
+            background: #14161a;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Tokens.border-soft;
+            clip: true;
+
+            TouchArea { }   // swallow clicks so the backdrop close doesn't fire
+
+            VerticalLayout {
+                padding: 20px;
+                spacing: 12px;
+
+                // Header
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+                    Text {
+                        text: "New Project";
+                        color: Tokens.text-primary;
+                        font-size: 15px;
+                        font-weight: 700;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    TouchArea {
+                        width: 22px;
+                        height: 22px;
+                        clicked => { root.new-project-open = false; }
+                        Rectangle {
+                            background: parent.has-hover ? #1f2331 : transparent;
+                            border-radius: 4px;
+                            Text {
+                                text: "×";
+                                color: Tokens.text-secondary;
+                                font-size: 17px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { height: 1px; background: Tokens.border-very-soft; }
+
+                // Name
+                VerticalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "Name";
+                        color: Tokens.text-secondary;
+                        font-size: 10px;
+                    }
+                    LineEdit {
+                        text: root.new-project-name;
+                        placeholder-text: "e.g. my-backend";
+                        font-size: 12px;
+                        edited(t) => { root.new-project-name = t; }
+                    }
+                }
+
+                // Repo path
+                VerticalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "Repository path";
+                        color: Tokens.text-secondary;
+                        font-size: 10px;
+                    }
+                    LineEdit {
+                        text: root.new-project-repo-path;
+                        placeholder-text: "/absolute/path/to/repo";
+                        font-size: 12px;
+                        edited(t) => { root.new-project-repo-path = t; }
+                    }
+                }
+
+                // Base branch
+                VerticalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "Base branch";
+                        color: Tokens.text-secondary;
+                        font-size: 10px;
+                    }
+                    LineEdit {
+                        text: root.new-project-base-branch;
+                        placeholder-text: "main";
+                        font-size: 12px;
+                        edited(t) => { root.new-project-base-branch = t; }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                // Actions
+                HorizontalLayout {
+                    spacing: 8px;
+                    Rectangle { horizontal-stretch: 1; }
+                    TouchArea {
+                        width: 72px;
+                        height: 28px;
+                        clicked => { root.new-project-open = false; }
+                        Rectangle {
+                            background: parent.has-hover ? #1f2331 : transparent;
+                            border-radius: 6px;
+                            border-width: 1px;
+                            border-color: Tokens.border-soft;
+                            Text {
+                                text: "Cancel";
+                                color: Tokens.text-secondary;
+                                font-size: 11px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+                    TouchArea {
+                        width: 84px;
+                        height: 28px;
+                        clicked => { root.create-project(); }
+                        Rectangle {
+                            background: parent.has-hover ? rgba(16, 185, 129, 20%) : rgba(16, 185, 129, 12%);
+                            border-radius: 6px;
+                            border-width: 1px;
+                            border-color: rgba(16, 185, 129, 40%);
+                            Text {
+                                text: "Create";
+                                color: Tokens.kind-enhancement;
+                                font-size: 11px;
+                                font-weight: 600;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
                 }
             }
         }
