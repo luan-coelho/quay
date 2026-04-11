@@ -311,6 +311,50 @@ component Toast inherits Rectangle {
     }
 }
 
+// Polish 26 — single row in the keyboard shortcuts overlay.
+// Left: chip showing the key combo. Right: human description.
+component ShortcutRow inherits Rectangle {
+    in property <string> keys;
+    in property <string> label;
+
+    height: 22px;
+    background: transparent;
+
+    HorizontalLayout {
+        spacing: 12px;
+        alignment: start;
+
+        Rectangle {
+            width: 80px;
+            height: 18px;
+            border-radius: 4px;
+            border-width: 1px;
+            border-color: Tokens.border-soft;
+            background: Tokens.bg-tab-active;
+            Text {
+                text: keys;
+                color: Tokens.text-primary;
+                font-size: 10px;
+                font-family: "JetBrains Mono";
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: label;
+                color: Tokens.text-secondary;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
 // Polish 20 — small circular avatar shown in the title bar (and
 // reusable for any future "user" / "agent" identity slot). The
 // initial defaults to "L" because Quay has no user system yet —
@@ -908,6 +952,11 @@ export component MainWindow inherits Window {
     in-out property <string> toast-message: "";
     in-out property <string> toast-kind: "info";
     in-out property <bool> toast-visible: false;
+
+    // Polish 26 — keyboard shortcuts overlay. Toggled by Cmd+? from
+    // the key dispatcher in main.rs. Esc closes (handled in the
+    // existing modal escape branch).
+    in-out property <bool> shortcuts-open: false;
 
     // Selection / context.
     in property <string> active-task-id: "";
@@ -3409,6 +3458,125 @@ export component MainWindow inherits Window {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // ── Polish 26: Keyboard shortcuts overlay ───────────────────────────
+    Rectangle {
+        visible: root.shortcuts-open;
+        x: 0; y: 0;
+        width: parent.width;
+        height: parent.height;
+        background: rgba(0, 0, 0, 60%);
+
+        TouchArea {
+            clicked => { root.shortcuts-open = false; }
+        }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 540px;
+            height: 460px;
+            background: #14161a;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Tokens.border-soft;
+            clip: true;
+
+            // Block click-through.
+            TouchArea { }
+
+            VerticalLayout {
+                padding: 24px;
+                spacing: 14px;
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text {
+                        text: "Keyboard Shortcuts";
+                        color: Tokens.text-primary;
+                        font-size: 16px;
+                        font-weight: 700;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    CloseButton {
+                        size: 24px;
+                        clicked => { root.shortcuts-open = false; }
+                    }
+                }
+
+                Rectangle { height: 1px; background: Tokens.border-very-soft; }
+
+                // Two-column layout: category (left) + shortcut rows (right).
+                VerticalLayout {
+                    spacing: 16px;
+
+                    // Tasks group
+                    VerticalLayout {
+                        spacing: 4px;
+                        Text {
+                            text: "TASKS";
+                            color: Tokens.text-tertiary;
+                            font-size: 9px;
+                            font-weight: 700;
+                        }
+                        ShortcutRow { keys: "⌘N"; label: "Create new task in Backlog"; }
+                        ShortcutRow { keys: "⌘D"; label: "Move active task forward"; }
+                        ShortcutRow { keys: "⌘⌫"; label: "Delete active task"; }
+                        ShortcutRow { keys: "Enter"; label: "(in Instructions field) Start Implement"; }
+                    }
+
+                    // Tabs group
+                    VerticalLayout {
+                        spacing: 4px;
+                        Text {
+                            text: "OPEN TABS";
+                            color: Tokens.text-tertiary;
+                            font-size: 9px;
+                            font-weight: 700;
+                        }
+                        ShortcutRow { keys: "⌘W"; label: "Close active tab"; }
+                        ShortcutRow { keys: "⌘⇧]"; label: "Cycle to next tab"; }
+                        ShortcutRow { keys: "⌘⇧["; label: "Cycle to previous tab"; }
+                    }
+
+                    // Quick Actions group
+                    VerticalLayout {
+                        spacing: 4px;
+                        Text {
+                            text: "QUICK ACTIONS";
+                            color: Tokens.text-tertiary;
+                            font-size: 9px;
+                            font-weight: 700;
+                        }
+                        ShortcutRow { keys: "⌘⌥1..9"; label: "Run quick action by index"; }
+                    }
+
+                    // System group
+                    VerticalLayout {
+                        spacing: 4px;
+                        Text {
+                            text: "SYSTEM";
+                            color: Tokens.text-tertiary;
+                            font-size: 9px;
+                            font-weight: 700;
+                        }
+                        ShortcutRow { keys: "⌘,"; label: "Open Settings"; }
+                        ShortcutRow { keys: "⌘?"; label: "Show this overlay"; }
+                        ShortcutRow { keys: "Esc"; label: "Close any open modal"; }
+                    }
+                }
+
+                Rectangle { vertical-stretch: 1; }
+
+                Text {
+                    text: "Tip: ⌘ on macOS, Ctrl elsewhere. Esc closes this overlay.";
+                    color: Tokens.text-tertiary;
+                    font-size: 9px;
+                    horizontal-alignment: center;
                 }
             }
         }

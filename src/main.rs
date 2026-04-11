@@ -1653,9 +1653,13 @@ fn main() -> Result<()> {
                 }
             }
 
-            // 2. Escape — close any open modal. Polish 12.
+            // 2. Escape — close any open modal. Polish 12 + 26.
             if text == "\u{001b}" {
                 if let Some(w) = weak.upgrade() {
+                    if w.get_shortcuts_open() {
+                        w.set_shortcuts_open(false);
+                        return;
+                    }
                     if w.get_settings_open() {
                         w.set_settings_open(false);
                         return;
@@ -1719,6 +1723,17 @@ fn main() -> Result<()> {
                     }
                     _ => {}
                 }
+            }
+
+            // Polish 26: Cmd+? (Cmd+Shift+/) toggles the keyboard
+            // shortcuts overlay. Match before the bracket cycle so a
+            // future bracket-related shortcut can't shadow it.
+            if primary && shift && text == "?" {
+                if let Some(w) = weak.upgrade() {
+                    let open = !w.get_shortcuts_open();
+                    w.set_shortcuts_open(open);
+                }
+                return;
             }
 
             // Polish 18: Cmd+Shift+] / Cmd+Shift+[ → cycle forward /
