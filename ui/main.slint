@@ -394,6 +394,8 @@ component CloseButton inherits Rectangle {
     height: size;
     border-radius: size / 2;
     background: ta.has-hover ? rgba(248, 113, 113, 18%) : transparent;
+    // Polish 30 — smooth close-button hover.
+    animate background { duration: 120ms; easing: ease-out; }
 
     ta := TouchArea { clicked => { root.clicked(); } }
     Text {
@@ -422,6 +424,8 @@ component MenuRow inherits Rectangle {
     height: 26px;
     border-radius: 6px;
     background: hover.has-hover ? Tokens.bg-hover : transparent;
+    // Polish 30 — smooth menu row hover.
+    animate background { duration: 120ms; easing: ease-out; }
 
     hover := TouchArea { clicked => { root.clicked(); } }
 
@@ -474,6 +478,8 @@ component ProjectRow inherits Rectangle {
     background: selected ? Tokens.bg-card-selected
               : ta.has-hover ? Tokens.bg-hover
               : transparent;
+    // Polish 30 — smooth project row hover/select.
+    animate background { duration: 120ms; easing: ease-out; }
 
     ta := TouchArea { clicked => { root.clicked(); } }
 
@@ -513,6 +519,8 @@ component FilterChip inherits Rectangle {
     border-width: 1px;
     border-color: Tokens.border-soft;
     background: selected ? Tokens.bg-tab-active : transparent;
+    // Polish 30 — smooth filter chip toggle.
+    animate background { duration: 120ms; easing: ease-out; }
 
     TouchArea { clicked => { root.clicked(); } }
 
@@ -611,6 +619,8 @@ component CardRow inherits Rectangle {
     background: selected ? Tokens.bg-card-selected
               : ta.has-hover ? Tokens.bg-hover
               : transparent;
+    // Polish 30 — smooth fade between hover/select/idle backgrounds.
+    animate background { duration: 120ms; easing: ease-out; }
 
     Rectangle {
         // Top divider line.
@@ -843,6 +853,9 @@ component OpenTaskTab inherits Rectangle {
     border-width: 1px;
     border-color: active ? Tokens.border-accent : Tokens.border-soft;
     background: active ? Tokens.bg-tab-active : (ta.has-hover ? Tokens.bg-card-hover : transparent);
+    // Polish 30 — smooth tab background transition.
+    animate background { duration: 120ms; easing: ease-out; }
+    animate border-color { duration: 120ms; easing: ease-out; }
 
     ta := TouchArea { clicked => { root.clicked(); } }
 
