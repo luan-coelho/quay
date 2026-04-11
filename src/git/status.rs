@@ -4,8 +4,10 @@
 //! the git CLI, which matters because the kanban polls these queries
 //! frequently to keep card badges (dirty flag, branch name) up to date.
 //!
-//! Fully tested but not yet wired into the Slint layer — `#[allow(dead_code)]`
-//! until the kanban poller starts calling `read_status` on each visible card.
+//! Phase 1 does not yet call `read_status` — that wiring lands in Phase 2
+//! (kanban poller populates the dirty flag on each visible card, and the
+//! Done transition consults it to decide whether to auto-remove the worktree
+//! or prompt the user). `#![allow(dead_code)]` is kept until then.
 
 #![allow(dead_code)]
 

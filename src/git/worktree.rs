@@ -7,12 +7,6 @@
 //! reliably across every platform we care about (Linux/macOS/Windows), so we
 //! use it for mutations and reserve `git2` for fast read-only queries
 //! (status, diff, HEAD lookups — see `status.rs`).
-//!
-//! The API here is fully tested but is not yet wired into the kanban flow —
-//! `#[allow(dead_code)]` is applied at module level until Task 8 connects
-//! worktree creation to card creation.
-
-#![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
