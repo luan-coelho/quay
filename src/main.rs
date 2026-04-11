@@ -21,7 +21,7 @@ use slint::{ComponentHandle, Image, Model, ModelRc, SharedString, Timer, TimerMo
 use uuid::Uuid;
 
 use crate::app::AppState;
-use crate::kanban::{Task, TaskKind, TaskState};
+use crate::kanban::{SessionState, StartMode, Task, TaskKind, TaskState};
 use crate::persistence::QuayDirs;
 use crate::terminal::{GlyphAtlas, key_text_to_bytes};
 
@@ -74,6 +74,8 @@ fn main() -> Result<()> {
     window.set_active_task_display("".into());
     window.set_active_task_title("".into());
     window.set_active_task_description("".into());
+    window.set_active_task_instructions("".into());
+    window.set_active_task_session_state("idle".into());
     window.set_active_right_tab("terminal".into());
 
     // Sidebar: menu items.
@@ -176,7 +178,7 @@ fn main() -> Result<()> {
                 Ok(changed) if !changed => {}
                 Ok(_) => {
                     if let Some(window) = weak.upgrade() {
-                        let (display, title, description) = if let Ok(Some(task)) =
+                        let card_data = if let Ok(Some(task)) =
                             crate::kanban::TaskStore::new(&state.db.conn).get(uuid)
                         {
                             // Compute display-id by scanning all tasks ordered
@@ -191,18 +193,25 @@ fn main() -> Result<()> {
                                 .unwrap_or(0);
                             let kind = TaskKind::from_title(&task.title);
                             window.set_active_task_kind(kind_to_str(kind).into());
-                            (
+                            Some((
                                 format!("#{display_id}"),
                                 task.title.clone(),
                                 task.description.clone().unwrap_or_default(),
-                            )
+                                task.instructions.clone().unwrap_or_default(),
+                                task.session_state.as_str().to_string(),
+                            ))
                         } else {
-                            (String::new(), String::new(), String::new())
+                            None
                         };
+
+                        let (display, title, description, instructions, sess_state) =
+                            card_data.unwrap_or_default();
                         window.set_active_task_id(id.clone());
                         window.set_active_task_display(display.into());
                         window.set_active_task_title(title.into());
                         window.set_active_task_description(description.into());
+                        window.set_active_task_instructions(instructions.into());
+                        window.set_active_task_session_state(sess_state.into());
                         if state.blit_active() {
                             window.set_frame(Image::from_rgba8_premultiplied(
                                 state.framebuffer.borrow().buffer.clone(),
@@ -302,6 +311,104 @@ fn main() -> Result<()> {
                 }
                 Ok(None) => {}
                 Err(err) => tracing::error!(%err, "failed to load task for description update"),
+            }
+        });
+    }
+    {
+        // Instructions field mirrors description: persisted live on every
+        // edited event. Empty strings are coerced to NULL in the DB.
+        let state = state.clone();
+        window.on_instructions_changed(move |text| {
+            let Some(active_id) = *state.active_task.borrow() else {
+                return;
+            };
+            let store = crate::kanban::TaskStore::new(&state.db.conn);
+            match store.get(active_id) {
+                Ok(Some(mut task)) => {
+                    let new_value = text.to_string();
+                    task.instructions = if new_value.is_empty() {
+                        None
+                    } else {
+                        Some(new_value)
+                    };
+                    task.updated_at = crate::kanban::unix_millis_now();
+                    if let Err(err) = store.update(&task) {
+                        tracing::error!(%err, "failed to update task instructions");
+                    }
+                }
+                Ok(None) => {}
+                Err(err) => tracing::error!(%err, "failed to load task for instructions update"),
+            }
+        });
+    }
+    {
+        // Plan button: start an agent session in Plan mode. The task
+        // transitions into the Planning column via start_session; here we
+        // also push the updated session_state chip and re-blit the
+        // framebuffer immediately so the user sees "busy" without waiting
+        // for the next poll tick.
+        let state = state.clone();
+        let weak = window.as_weak();
+        let refresh = refresh_kanban.clone();
+        window.on_start_plan(move |id| {
+            let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
+            match state.start_session(uuid, StartMode::Plan) {
+                Ok(()) => {
+                    if let Some(window) = weak.upgrade() {
+                        window.set_active_task_session_state(
+                            SessionState::Busy.as_str().into(),
+                        );
+                        if state.blit_active() {
+                            window.set_frame(Image::from_rgba8_premultiplied(
+                                state.framebuffer.borrow().buffer.clone(),
+                            ));
+                        }
+                        // Jump to Terminal tab so the user sees the agent start.
+                        window.set_active_right_tab("terminal".into());
+                    }
+                    refresh();
+                }
+                Err(err) => {
+                    tracing::error!(%err, "start_session(Plan) failed");
+                    if let Some(window) = weak.upgrade() {
+                        window.set_active_task_session_state(
+                            SessionState::Error.as_str().into(),
+                        );
+                    }
+                }
+            }
+        });
+    }
+    {
+        // Implement button: same wiring as Plan but StartMode::Implement.
+        let state = state.clone();
+        let weak = window.as_weak();
+        let refresh = refresh_kanban.clone();
+        window.on_start_implement(move |id| {
+            let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
+            match state.start_session(uuid, StartMode::Implement) {
+                Ok(()) => {
+                    if let Some(window) = weak.upgrade() {
+                        window.set_active_task_session_state(
+                            SessionState::Busy.as_str().into(),
+                        );
+                        if state.blit_active() {
+                            window.set_frame(Image::from_rgba8_premultiplied(
+                                state.framebuffer.borrow().buffer.clone(),
+                            ));
+                        }
+                        window.set_active_right_tab("terminal".into());
+                    }
+                    refresh();
+                }
+                Err(err) => {
+                    tracing::error!(%err, "start_session(Implement) failed");
+                    if let Some(window) = weak.upgrade() {
+                        window.set_active_task_session_state(
+                            SessionState::Error.as_str().into(),
+                        );
+                    }
+                }
             }
         });
     }

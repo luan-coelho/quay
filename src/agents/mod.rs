@@ -65,6 +65,10 @@ pub trait AgentProvider: Send + Sync {
     /// runs and pass it via `resume_id` next time.
     ///
     /// Default is `false` — most CLIs start a fresh session every launch.
+    ///
+    /// `#[allow(dead_code)]` until Phase 3 captures Claude Code session
+    /// ids from `~/.claude/projects/...` and starts passing them through.
+    #[allow(dead_code)]
     fn supports_resume(&self) -> bool {
         false
     }

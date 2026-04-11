@@ -442,6 +442,9 @@ export component MainWindow inherits Window {
     in property <string> active-task-kind: "feature";
     in-out property <string> active-task-title: "";
     in-out property <string> active-task-description: "";
+    in-out property <string> active-task-instructions: "";
+    // Session state for the active task: one of idle/busy/awaiting/stopped/exited/error.
+    in property <string> active-task-session-state: "idle";
 
     // Kanban data.
     in property <[TaskCardData]> tasks-backlog;
@@ -460,6 +463,9 @@ export component MainWindow inherits Window {
     callback create-task();
     callback title-changed(string);
     callback description-changed(string);
+    callback instructions-changed(string);
+    callback start-plan(string);
+    callback start-implement(string);
     callback key-pressed(string, bool, bool, bool);
 
     // Layout constants.
@@ -824,11 +830,57 @@ export component MainWindow inherits Window {
                 padding: 14px;
                 spacing: 12px;
 
-                // Display ID in muted text above the editable title.
-                Text {
-                    text: root.active-task-display;
-                    color: Tokens.text-tertiary;
-                    font-size: 10px;
+                // Display ID + session state chip in a single row.
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+
+                    Text {
+                        text: root.active-task-display;
+                        color: Tokens.text-tertiary;
+                        font-size: 10px;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+
+                    // Session state badge — small coloured dot + label.
+                    Rectangle {
+                        width: state-chip.preferred-width + 16px;
+                        height: 16px;
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: Tokens.border-soft;
+                        background: transparent;
+
+                        state-chip := HorizontalLayout {
+                            padding-left: 6px;
+                            padding-right: 8px;
+                            spacing: 5px;
+                            alignment: center;
+
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 6px;
+                                    height: 6px;
+                                    border-radius: 3px;
+                                    background:
+                                        root.active-task-session-state == "busy"     ? Tokens.kind-enhancement
+                                      : root.active-task-session-state == "awaiting" ? #f5b54e
+                                      : root.active-task-session-state == "error"    ? Tokens.kind-bug
+                                      : root.active-task-session-state == "exited"   ? Tokens.text-muted
+                                      : root.active-task-session-state == "stopped"  ? Tokens.text-muted
+                                                                                     : Tokens.text-muted;
+                                }
+                            }
+                            Text {
+                                text: root.active-task-session-state;
+                                color: Tokens.text-secondary;
+                                font-size: 9px;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
                 }
 
                 // Editable title.
@@ -839,6 +891,77 @@ export component MainWindow inherits Window {
                     edited(new-text) => {
                         root.title-changed(new-text);
                     }
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: Tokens.border-very-soft;
+                }
+
+                // Instructions — the initial prompt sent to the agent.
+                Text {
+                    text: "Instructions (sent to the agent on start)";
+                    color: Tokens.text-tertiary;
+                    font-size: 10px;
+                }
+                LineEdit {
+                    text: root.active-task-instructions;
+                    placeholder-text: "e.g. Add dark mode with a toggle in settings";
+                    font-size: 12px;
+                    edited(new-text) => {
+                        root.instructions-changed(new-text);
+                    }
+                }
+
+                // Plan / Implement action row.
+                HorizontalLayout {
+                    spacing: 8px;
+
+                    plan-area := TouchArea {
+                        width: 96px;
+                        height: 30px;
+                        clicked => { root.start-plan(root.active-task-id); }
+                        Rectangle {
+                            background: parent.has-hover ? #1f2331 : #181a23;
+                            border-radius: 6px;
+                            border-width: 1px;
+                            border-color: parent.has-hover ? #2b3144 : #23262f;
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "✦ Plan";
+                                    color: Tokens.text-primary;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    implement-area := TouchArea {
+                        width: 120px;
+                        height: 30px;
+                        clicked => { root.start-implement(root.active-task-id); }
+                        Rectangle {
+                            background: parent.has-hover ? rgba(16, 185, 129, 18%) : rgba(16, 185, 129, 12%);
+                            border-radius: 6px;
+                            border-width: 1px;
+                            border-color: rgba(16, 185, 129, 40%);
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "⚡ Implement";
+                                    color: Tokens.kind-enhancement;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
                 }
 
                 Rectangle {

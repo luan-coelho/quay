@@ -105,6 +105,10 @@ impl WorktreeManager {
     ///
     /// Equivalent shell command:
     ///     git -C <repo> worktree remove --force <worktree_path>
+    ///
+    /// `#[allow(dead_code)]` until Phase 2 wires worktree cleanup on the
+    /// Done transition.
+    #[allow(dead_code)]
     pub fn remove(&self, repo: &Path, worktree_path: &Path) -> Result<()> {
         let output = Command::new(&self.git)
             .arg("-C")
@@ -138,6 +142,9 @@ impl WorktreeManager {
     ///
     /// Equivalent shell command:
     ///     git -C <repo> worktree prune
+    ///
+    /// `#[allow(dead_code)]` until Phase 2 starts running prune on startup.
+    #[allow(dead_code)]
     pub fn prune(&self, repo: &Path) -> Result<()> {
         let output = Command::new(&self.git)
             .arg("-C")
@@ -162,6 +169,9 @@ impl WorktreeManager {
     ///
     /// Returns the absolute path of every worktree (including the main one),
     /// parsed from `git worktree list --porcelain`.
+    ///
+    /// `#[allow(dead_code)]` until Phase 5 surfaces this in the sidebar.
+    #[allow(dead_code)]
     pub fn list(&self, repo: &Path) -> Result<Vec<PathBuf>> {
         let output = Command::new(&self.git)
             .arg("-C")
