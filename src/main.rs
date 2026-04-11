@@ -122,6 +122,14 @@ fn main() -> Result<()> {
     window.set_tasks_done(ModelRc::from(done_model.clone()));
     window.set_tasks_misc(ModelRc::from(misc_model.clone()));
 
+    // Git Changes tab models — refreshed by a ~1s timer when the tab is
+    // open. Empty on startup; populated from git::diff::read_diff and
+    // read_commit_log once the user selects a task with a worktree.
+    let git_diff_model = Rc::new(VecModel::<DiffFileData>::default());
+    let git_log_model = Rc::new(VecModel::<CommitEntryData>::default());
+    window.set_git_diff_files(ModelRc::from(git_diff_model.clone()));
+    window.set_git_commit_log(ModelRc::from(git_log_model.clone()));
+
     // Refresh closure: re-query DB and rebuild every column model.
     let refresh_kanban = {
         let state = state.clone();
@@ -460,7 +468,8 @@ fn main() -> Result<()> {
         });
     }
 
-    // Poll timer.
+    // PTY poll timer — drains bytes from all live sessions and blits the
+    // active one. Fires ~60 Hz.
     let poll_timer = Timer::default();
     {
         let weak = window.as_weak();
@@ -476,6 +485,84 @@ fn main() -> Result<()> {
                         ));
                     }
                 }
+            },
+        );
+    }
+
+    // Git Changes tab refresh timer — fires once per second. Cheap when the
+    // tab is not open (early-return if active_right_tab != "git"), re-queries
+    // `git::diff::read_diff` and `read_commit_log` for the active task's
+    // worktree otherwise.
+    let git_refresh_timer = Timer::default();
+    {
+        let weak = window.as_weak();
+        let state = state.clone();
+        let diff_model = git_diff_model.clone();
+        let log_model = git_log_model.clone();
+        git_refresh_timer.start(
+            TimerMode::Repeated,
+            Duration::from_secs(1),
+            move || {
+                let Some(window) = weak.upgrade() else { return };
+                if window.get_active_right_tab() != "git" {
+                    return;
+                }
+                let Some(active_id) = *state.active_task.borrow() else {
+                    return;
+                };
+                let store = crate::kanban::TaskStore::new(&state.db.conn);
+                let Ok(Some(task)) = store.get(active_id) else { return };
+                let Some(worktree_path) = task.worktree_path.as_deref() else {
+                    // Task has no worktree — clear the models.
+                    replace_diff_model(&diff_model, Vec::new());
+                    replace_log_model(&log_model, Vec::new());
+                    return;
+                };
+                // Resolve a base branch by trying `main` then `master`.
+                let base = ["main", "master"]
+                    .iter()
+                    .find(|b| {
+                        git2::Repository::open(worktree_path)
+                            .and_then(|r| r.find_branch(b, git2::BranchType::Local).map(|_| ()))
+                            .is_ok()
+                    })
+                    .copied()
+                    .unwrap_or("main");
+
+                let diff_files = match crate::git::diff::read_diff(worktree_path, base) {
+                    Ok(v) => v
+                        .into_iter()
+                        .map(|f| DiffFileData {
+                            path: SharedString::from(f.path),
+                            status: SharedString::from(f.status.to_string()),
+                            additions: f.additions as i32,
+                            deletions: f.deletions as i32,
+                            patch: SharedString::from(f.patch),
+                        })
+                        .collect(),
+                    Err(err) => {
+                        tracing::debug!(%err, "read_diff failed");
+                        Vec::new()
+                    }
+                };
+                let commits = match crate::git::diff::read_commit_log(worktree_path, base, 20) {
+                    Ok(v) => v
+                        .into_iter()
+                        .map(|c| CommitEntryData {
+                            sha_short: SharedString::from(c.sha_short),
+                            summary: SharedString::from(c.summary),
+                            author_name: SharedString::from(c.author_name),
+                            timestamp: SharedString::from(format_relative_time(c.timestamp)),
+                        })
+                        .collect(),
+                    Err(err) => {
+                        tracing::debug!(%err, "read_commit_log failed");
+                        Vec::new()
+                    }
+                };
+
+                replace_diff_model(&diff_model, diff_files);
+                replace_log_model(&log_model, commits);
             },
         );
     }
@@ -511,6 +598,49 @@ fn replace_model(model: &Rc<VecModel<TaskCardData>>, items: Vec<TaskCardData>) {
     }
     for item in items {
         model.push(item);
+    }
+}
+
+fn replace_diff_model(model: &Rc<VecModel<DiffFileData>>, items: Vec<DiffFileData>) {
+    while model.row_count() > 0 {
+        model.remove(model.row_count() - 1);
+    }
+    for item in items {
+        model.push(item);
+    }
+}
+
+fn replace_log_model(model: &Rc<VecModel<CommitEntryData>>, items: Vec<CommitEntryData>) {
+    while model.row_count() > 0 {
+        model.remove(model.row_count() - 1);
+    }
+    for item in items {
+        model.push(item);
+    }
+}
+
+/// Human-friendly relative time for commit timestamps.
+/// "just now" · "3m ago" · "2h ago" · "4d ago" · "2026-04-10".
+fn format_relative_time(commit_time_secs: i64) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now_secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let delta = now_secs.saturating_sub(commit_time_secs);
+    if delta < 30 {
+        "just now".into()
+    } else if delta < 3600 {
+        format!("{}m ago", delta / 60)
+    } else if delta < 86400 {
+        format!("{}h ago", delta / 3600)
+    } else if delta < 7 * 86400 {
+        format!("{}d ago", delta / 86400)
+    } else {
+        // Fall back to a YYYY-MM-DD-ish rendering using the absolute time.
+        // We avoid pulling in chrono for this — a crude div/mod is fine.
+        let days_since_epoch = commit_time_secs / 86400;
+        format!("~{days_since_epoch} days since epoch")
     }
 }
 

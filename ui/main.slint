@@ -50,6 +50,22 @@ export struct TaskCardData {
     dirty: bool,
 }
 
+export struct DiffFileData {
+    path: string,
+    status: string,       // "M" | "A" | "D" | "R" | "?" | "T"
+    additions: int,
+    deletions: int,
+    patch: string,
+}
+
+export struct CommitEntryData {
+    sha-short: string,
+    summary: string,
+    author-name: string,
+    /// Pre-formatted timestamp, e.g. "3 minutes ago".
+    timestamp: string,
+}
+
 export struct MenuItemData {
     id: string,
     label: string,
@@ -473,6 +489,10 @@ export component MainWindow inherits Window {
 
     in property <[MenuItemData]> menu-items;
     in property <[ProjectData]> projects;
+
+    // Git Changes tab data — refreshed ~1×/s while the tab is open.
+    in property <[DiffFileData]> git-diff-files;
+    in property <[CommitEntryData]> git-commit-log;
 
     // Right pane tab selection.
     in-out property <string> active-right-tab: "terminal";
@@ -1035,9 +1055,211 @@ export component MainWindow inherits Window {
             }
         }
 
-        // Git Changes / History placeholder.
+        // Git Changes tab — live diff + commit log for the active task's worktree.
         Rectangle {
-            visible: root.active-right-tab == "git" || root.active-right-tab == "history";
+            visible: root.active-right-tab == "git";
+            x: right-pad-h;
+            y: tab-strip-h + right-pad-v;
+            width: parent.width - right-pad-h * 2;
+            height: parent.height - tab-strip-h - right-pad-v * 2 - 22px;
+            background: #14161a;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Tokens.border-soft;
+            clip: true;
+
+            if root.active-task-id == "" || (root.git-diff-files.length == 0 && root.git-commit-log.length == 0): Rectangle {
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 6px;
+                    Text {
+                        text: "Git Changes";
+                        color: Tokens.text-primary;
+                        font-size: 13px;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: root.active-task-id == "" ? "Select a task with a git worktree to see changes." : "No changes yet.";
+                        color: Tokens.text-tertiary;
+                        font-size: 11px;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+
+            if root.active-task-id != "" && (root.git-diff-files.length > 0 || root.git-commit-log.length > 0): VerticalLayout {
+                padding: 12px;
+                spacing: 10px;
+
+                // Changed files header.
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: "Changed files";
+                        color: Tokens.text-secondary;
+                        font-size: 10px;
+                        font-weight: 700;
+                    }
+                    Rectangle { horizontal-stretch: 1; height: 1px; }
+                    Text {
+                        text: root.git-diff-files.length;
+                        color: Tokens.text-tertiary;
+                        font-size: 10px;
+                    }
+                }
+
+                // Files list + patches — scrolls together.
+                ScrollView {
+                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
+
+                    VerticalLayout {
+                        spacing: 8px;
+
+                        for f in root.git-diff-files: Rectangle {
+                            background: #0e0f13;
+                            border-radius: 4px;
+                            border-width: 1px;
+                            border-color: Tokens.border-soft;
+
+                            VerticalLayout {
+                                padding: 8px;
+                                spacing: 4px;
+
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+                                    Rectangle {
+                                        width: 18px;
+                                        height: 14px;
+                                        border-radius: 3px;
+                                        background: f.status == "A" ? rgba(16, 185, 129, 20%)
+                                                   : f.status == "M" ? rgba(245, 181, 78, 20%)
+                                                   : f.status == "D" ? rgba(248, 113, 113, 20%)
+                                                                     : rgba(167, 175, 184, 15%);
+                                        Text {
+                                            text: f.status;
+                                            color: f.status == "A" ? Tokens.kind-enhancement
+                                                 : f.status == "M" ? #f5b54e
+                                                 : f.status == "D" ? Tokens.kind-bug
+                                                                    : Tokens.text-secondary;
+                                            font-size: 9px;
+                                            font-weight: 700;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            width: parent.width;
+                                            height: parent.height;
+                                        }
+                                    }
+                                    Text {
+                                        text: f.path;
+                                        color: Tokens.text-primary;
+                                        font-size: 11px;
+                                        font-family: "JetBrains Mono";
+                                        vertical-alignment: center;
+                                    }
+                                    Rectangle { horizontal-stretch: 1; }
+                                    Text {
+                                        text: "+" + f.additions;
+                                        color: Tokens.kind-enhancement;
+                                        font-size: 10px;
+                                        font-family: "JetBrains Mono";
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: "-" + f.deletions;
+                                        color: Tokens.kind-bug;
+                                        font-size: 10px;
+                                        font-family: "JetBrains Mono";
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                // Patch text (monospaced). Slint's Text
+                                // element handles basic wrapping; per-line
+                                // colouring by origin char would need a
+                                // custom widget — deferred to a polish
+                                // iteration.
+                                if f.patch != "": Text {
+                                    text: f.patch;
+                                    color: Tokens.text-secondary;
+                                    font-size: 10px;
+                                    font-family: "JetBrains Mono";
+                                    wrap: no-wrap;
+                                }
+                            }
+                        }
+
+                        // Commit log section.
+                        if root.git-commit-log.length > 0: Rectangle {
+                            height: 1px;
+                            background: Tokens.border-very-soft;
+                        }
+
+                        if root.git-commit-log.length > 0: HorizontalLayout {
+                            spacing: 6px;
+                            Text {
+                                text: "Commits on this branch";
+                                color: Tokens.text-secondary;
+                                font-size: 10px;
+                                font-weight: 700;
+                            }
+                            Rectangle { horizontal-stretch: 1; height: 1px; }
+                            Text {
+                                text: root.git-commit-log.length;
+                                color: Tokens.text-tertiary;
+                                font-size: 10px;
+                            }
+                        }
+
+                        for c in root.git-commit-log: Rectangle {
+                            background: #0e0f13;
+                            border-radius: 4px;
+                            border-width: 1px;
+                            border-color: Tokens.border-soft;
+                            VerticalLayout {
+                                padding: 6px;
+                                padding-left: 10px;
+                                spacing: 2px;
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text {
+                                        text: c.sha-short;
+                                        color: Tokens.kind-feature;
+                                        font-size: 10px;
+                                        font-family: "JetBrains Mono";
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: c.summary;
+                                        color: Tokens.text-primary;
+                                        font-size: 11px;
+                                        vertical-alignment: center;
+                                    }
+                                    Rectangle { horizontal-stretch: 1; }
+                                    Text {
+                                        text: c.timestamp;
+                                        color: Tokens.text-tertiary;
+                                        font-size: 9px;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                Text {
+                                    text: c.author-name;
+                                    color: Tokens.text-tertiary;
+                                    font-size: 9px;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // History placeholder — stays while Fase 5 defers the real
+        // transcript browser.
+        Rectangle {
+            visible: root.active-right-tab == "history";
             x: right-pad-h;
             y: tab-strip-h + right-pad-v;
             width: parent.width - right-pad-h * 2;
@@ -1051,13 +1273,13 @@ export component MainWindow inherits Window {
                 alignment: center;
                 spacing: 8px;
                 Text {
-                    text: root.active-right-tab == "git" ? "Git Changes" : "History";
+                    text: "History";
                     color: Tokens.text-primary;
                     font-size: 13px;
                     horizontal-alignment: center;
                 }
                 Text {
-                    text: "Coming in a future iteration.";
+                    text: "Session transcript browser — coming in Phase 5.";
                     color: Tokens.text-tertiary;
                     font-size: 11px;
                     horizontal-alignment: center;
