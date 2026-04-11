@@ -284,6 +284,20 @@ fn main() -> Result<()> {
                     }
                 });
 
+            // Polish 9: resolve the active project filter. When set,
+            // only tasks whose `project_id` matches survive. Tasks with
+            // no project_id are hidden when any filter is active.
+            let filter_project_id: Option<Uuid> = weak
+                .upgrade()
+                .and_then(|w| {
+                    let s = w.get_active_project_id().to_string();
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Uuid::from_str(&s).ok()
+                    }
+                });
+
             let active_uuid = *state.active_task.borrow();
             let label_store = LabelStore::new(&state.db.conn);
             let dep_store = DependencyStore::new(&state.db.conn);
@@ -309,6 +323,15 @@ fn main() -> Result<()> {
                     && !task_labels.iter().any(|l| l.id == filter_id)
                 {
                     continue;
+                }
+
+                // Project filter: skip tasks whose project_id doesn't
+                // match the active project. Tasks with no project are
+                // hidden whenever a project filter is active.
+                if let Some(project_filter) = filter_project_id {
+                    if task.project_id != Some(project_filter) {
+                        continue;
+                    }
                 }
 
                 // Blocked count — how many dependencies are still not Done.
@@ -814,6 +837,23 @@ fn main() -> Result<()> {
                 return;
             }
             refresh_panels();
+            refresh();
+        });
+    }
+    {
+        // Polish 9: click a project in the sidebar to filter the kanban
+        // by project. Clicking the same project again clears the filter
+        // (toggle behavior).
+        let weak = window.as_weak();
+        let refresh = refresh_kanban.clone();
+        window.on_project_clicked(move |project_id| {
+            let Some(w) = weak.upgrade() else { return };
+            let current = w.get_active_project_id().to_string();
+            if current == project_id.as_str() {
+                w.set_active_project_id("".into());
+            } else {
+                w.set_active_project_id(project_id);
+            }
             refresh();
         });
     }

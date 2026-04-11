@@ -46,13 +46,15 @@ impl<'a> TaskStore<'a> {
                     repo_path, worktree_path, branch_name, agent_kind,
                     cli_selection, start_mode, worktree_strategy,
                     session_state, process_pid, claude_session_id,
+                    project_id,
                     position, created_at, updated_at
                 ) VALUES (
                     ?1, ?2, ?3, ?4, ?5,
                     ?6, ?7, ?8, ?9,
                     ?10, ?11, ?12,
                     ?13, ?14, ?15,
-                    ?16, ?17, ?18
+                    ?16,
+                    ?17, ?18, ?19
                 )",
                 params![
                     task.id.to_string(),
@@ -70,6 +72,7 @@ impl<'a> TaskStore<'a> {
                     task.session_state.as_str(),
                     task.process_pid,
                     task.claude_session_id,
+                    task.project_id.map(|id| id.to_string()),
                     task.position,
                     task.created_at,
                     task.updated_at,
@@ -98,8 +101,9 @@ impl<'a> TaskStore<'a> {
                     session_state = ?13,
                     process_pid = ?14,
                     claude_session_id = ?15,
-                    position = ?16,
-                    updated_at = ?17
+                    project_id = ?16,
+                    position = ?17,
+                    updated_at = ?18
                  WHERE id = ?1",
                 params![
                     task.id.to_string(),
@@ -117,6 +121,7 @@ impl<'a> TaskStore<'a> {
                     task.session_state.as_str(),
                     task.process_pid,
                     task.claude_session_id,
+                    task.project_id.map(|id| id.to_string()),
                     task.position,
                     task.updated_at,
                 ],
@@ -141,7 +146,7 @@ impl<'a> TaskStore<'a> {
                 "SELECT id, title, description, instructions, state, repo_path,
                         worktree_path, branch_name, agent_kind, cli_selection,
                         start_mode, worktree_strategy, session_state, process_pid,
-                        claude_session_id, position, created_at, updated_at
+                        claude_session_id, project_id, position, created_at, updated_at
                  FROM tasks WHERE id = ?1",
                 params![id.to_string()],
                 row_to_task,
@@ -156,7 +161,7 @@ impl<'a> TaskStore<'a> {
             "SELECT id, title, description, instructions, state, repo_path,
                     worktree_path, branch_name, agent_kind, cli_selection,
                     start_mode, worktree_strategy, session_state, process_pid,
-                    claude_session_id, position, created_at, updated_at
+                    claude_session_id, project_id, position, created_at, updated_at
              FROM tasks
              ORDER BY state, position, created_at",
         )?;
@@ -170,7 +175,7 @@ impl<'a> TaskStore<'a> {
             "SELECT id, title, description, instructions, state, repo_path,
                     worktree_path, branch_name, agent_kind, cli_selection,
                     start_mode, worktree_strategy, session_state, process_pid,
-                    claude_session_id, position, created_at, updated_at
+                    claude_session_id, project_id, position, created_at, updated_at
              FROM tasks WHERE state = ?1
              ORDER BY position, created_at",
         )?;
@@ -342,9 +347,23 @@ fn row_to_task(row: &Row<'_>) -> rusqlite::Result<Task> {
 
     let process_pid: Option<i32> = row.get(13)?;         // 13 process_pid
     let claude_session_id: Option<String> = row.get(14)?; // 14 claude_session_id
-    let position: i64 = row.get(15)?;                    // 15 position
-    let created_at: i64 = row.get(16)?;                  // 16 created_at
-    let updated_at: i64 = row.get(17)?;                  // 17 updated_at
+
+    // 15 project_id — nullable uuid.
+    let project_id_str: Option<String> = row.get(15)?;
+    let project_id = match project_id_str {
+        Some(s) => Some(Uuid::parse_str(&s).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(
+                15,
+                rusqlite::types::Type::Text,
+                Box::new(e),
+            )
+        })?),
+        None => None,
+    };
+
+    let position: i64 = row.get(16)?;                    // 16 position
+    let created_at: i64 = row.get(17)?;                  // 17 created_at
+    let updated_at: i64 = row.get(18)?;                  // 18 updated_at
 
     Ok(Task {
         id,
@@ -362,6 +381,7 @@ fn row_to_task(row: &Row<'_>) -> rusqlite::Result<Task> {
         session_state,
         process_pid,
         claude_session_id,
+        project_id,
         position,
         created_at,
         updated_at,

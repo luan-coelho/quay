@@ -337,6 +337,8 @@ pub struct Task {
     /// `None` for tasks that never ran an agent session or for providers
     /// that don't support resume (Opencode, Bare).
     pub claude_session_id: Option<String>,
+    /// Project this task belongs to. `None` for legacy / unassigned tasks.
+    pub project_id: Option<Uuid>,
     /// Position within the column. Lower = higher up.
     pub position: i64,
     pub created_at: i64,
@@ -371,6 +373,7 @@ impl Task {
             session_state: SessionState::default(),
             process_pid: None,
             claude_session_id: None,
+            project_id: None,
             position: 0,
             created_at: now,
             updated_at: now,

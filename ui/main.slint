@@ -240,11 +240,14 @@ component MenuRow inherits Rectangle {
 
 component ProjectRow inherits Rectangle {
     in property <ProjectData> project;
+    in property <bool> selected;
     callback clicked();
 
     height: 26px;
     border-radius: 6px;
-    background: ta.has-hover ? Tokens.bg-hover : transparent;
+    background: selected ? Tokens.bg-card-selected
+              : ta.has-hover ? Tokens.bg-hover
+              : transparent;
 
     ta := TouchArea { clicked => { root.clicked(); } }
 
@@ -256,8 +259,8 @@ component ProjectRow inherits Rectangle {
         VerticalLayout {
             alignment: center;
             Text {
-                text: "▸";
-                color: Tokens.text-tertiary;
+                text: root.selected ? "▾" : "▸";
+                color: root.selected ? Tokens.kind-feature : Tokens.text-tertiary;
                 font-size: 11px;
             }
         }
@@ -265,7 +268,7 @@ component ProjectRow inherits Rectangle {
             alignment: center;
             Text {
                 text: project.name;
-                color: Tokens.text-secondary;
+                color: root.selected ? Tokens.text-primary : Tokens.text-secondary;
                 font-size: 11px;
                 vertical-alignment: center;
             }
@@ -609,6 +612,9 @@ export component MainWindow inherits Window {
     // clicking it again (or the "All" chip) clears the filter.
     in property <[LabelPillData]> all-labels;
     in-out property <string> filter-label-id: "";
+    // Polish 9: active project filter. Empty string = all projects.
+    // Set by clicking a project row in the sidebar.
+    in-out property <string> active-project-id: "";
 
     // Settings modal state + content.
     in-out property <bool> settings-open: false;
@@ -681,6 +687,7 @@ export component MainWindow inherits Window {
     callback add-dependency(string);     // dep task id
     callback delete-task(string);    // task id
     callback create-project();
+    callback project-clicked(string);   // project id
     // text, ctrl, alt, shift, meta. Meta added in Polish 6 for
     // Cmd-based shortcuts on macOS.
     callback key-pressed(string, bool, bool, bool, bool);
@@ -823,6 +830,10 @@ export component MainWindow inherits Window {
 
                 for project in root.projects: ProjectRow {
                     project: project;
+                    selected: root.active-project-id == project.id;
+                    clicked => {
+                        root.project-clicked(project.id);
+                    }
                 }
             }
         }
