@@ -650,6 +650,7 @@ export component MainWindow inherits Window {
     callback attach-label(string);   // label id
     callback detach-label(string);   // label id
     callback remove-dependency(string);  // dep task id
+    callback delete-task(string);    // task id
     callback key-pressed(string, bool, bool, bool);
 
     // Layout constants.
@@ -1061,7 +1062,7 @@ export component MainWindow inherits Window {
                 padding: 14px;
                 spacing: 12px;
 
-                // Display ID + session state chip in a single row.
+                // Display ID + session state chip + delete in a single row.
                 HorizontalLayout {
                     spacing: 8px;
                     alignment: start;
@@ -1073,6 +1074,29 @@ export component MainWindow inherits Window {
                         vertical-alignment: center;
                     }
                     Rectangle { horizontal-stretch: 1; }
+
+                    // Delete button — small, unobtrusive, red outline.
+                    TouchArea {
+                        width: 48px;
+                        height: 16px;
+                        clicked => { root.delete-task(root.active-task-id); }
+                        Rectangle {
+                            background: parent.has-hover ? rgba(248, 113, 113, 15%) : transparent;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: rgba(248, 113, 113, 40%);
+                            Text {
+                                text: "delete";
+                                color: Tokens.kind-bug;
+                                font-size: 9px;
+                                font-weight: 600;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
 
                     // Session state badge — small coloured dot + label.
                     Rectangle {

@@ -769,6 +769,45 @@ fn main() -> Result<()> {
             refresh();
         });
     }
+    {
+        // Polish 4: delete the currently-active task. Cascades handle
+        // labels, dependencies, and sessions via the ON DELETE CASCADE
+        // FKs already in the schema. The running PTY session (if any)
+        // is dropped explicitly so the child process becomes orphan
+        // and will show up in the Process Manager for the user to
+        // clean up.
+        let state = state.clone();
+        let weak = window.as_weak();
+        let refresh = refresh_kanban.clone();
+        let refresh_panels = refresh_active_panels.clone();
+        window.on_delete_task(move |id| {
+            let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
+            // Drop the live session if one exists — PtySession::drop
+            // flushes the log writer; the child becomes orphan.
+            state.sessions.borrow_mut().remove(&uuid);
+            if let Err(err) = crate::kanban::TaskStore::new(&state.db.conn).delete(uuid) {
+                tracing::warn!(%err, %uuid, "delete task failed");
+                return;
+            }
+            // Clear active task if we just deleted it.
+            let mut active = state.active_task.borrow_mut();
+            if *active == Some(uuid) {
+                *active = None;
+            }
+            drop(active);
+            // Reset UI panels to empty-state.
+            if let Some(window) = weak.upgrade() {
+                window.set_active_task_id("".into());
+                window.set_active_task_display("".into());
+                window.set_active_task_title("".into());
+                window.set_active_task_description("".into());
+                window.set_active_task_instructions("".into());
+                window.set_active_task_session_state("idle".into());
+            }
+            refresh_panels();
+            refresh();
+        });
+    }
 
     // ── Phase 5 Settings modal wiring ───────────────────────────────────
 
