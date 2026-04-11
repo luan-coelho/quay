@@ -1,0 +1,880 @@
+// Quay main window — Lanes-inspired three-pane layout.
+//
+// Layout:
+//   ┌──────────┬──────────────────┬─────────────────────────────┐
+//   │ title bar (36px)                                            │
+//   ├──────────┼──────────────────┼─────────────────────────────┤
+//   │ sidebar  │  task list       │  task detail / terminal      │
+//   │ 200px    │  flex            │  flex (2x)                   │
+//   │          │                  │                              │
+//   └──────────┴──────────────────┴─────────────────────────────┘
+//
+// All colours, paddings and dimensions are taken straight from the Lanes
+// reference markup the user provided so the visual language stays close.
+
+import { ScrollView, TextEdit } from "std-widgets.slint";
+
+// ── Design tokens ───────────────────────────────────────────────────────────
+global Tokens {
+    out property <color> bg-base: #1e2024;
+    out property <color> bg-section-header: #222428;
+    out property <color> bg-tab-active: #202329;
+    out property <color> bg-hover: rgba(255, 255, 255, 5%);
+    out property <color> bg-card-selected: rgba(255, 255, 255, 4%);
+
+    out property <color> border-soft: rgba(150, 160, 180, 14%);
+    out property <color> border-very-soft: rgba(150, 160, 180, 7%);
+
+    out property <color> text-primary: #e6e8eb;
+    out property <color> text-secondary: #a7afb8;
+    out property <color> text-tertiary: rgba(167, 175, 184, 50%);
+    out property <color> text-muted: rgba(167, 175, 184, 35%);
+
+    out property <color> kind-enhancement: #10b981;
+    out property <color> kind-feature: #60a5fa;
+    out property <color> kind-bug: #f87171;
+    out property <color> kind-done: #34d399;
+
+    out property <color> accent-warm: #c87533;
+}
+
+// ── Data structures ─────────────────────────────────────────────────────────
+export struct TaskCardData {
+    id: string,           // UUID for callbacks
+    display-id: int,      // sequential numeric ID for display (#1, #2, …)
+    title: string,
+    kind: string,         // "enhancement" | "feature" | "bug"
+    running: bool,
+}
+
+export struct MenuItemData {
+    id: string,
+    label: string,
+    glyph: string,        // 1-char unicode icon
+    shortcut: string,
+}
+
+export struct ProjectData {
+    id: string,
+    name: string,
+}
+
+// ── Helper components ───────────────────────────────────────────────────────
+
+component KindDiamond inherits Rectangle {
+    in property <string> kind;
+    width: 12px;
+    height: 12px;
+    background: transparent;
+
+    Text {
+        text: "◆";
+        color: kind == "enhancement" ? Tokens.kind-enhancement
+              : kind == "feature" ? Tokens.kind-feature
+              : kind == "bug" ? Tokens.kind-bug
+              : Tokens.text-tertiary;
+        font-size: 11px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
+component KindChip inherits Rectangle {
+    in property <string> kind;
+    height: 16px;
+    width: chip-content.preferred-width + 14px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: Tokens.border-soft;
+    background: transparent;
+
+    chip-content := HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        spacing: 5px;
+        alignment: center;
+
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 6px;
+                height: 6px;
+                border-radius: 3px;
+                background: kind == "enhancement" ? Tokens.kind-enhancement
+                           : kind == "feature" ? Tokens.kind-feature
+                           : kind == "bug" ? Tokens.kind-bug
+                           : Tokens.text-tertiary;
+            }
+        }
+        Text {
+            text: kind == "enhancement" ? "Enhancement"
+                 : kind == "feature" ? "Feature"
+                 : kind == "bug" ? "Bug"
+                 : kind;
+            color: Tokens.text-secondary;
+            font-size: 9px;
+            vertical-alignment: center;
+        }
+    }
+}
+
+component MenuRow inherits Rectangle {
+    in property <MenuItemData> item;
+    callback clicked();
+
+    height: 26px;
+    border-radius: 6px;
+    background: hover.has-hover ? Tokens.bg-hover : transparent;
+
+    hover := TouchArea { clicked => { root.clicked(); } }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        alignment: start;
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: item.glyph;
+                color: Tokens.text-secondary;
+                font-size: 11px;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: item.label;
+                color: Tokens.text-secondary;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: item.shortcut;
+                color: Tokens.text-muted;
+                font-size: 10px;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+component ProjectRow inherits Rectangle {
+    in property <ProjectData> project;
+    callback clicked();
+
+    height: 26px;
+    border-radius: 6px;
+    background: ta.has-hover ? Tokens.bg-hover : transparent;
+
+    ta := TouchArea { clicked => { root.clicked(); } }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "▸";
+                color: Tokens.text-tertiary;
+                font-size: 11px;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: project.name;
+                color: Tokens.text-secondary;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+component FilterChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked();
+
+    height: 24px;
+    width: chip-row.preferred-width + 16px;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: Tokens.border-soft;
+    background: selected ? Tokens.bg-tab-active : transparent;
+
+    TouchArea { clicked => { root.clicked(); } }
+
+    chip-row := HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 6px;
+        alignment: center;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: selected ? Tokens.text-primary : Tokens.text-secondary;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "×";
+                color: Tokens.text-tertiary;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+component SectionHeader inherits Rectangle {
+    in property <string> label;
+    in property <int> count;
+    height: 28px;
+    background: Tokens.bg-section-header;
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 8px;
+        alignment: start;
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: Tokens.text-secondary;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: count-text.preferred-width + 8px;
+                height: 14px;
+                border-radius: 7px;
+                background: rgba(167, 175, 184, 10%);
+                count-text := Text {
+                    text: root.count;
+                    color: Tokens.text-tertiary;
+                    font-size: 9px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+component CardRow inherits Rectangle {
+    in property <TaskCardData> task;
+    in property <bool> selected;
+    callback clicked();
+    callback move-back();
+    callback move-forward();
+
+    height: 30px;
+    background: selected ? Tokens.bg-card-selected
+              : ta.has-hover ? Tokens.bg-hover
+              : transparent;
+
+    Rectangle {
+        // Top divider line.
+        x: 0; y: 0; width: parent.width; height: 1px;
+        background: Tokens.border-very-soft;
+    }
+
+    ta := TouchArea { clicked => { root.clicked(); } }
+
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 8px;
+        spacing: 8px;
+        alignment: start;
+
+        // Display ID
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "#" + task.display-id;
+                color: Tokens.text-tertiary;
+                font-size: 10px;
+                font-family: "JetBrains Mono";
+                vertical-alignment: center;
+            }
+        }
+
+        // Diamond
+        VerticalLayout {
+            alignment: center;
+            KindDiamond { kind: task.kind; }
+        }
+
+        // Title (stretches)
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: task.title;
+                color: selected ? Tokens.text-primary : Tokens.text-secondary;
+                font-size: 11px;
+                overflow: elide;
+                vertical-alignment: center;
+            }
+        }
+
+        // Tag chip
+        VerticalLayout {
+            alignment: center;
+            KindChip { kind: task.kind; }
+        }
+
+        // Status dot (running indicator)
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: task.running ? Tokens.kind-enhancement : transparent;
+                border-width: 1px;
+                border-color: task.running ? Tokens.kind-enhancement : Tokens.text-muted;
+            }
+        }
+
+        // Move arrows — visible only on hover/selected, very subtle.
+        Rectangle {
+            width: 24px;
+            background: transparent;
+            visible: root.selected || ta.has-hover;
+
+            HorizontalLayout {
+                spacing: 0px;
+                alignment: center;
+                TouchArea {
+                    width: 12px;
+                    clicked => { root.move-back(); }
+                    Text { text: "‹"; color: Tokens.text-tertiary; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
+                }
+                TouchArea {
+                    width: 12px;
+                    clicked => { root.move-forward(); }
+                    Text { text: "›"; color: Tokens.text-tertiary; font-size: 12px; horizontal-alignment: center; vertical-alignment: center; }
+                }
+            }
+        }
+    }
+}
+
+component RightTab inherits Rectangle {
+    in property <string> label;
+    in property <string> glyph;
+    in property <bool> selected;
+    callback clicked();
+
+    height: 24px;
+    width: row.preferred-width + 16px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: Tokens.border-soft;
+    background: selected ? Tokens.bg-tab-active : transparent;
+
+    TouchArea { clicked => { root.clicked(); } }
+
+    row := HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 6px;
+        alignment: center;
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.glyph;
+                color: selected ? Tokens.text-primary : Tokens.text-secondary;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: selected ? Tokens.text-primary : Tokens.text-secondary;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+// ── Main window ─────────────────────────────────────────────────────────────
+
+export component MainWindow inherits Window {
+    title: "Quay";
+    background: Tokens.bg-base;
+
+    // Terminal pixel buffer + dimensions (driven from Rust).
+    in property <image> frame;
+    in property <int> cell-w: 10;
+    in property <int> cell-h: 22;
+    in property <int> cols: 100;
+    in property <int> rows: 30;
+
+    // Selection / context.
+    in property <string> active-task-id: "";
+    in property <string> active-task-display: "";
+    in property <string> active-task-kind: "feature";
+    in-out property <string> active-task-description: "";
+
+    // Kanban data.
+    in property <[TaskCardData]> tasks-backlog;
+    in property <[TaskCardData]> tasks-planning;
+    in property <[TaskCardData]> tasks-done;
+
+    in property <[MenuItemData]> menu-items;
+    in property <[ProjectData]> projects;
+
+    // Right pane tab selection.
+    in-out property <string> active-right-tab: "terminal";
+
+    callback select-task(string);
+    callback move-task-back(string);
+    callback move-task-forward(string);
+    callback create-task();
+    callback description-changed(string);
+    callback key-pressed(string, bool, bool, bool);
+
+    // Layout constants.
+    property <length> sidebar-w: 200px;
+    property <length> middle-w: 400px;
+    property <length> title-bar-h: 36px;
+    property <length> tab-strip-h: 32px;
+    property <length> term-w: root.cols * root.cell-w * 1px;
+    property <length> term-h: root.rows * root.cell-h * 1px;
+    property <length> right-pad-h: 18px;
+    property <length> right-pad-v: 14px;
+
+    preferred-width: sidebar-w + middle-w + term-w + right-pad-h * 2 + 2px;
+    preferred-height: title-bar-h + tab-strip-h + term-h + right-pad-v * 2 + 14px;
+    min-width: sidebar-w + middle-w + term-w + right-pad-h * 2 + 2px;
+    min-height: title-bar-h + tab-strip-h + term-h + right-pad-v * 2 + 14px;
+
+    init => { focus-scope.focus(); }
+
+    // ── Title bar ────────────────────────────────────────────────────────────
+    Rectangle {
+        x: 0; y: 0;
+        width: parent.width;
+        height: title-bar-h;
+        background: Tokens.bg-base;
+
+        Rectangle {
+            x: 0; y: parent.height - 1px;
+            width: parent.width; height: 1px;
+            background: Tokens.border-soft;
+        }
+
+        // Traffic-light styled trio (decorative — purely visual).
+        HorizontalLayout {
+            x: 12px;
+            y: (parent.height - self.preferred-height) / 2;
+            spacing: 6px;
+            Rectangle { width: 11px; height: 11px; border-radius: 5.5px; background: #ff5f57; }
+            Rectangle { width: 11px; height: 11px; border-radius: 5.5px; background: #febc2e; }
+            Rectangle { width: 11px; height: 11px; border-radius: 5.5px; background: #28c840; }
+        }
+
+        // Centered app name.
+        Text {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            text: "Quay";
+            color: Tokens.text-tertiary;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        // Active task display id on the right.
+        Text {
+            x: parent.width - self.width - 18px;
+            y: (parent.height - self.height) / 2;
+            text: root.active-task-display;
+            color: Tokens.text-secondary;
+            font-size: 11px;
+        }
+    }
+
+    // ── Sidebar ──────────────────────────────────────────────────────────────
+    Rectangle {
+        x: 0;
+        y: title-bar-h;
+        width: sidebar-w;
+        height: parent.height - title-bar-h;
+        background: Tokens.bg-base;
+
+        // Right divider.
+        Rectangle {
+            x: parent.width - 1px;
+            y: 0;
+            width: 1px;
+            height: parent.height;
+            background: Tokens.border-soft;
+        }
+
+        VerticalLayout {
+            padding: 8px;
+            padding-top: 12px;
+            spacing: 16px;
+
+            // Menu items.
+            VerticalLayout {
+                spacing: 2px;
+                for item in root.menu-items: MenuRow {
+                    item: item;
+                    clicked => {
+                        if (item.id == "new-task") { root.create-task(); }
+                    }
+                }
+            }
+
+            // Projects section.
+            VerticalLayout {
+                spacing: 4px;
+
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    height: 22px;
+                    spacing: 0px;
+                    alignment: start;
+
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: "Projects";
+                            color: Tokens.text-secondary;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: "+";
+                            color: Tokens.text-tertiary;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                for project in root.projects: ProjectRow {
+                    project: project;
+                }
+            }
+        }
+    }
+
+    // ── Middle pane: task list ──────────────────────────────────────────────
+    Rectangle {
+        x: sidebar-w;
+        y: title-bar-h;
+        width: middle-w;
+        height: parent.height - title-bar-h;
+        background: Tokens.bg-base;
+
+        Rectangle {
+            x: parent.width - 1px;
+            y: 0;
+            width: 1px;
+            height: parent.height;
+            background: Tokens.border-soft;
+        }
+
+        VerticalLayout {
+            spacing: 0px;
+
+            // Filter chips.
+            Rectangle {
+                height: tab-strip-h;
+                background: Tokens.bg-base;
+
+                Rectangle {
+                    x: 0; y: parent.height - 1px;
+                    width: parent.width; height: 1px;
+                    background: Tokens.border-soft;
+                }
+
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    spacing: 4px;
+                    alignment: start;
+
+                    VerticalLayout {
+                        alignment: end;
+                        FilterChip { label: "All"; selected: true; }
+                    }
+                    VerticalLayout {
+                        alignment: end;
+                        FilterChip { label: "backend"; selected: false; }
+                    }
+                    VerticalLayout {
+                        alignment: end;
+                        FilterChip { label: "frontend"; selected: false; }
+                    }
+                }
+            }
+
+            // Scrollable task list.
+            ScrollView {
+                vertical-scrollbar-policy: as-needed;
+
+                VerticalLayout {
+                    spacing: 0px;
+
+                    // BACKLOG
+                    SectionHeader { label: "Backlog"; count: root.tasks-backlog.length; }
+                    for task in root.tasks-backlog: CardRow {
+                        task: task;
+                        selected: task.id == root.active-task-id;
+                        clicked => { root.select-task(task.id); }
+                        move-back => { root.move-task-back(task.id); }
+                        move-forward => { root.move-task-forward(task.id); }
+                    }
+
+                    // PLANNING & IMPLEMENTATION
+                    SectionHeader {
+                        label: "Planning & Implementation";
+                        count: root.tasks-planning.length;
+                    }
+                    for task in root.tasks-planning: CardRow {
+                        task: task;
+                        selected: task.id == root.active-task-id;
+                        clicked => { root.select-task(task.id); }
+                        move-back => { root.move-task-back(task.id); }
+                        move-forward => { root.move-task-forward(task.id); }
+                    }
+
+                    // DONE
+                    SectionHeader { label: "Done"; count: root.tasks-done.length; }
+                    for task in root.tasks-done: CardRow {
+                        task: task;
+                        selected: task.id == root.active-task-id;
+                        clicked => { root.select-task(task.id); }
+                        move-back => { root.move-task-back(task.id); }
+                        move-forward => { root.move-task-forward(task.id); }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Right pane: task detail / terminal ──────────────────────────────────
+    Rectangle {
+        x: sidebar-w + middle-w;
+        y: title-bar-h;
+        width: parent.width - sidebar-w - middle-w;
+        height: parent.height - title-bar-h;
+        background: Tokens.bg-base;
+
+        // Tab strip
+        Rectangle {
+            x: 0; y: 0;
+            width: parent.width;
+            height: tab-strip-h;
+            background: Tokens.bg-base;
+
+            Rectangle {
+                x: 0; y: parent.height - 1px;
+                width: parent.width; height: 1px;
+                background: Tokens.border-soft;
+            }
+
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 8px;
+                spacing: 4px;
+                alignment: start;
+
+                VerticalLayout { alignment: end;
+                    RightTab { label: "Terminal"; glyph: "▶"; selected: root.active-right-tab == "terminal"; clicked => { root.active-right-tab = "terminal"; } }
+                }
+                VerticalLayout { alignment: end;
+                    RightTab { label: "Description"; glyph: "≡"; selected: root.active-right-tab == "description"; clicked => { root.active-right-tab = "description"; } }
+                }
+                VerticalLayout { alignment: end;
+                    RightTab { label: "Git Changes"; glyph: "⎇"; selected: root.active-right-tab == "git"; clicked => { root.active-right-tab = "git"; } }
+                }
+                VerticalLayout { alignment: end;
+                    RightTab { label: "History"; glyph: "◷"; selected: root.active-right-tab == "history"; clicked => { root.active-right-tab = "history"; } }
+                }
+            }
+        }
+
+        // Terminal area (only visible when active-right-tab == "terminal")
+        focus-scope := FocusScope {
+            x: right-pad-h;
+            y: tab-strip-h + right-pad-v;
+            width: term-w;
+            height: term-h;
+
+            key-pressed(event) => {
+                root.key-pressed(
+                    event.text,
+                    event.modifiers.control,
+                    event.modifiers.alt,
+                    event.modifiers.shift,
+                );
+                accept
+            }
+
+            Rectangle {
+                background: #07080b;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: Tokens.border-soft;
+                clip: true;
+
+                Image {
+                    source: root.frame;
+                    x: 0; y: 0;
+                    width: parent.width;
+                    height: parent.height;
+                    image-fit: contain;
+                    image-rendering: pixelated;
+                }
+
+                // Empty state.
+                Rectangle {
+                    visible: root.active-task-id == "";
+                    background: #07080b;
+                    Text {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        text: "Select a task or create one to begin";
+                        color: Tokens.text-tertiary;
+                        font-size: 12px;
+                    }
+                }
+            }
+        }
+
+        // Footer status line.
+        Text {
+            x: right-pad-h + 4px;
+            y: parent.height - 22px;
+            text: "‖ Quay terminal · esc to interrupt the active session";
+            color: Tokens.kind-enhancement;
+            font-size: 10px;
+        }
+
+        // Description tab — editable text area backed by task.description.
+        Rectangle {
+            visible: root.active-right-tab == "description";
+            x: right-pad-h;
+            y: tab-strip-h + right-pad-v;
+            width: parent.width - right-pad-h * 2;
+            height: parent.height - tab-strip-h - right-pad-v * 2 - 22px;
+            background: #14161a;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Tokens.border-soft;
+            clip: true;
+
+            if root.active-task-id == "": Rectangle {
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 6px;
+                    Text {
+                        text: "Description";
+                        color: Tokens.text-primary;
+                        font-size: 13px;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: "Select a task to read or edit its description.";
+                        color: Tokens.text-tertiary;
+                        font-size: 11px;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+
+            if root.active-task-id != "": VerticalLayout {
+                padding: 14px;
+                spacing: 10px;
+
+                Text {
+                    text: root.active-task-display;
+                    color: Tokens.text-primary;
+                    font-size: 13px;
+                    font-weight: 600;
+                }
+
+                Rectangle {
+                    height: 1px;
+                    background: Tokens.border-very-soft;
+                }
+
+                TextEdit {
+                    text: root.active-task-description;
+                    placeholder-text: "Add a description, notes for the agent, acceptance criteria…";
+                    wrap: word-wrap;
+                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
+                    edited => {
+                        root.description-changed(self.text);
+                    }
+                }
+            }
+        }
+
+        // Git Changes / History placeholder.
+        Rectangle {
+            visible: root.active-right-tab == "git" || root.active-right-tab == "history";
+            x: right-pad-h;
+            y: tab-strip-h + right-pad-v;
+            width: parent.width - right-pad-h * 2;
+            height: parent.height - tab-strip-h - right-pad-v * 2 - 22px;
+            background: #14161a;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Tokens.border-soft;
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 8px;
+                Text {
+                    text: root.active-right-tab == "git" ? "Git Changes" : "History";
+                    color: Tokens.text-primary;
+                    font-size: 13px;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: "Coming in a future iteration.";
+                    color: Tokens.text-tertiary;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+}

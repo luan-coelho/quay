@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    name: ${{ matrix.os }} / cargo ${{ matrix.action }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        action: [check, test, clippy]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Install Linux system dependencies for Slint (Skia) + git2
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig1-dev \
+            libxkbcommon-dev \
+            libwayland-dev \
+            libx11-xcb-dev \
+            libxcb-randr0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libssl-dev \
+            pkg-config
+
+      # Slint's renderer-skia feature needs a C++ toolchain to build skia-safe.
+      # ubuntu-latest, macos-latest and windows-latest all ship with a working
+      # C++ toolchain out of the box (gcc, clang, MSVC 2022 respectively), so
+      # no extra install step is needed — we only document the dependency here.
+
+      - name: Cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ matrix.action }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.action }}-
+            ${{ runner.os }}-cargo-
+
+      - name: cargo check
+        if: matrix.action == 'check'
+        run: cargo check --all-targets
+
+      - name: cargo test
+        if: matrix.action == 'test'
+        run: cargo test --all-targets
+
+      - name: cargo clippy
+        if: matrix.action == 'clippy'
+        run: cargo clippy --all-targets -- -D warnings
+
+  # A release-build job that only runs on Linux to keep CI cheap. Its point is
+  # to exercise the release profile + link step (which caught issues that debug
+  # builds miss in the past, e.g. LTO failures with libgit2-sys).
+  release-build-linux:
+    name: release build (ubuntu)
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfontconfig1-dev libxkbcommon-dev libwayland-dev \
+            libx11-xcb-dev libxcb-randr0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libssl-dev pkg-config
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ubuntu-latest-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+      - name: cargo build --release
+        run: cargo build --release
+      - name: Upload binary artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: quay-linux-x86_64
+          path: target/release/quay
+          if-no-files-found: error
