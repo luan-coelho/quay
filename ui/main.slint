@@ -266,12 +266,20 @@ component KindChip inherits Rectangle {
 // fades out via the `visible: bool` property (driven by a
 // Slint Timer in main.rs). Color stripe on the left edge keys
 // the message kind.
+//
+// Polish 31 — `opacity` and `y` are animated so the chip slides
+// up from below and fades in on show, then reverses on hide.
+// The container stays mounted (always `visible: true`) so the
+// animation can run on the way out — `opacity == 0` makes it
+// invisible without removing it from the layout.
 component Toast inherits Rectangle {
     in property <string> message;
     in property <string> kind;  // "success" | "error" | "info"
     in property <bool> visible-toast: false;
 
-    visible: visible-toast;
+    opacity: visible-toast ? 1.0 : 0.0;
+    animate opacity { duration: 200ms; easing: ease-out; }
+
     height: 32px;
     border-radius: 8px;
     border-width: 1px;
@@ -2863,18 +2871,20 @@ export component MainWindow inherits Window {
         }
     }
 
-    // ── Polish 25: notification toast ───────────────────────────────────
-    // Floats above the status bar, anchored bottom-right with a small
-    // inset. Width is auto-fit via preferred-width on the inner
-    // HorizontalLayout — long messages elide via the Toast component's
-    // own Text overflow rule.
+    // ── Polish 25 + 31: notification toast ──────────────────────────────
+    // Floats above the status bar, anchored bottom-right. Polish 31
+    // animates a vertical offset so the chip slides up by 16 px when
+    // visible — combined with the opacity animation inside the Toast
+    // component, the result is a smooth fade-up entrance and
+    // fade-down exit.
     toast := Toast {
         x: parent.width - self.width - 16px;
-        y: parent.height - status-bar-h - self.height - 12px;
+        y: parent.height - status-bar-h - self.height - (root.toast-visible ? 12px : -4px);
         width: 320px;
         message: root.toast-message;
         kind: root.toast-kind;
         visible-toast: root.toast-visible;
+        animate y { duration: 220ms; easing: ease-out; }
     }
 
     // ── Status bar (Polish 13) ──────────────────────────────────────────
