@@ -1194,14 +1194,38 @@ export component MainWindow inherits Window {
             font-weight: 600;
         }
 
-        // Active task display id on the right (shifted left to make
-        // room for the Avatar — Polish 20).
-        Text {
+        // Polish 27 — active task display id + truncated title.
+        // Was just `root.active-task-display` ("#7"); now shows
+        // "#7  Add dark mode" so the user has context even when
+        // the open-tabs strip is empty (only 1 tab open). The
+        // title elides if too long.
+        Rectangle {
             x: parent.width - self.width - 44px;
             y: (parent.height - self.height) / 2;
-            text: root.active-task-display;
-            color: Tokens.text-secondary;
-            font-size: 11px;
+            width: title-info.preferred-width + 4px;
+            height: title-info.preferred-height;
+            background: transparent;
+
+            title-info := HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+
+                Text {
+                    text: root.active-task-display;
+                    color: Tokens.text-tertiary;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.active-task-title;
+                    color: Tokens.text-secondary;
+                    font-size: 11px;
+                    font-weight: 500;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    max-width: 240px;
+                }
+            }
         }
 
         // Polish 20 — user avatar circle (visual stub, no user system).
