@@ -12,7 +12,7 @@
 // All colours, paddings and dimensions are taken straight from the Lanes
 // reference markup the user provided so the visual language stays close.
 
-import { ScrollView, TextEdit } from "std-widgets.slint";
+import { ScrollView, TextEdit, LineEdit } from "std-widgets.slint";
 
 // ── Design tokens ───────────────────────────────────────────────────────────
 global Tokens {
@@ -440,6 +440,7 @@ export component MainWindow inherits Window {
     in property <string> active-task-id: "";
     in property <string> active-task-display: "";
     in property <string> active-task-kind: "feature";
+    in-out property <string> active-task-title: "";
     in-out property <string> active-task-description: "";
 
     // Kanban data.
@@ -457,6 +458,7 @@ export component MainWindow inherits Window {
     callback move-task-back(string);
     callback move-task-forward(string);
     callback create-task();
+    callback title-changed(string);
     callback description-changed(string);
     callback key-pressed(string, bool, bool, bool);
 
@@ -820,18 +822,34 @@ export component MainWindow inherits Window {
 
             if root.active-task-id != "": VerticalLayout {
                 padding: 14px;
-                spacing: 10px;
+                spacing: 12px;
 
+                // Display ID in muted text above the editable title.
                 Text {
                     text: root.active-task-display;
-                    color: Tokens.text-primary;
-                    font-size: 13px;
-                    font-weight: 600;
+                    color: Tokens.text-tertiary;
+                    font-size: 10px;
+                }
+
+                // Editable title.
+                LineEdit {
+                    text: root.active-task-title;
+                    placeholder-text: "Task title";
+                    font-size: 15px;
+                    edited(new-text) => {
+                        root.title-changed(new-text);
+                    }
                 }
 
                 Rectangle {
                     height: 1px;
                     background: Tokens.border-very-soft;
+                }
+
+                Text {
+                    text: "Description";
+                    color: Tokens.text-tertiary;
+                    font-size: 10px;
                 }
 
                 TextEdit {

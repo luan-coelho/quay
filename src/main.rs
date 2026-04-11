@@ -72,6 +72,7 @@ fn main() -> Result<()> {
     ));
     window.set_active_task_id("".into());
     window.set_active_task_display("".into());
+    window.set_active_task_title("".into());
     window.set_active_task_description("".into());
     window.set_active_right_tab("terminal".into());
 
@@ -175,7 +176,7 @@ fn main() -> Result<()> {
                 Ok(changed) if !changed => {}
                 Ok(_) => {
                     if let Some(window) = weak.upgrade() {
-                        let (display, description) = if let Ok(Some(task)) =
+                        let (display, title, description) = if let Ok(Some(task)) =
                             crate::kanban::TaskStore::new(&state.db.conn).get(uuid)
                         {
                             // Compute display-id by scanning all tasks ordered
@@ -191,14 +192,16 @@ fn main() -> Result<()> {
                             let kind = TaskKind::from_title(&task.title);
                             window.set_active_task_kind(kind_to_str(kind).into());
                             (
-                                format!("#{display_id}  {}", task.title),
+                                format!("#{display_id}"),
+                                task.title.clone(),
                                 task.description.clone().unwrap_or_default(),
                             )
                         } else {
-                            (String::new(), String::new())
+                            (String::new(), String::new(), String::new())
                         };
                         window.set_active_task_id(id.clone());
                         window.set_active_task_display(display.into());
+                        window.set_active_task_title(title.into());
                         window.set_active_task_description(description.into());
                         if state.blit_active() {
                             window.set_frame(Image::from_rgba8_premultiplied(
@@ -244,6 +247,36 @@ fn main() -> Result<()> {
                 tracing::error!(%err, "move_backward failed");
             }
             refresh();
+        });
+    }
+    {
+        let state = state.clone();
+        let refresh = refresh_kanban.clone();
+        window.on_title_changed(move |text| {
+            let Some(active_id) = *state.active_task.borrow() else {
+                return;
+            };
+            let trimmed = text.to_string();
+            if trimmed.is_empty() {
+                return;
+            }
+            let store = crate::kanban::TaskStore::new(&state.db.conn);
+            match store.get(active_id) {
+                Ok(Some(mut task)) => {
+                    if task.title == trimmed {
+                        return;
+                    }
+                    task.title = trimmed;
+                    task.updated_at = crate::kanban::unix_millis_now();
+                    if let Err(err) = store.update(&task) {
+                        tracing::error!(%err, "failed to update task title");
+                        return;
+                    }
+                    refresh();
+                }
+                Ok(None) => {}
+                Err(err) => tracing::error!(%err, "failed to load task for title update"),
+            }
         });
     }
     {
