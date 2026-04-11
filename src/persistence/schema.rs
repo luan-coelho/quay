@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use rusqlite::Connection;
 
 /// Current target schema version. Equals the number of migrations below.
-pub const CURRENT_VERSION: i64 = 3;
+pub const CURRENT_VERSION: i64 = 4;
 
 /// Each entry corresponds to one schema version. Index 0 is migration v0→v1,
 /// index 1 is v1→v2, etc. Each script must be idempotent in the sense that
@@ -133,6 +133,13 @@ const MIGRATIONS: &[&str] = &[
 
     CREATE INDEX IF NOT EXISTS tasks_state_position
         ON tasks(state, position);
+    "#,
+    // v3 → v4: add `claude_session_id` so Phase 3's `--resume` path has
+    // somewhere to persist the Claude Code session id between app runs.
+    // Nullable because most tasks won't have one (fresh tasks before
+    // their first session, or Opencode/Bare which don't support resume).
+    r#"
+    ALTER TABLE tasks ADD COLUMN claude_session_id TEXT;
     "#,
 ];
 
@@ -410,7 +417,7 @@ mod tests {
         let v: i64 = conn
             .query_row("SELECT version FROM schema_version", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(v, 3);
+        assert_eq!(v, CURRENT_VERSION);
 
         // Legacy row survived the v3 table recreate.
         let (title, state, position, cli_selection, session_state): (String, String, i64, String, String) =

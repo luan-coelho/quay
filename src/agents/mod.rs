@@ -21,6 +21,7 @@
 //! not "anything you can run in a PTY".
 
 pub mod claude_code;
+pub mod claude_resume;
 pub mod opencode;
 
 use anyhow::Result;

@@ -288,10 +288,14 @@ impl AppState {
                 let provider = agents::detect(kind)?.expect(
                     "non-bare AgentKind factories always return Some provider",
                 );
-                // Resume hook is in place for Phase 3: Claude Code supports
-                // it, OpenCode does not. Phase 1 never has a captured
-                // session id yet, so we always pass None.
-                let resume_id: Option<&str> = None;
+                // Providers that support resume get the captured session id
+                // on subsequent launches so the agent's conversation memory
+                // survives restarts. Providers that don't always get None.
+                let resume_id: Option<&str> = if provider.supports_resume() {
+                    task.claude_session_id.as_deref()
+                } else {
+                    None
+                };
                 let argv = provider.argv(
                     mode,
                     task.instructions.as_deref(),
@@ -313,6 +317,7 @@ impl AppState {
 
         // ── 3. Spawn PTY session ─────────────────────────────────────────
         let log_path = self.dirs.task_log_path(&id.to_string());
+        let spawn_time = std::time::SystemTime::now();
         let session = PtySession::spawn(
             self.cols,
             self.rows,
@@ -321,6 +326,57 @@ impl AppState {
             &cwd,
             Some(log_path.clone()),
         )?;
+
+        // Phase 3: if this is a Claude Code session, kick off a background
+        // thread to capture the session id from Claude's `.claude/projects/`
+        // state directory. The capture updates the task row directly via
+        // a fresh short-lived DB connection when it finds the id; on the
+        // next start_session we pass it as `--resume <id>` so the agent's
+        // conversation memory survives restarts.
+        if matches!(task.cli_selection, AgentKind::Claude) {
+            let db_path = self.dirs.db_path.clone();
+            let capture_cwd = cwd.clone();
+            let task_id = id;
+            std::thread::Builder::new()
+                .name("quay-claude-resume-capture".into())
+                .spawn(move || {
+                    let timeout = std::time::Duration::from_secs(30);
+                    match agents::claude_resume::capture_session_id(
+                        &capture_cwd,
+                        spawn_time,
+                        timeout,
+                    ) {
+                        Ok(Some(session_id)) => {
+                            if let Err(err) =
+                                persist_claude_session_id(&db_path, task_id, &session_id)
+                            {
+                                tracing::warn!(
+                                    task_id = %task_id,
+                                    %err,
+                                    "failed to persist captured claude_session_id"
+                                );
+                            } else {
+                                tracing::info!(
+                                    task_id = %task_id,
+                                    session_id = %session_id,
+                                    "claude session id captured"
+                                );
+                            }
+                        }
+                        Ok(None) => {
+                            tracing::debug!(
+                                task_id = %task_id,
+                                "no claude session file appeared within timeout"
+                            );
+                        }
+                        Err(err) => {
+                            tracing::warn!(%err, "claude_resume capture failed");
+                        }
+                    }
+                })
+                .ok(); // If we can't spawn the thread, resume support is
+                       // silently skipped for this session. Not fatal.
+        }
 
         // ── 4. Persist task state transitions ────────────────────────────
         task.start_mode = Some(mode);
@@ -459,6 +515,33 @@ impl AppState {
 }
 
 // ── Free-standing helpers ───────────────────────────────────────────────────
+
+/// Update `tasks.claude_session_id` for one task via a fresh short-lived
+/// rusqlite connection. Called from the background claude-resume capture
+/// thread, which cannot share the main `AppState.db.conn` (Connection is
+/// not Send).
+///
+/// Opens in WAL mode with foreign keys on, same as `Database::configure`,
+/// so concurrent reads from the main thread are cheap and consistent.
+fn persist_claude_session_id(
+    db_path: &Path,
+    task_id: Uuid,
+    session_id: &str,
+) -> Result<()> {
+    let conn = rusqlite::Connection::open(db_path)
+        .with_context(|| format!("open sqlite at {}", db_path.display()))?;
+    conn.pragma_update(None, "foreign_keys", "ON")?;
+    conn.execute(
+        "UPDATE tasks SET claude_session_id = ?1, updated_at = ?2 WHERE id = ?3",
+        rusqlite::params![
+            session_id,
+            unix_millis_now(),
+            task_id.to_string(),
+        ],
+    )
+    .context("UPDATE tasks.claude_session_id")?;
+    Ok(())
+}
 
 /// Whether a path is the root of a git repository.
 ///
