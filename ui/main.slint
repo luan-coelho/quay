@@ -315,6 +315,9 @@ component CloseButton inherits Rectangle {
 
 component MenuRow inherits Rectangle {
     in property <MenuItemData> item;
+    // Polish 24: when the sidebar is collapsed, only the glyph
+    // column survives. Label and shortcut hide entirely.
+    in property <bool> compact: false;
     callback clicked();
 
     // Polish 20 — when the shortcut slot carries a `▸` chevron the
@@ -329,20 +332,20 @@ component MenuRow inherits Rectangle {
     hover := TouchArea { clicked => { root.clicked(); } }
 
     HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 12px;
+        padding-left: compact ? 0px : 12px;
+        padding-right: compact ? 0px : 12px;
         spacing: 12px;
-        alignment: start;
+        alignment: compact ? center : start;
 
         VerticalLayout {
             alignment: center;
             Text {
                 text: item.glyph;
                 color: Tokens.text-secondary;
-                font-size: 11px;
+                font-size: 13px;
             }
         }
-        VerticalLayout {
+        if !compact: VerticalLayout {
             alignment: center;
             horizontal-stretch: 1;
             Text {
@@ -352,7 +355,7 @@ component MenuRow inherits Rectangle {
                 vertical-alignment: center;
             }
         }
-        VerticalLayout {
+        if !compact: VerticalLayout {
             alignment: center;
             Text {
                 text: item.shortcut;
@@ -367,6 +370,9 @@ component MenuRow inherits Rectangle {
 component ProjectRow inherits Rectangle {
     in property <ProjectData> project;
     in property <bool> selected;
+    // Polish 24: compact mode for collapsed sidebar — name hides,
+    // only the chevron remains (re-purposed as a folder dot icon).
+    in property <bool> compact: false;
     callback clicked();
 
     height: 26px;
@@ -378,19 +384,19 @@ component ProjectRow inherits Rectangle {
     ta := TouchArea { clicked => { root.clicked(); } }
 
     HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 12px;
+        padding-left: compact ? 0px : 12px;
+        padding-right: compact ? 0px : 12px;
         spacing: 12px;
-        alignment: start;
+        alignment: compact ? center : start;
         VerticalLayout {
             alignment: center;
             Text {
-                text: root.selected ? "▾" : "▸";
+                text: compact ? "▤" : (root.selected ? "▾" : "▸");
                 color: root.selected ? Tokens.kind-feature : Tokens.text-tertiary;
-                font-size: 11px;
+                font-size: compact ? 13px : 11px;
             }
         }
-        VerticalLayout {
+        if !compact: VerticalLayout {
             alignment: center;
             Text {
                 text: project.name;
@@ -997,7 +1003,12 @@ export component MainWindow inherits Window {
     callback key-pressed(string, bool, bool, bool, bool);
 
     // Layout constants.
-    property <length> sidebar-w: 200px;
+    // Polish 24: sidebar-w switches between full and compact based
+    // on `sidebar-collapsed`. The middle and right panes use this
+    // in their `x:` positioning so they reflow automatically when
+    // the toggle is fired.
+    in-out property <bool> sidebar-collapsed: false;
+    property <length> sidebar-w: sidebar-collapsed ? 56px : 200px;
     property <length> middle-w: 400px;
     property <length> title-bar-h: 36px;
     property <length> tab-strip-h: 32px;
@@ -1043,13 +1054,18 @@ export component MainWindow inherits Window {
             Rectangle { width: 11px; height: 11px; border-radius: 5.5px; background: #28c840; }
         }
 
-        // Polish 20 — sidebar toggle (hamburger). Stub callback for now.
+        // Polish 24 — sidebar toggle (hamburger). Now actually
+        // collapses the sidebar to a 56 px icon-only strip via the
+        // `sidebar-collapsed` property. Pure Slint, no Rust round-trip.
         TouchArea {
             x: sidebar-w + 8px;
             y: (parent.height - self.height) / 2;
             width: 22px;
             height: 22px;
-            clicked => { root.toggle-sidebar(); }
+            clicked => {
+                root.sidebar-collapsed = !root.sidebar-collapsed;
+                root.toggle-sidebar();
+            }
             Text {
                 text: "☰";
                 color: Tokens.text-tertiary;
@@ -1115,6 +1131,7 @@ export component MainWindow inherits Window {
                 spacing: 2px;
                 for item in root.menu-items: MenuRow {
                     item: item;
+                    compact: root.sidebar-collapsed;
                     clicked => {
                         if (item.id == "new-task") { root.new-task-open = true; }
                         if (item.id == "configure") { root.toggle-settings(); }
@@ -1133,7 +1150,10 @@ export component MainWindow inherits Window {
             VerticalLayout {
                 spacing: 4px;
 
-                HorizontalLayout {
+                // Polish 24: hide the "Projects" header + `+` row when
+                // the sidebar is collapsed (compact mode shows only
+                // icons under it).
+                if !root.sidebar-collapsed: HorizontalLayout {
                     padding-left: 12px;
                     padding-right: 12px;
                     height: 22px;
@@ -1173,6 +1193,7 @@ export component MainWindow inherits Window {
                 for project in root.projects: ProjectRow {
                     project: project;
                     selected: root.active-project-id == project.id;
+                    compact: root.sidebar-collapsed;
                     clicked => {
                         root.project-clicked(project.id);
                     }
