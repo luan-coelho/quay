@@ -497,6 +497,38 @@ impl AppState {
         self.sessions.borrow().contains_key(&id)
     }
 
+    /// Execute the quick action at `index` (0-based) against the currently
+    /// active session. Both Claude-type and Shell-type quick actions write
+    /// to the PTY — Claude agents treat the text as a prompt, bare shells
+    /// treat it as a shell command. A trailing `\n` is always appended so
+    /// the agent/shell processes the input immediately.
+    ///
+    /// Returns Ok(None) if there's no quick action at that index, Ok(Some(name))
+    /// if one was executed (for UI feedback).
+    pub fn execute_quick_action(&self, index: usize) -> Result<Option<String>> {
+        let store = crate::quick_actions::QuickActionStore::new(&self.db.conn);
+        let actions = store.list_all()?;
+        let Some(action) = actions.get(index) else {
+            return Ok(None);
+        };
+
+        // Both kinds end up as bytes into the active PTY. The difference
+        // is semantic: Claude-type is a prompt, Shell-type is a command
+        // line. Quay writes the exact body + newline regardless — it's
+        // up to the running process to interpret.
+        let mut bytes = action.body.clone().into_bytes();
+        bytes.push(b'\n');
+        self.write_to_active(&bytes);
+
+        tracing::info!(
+            index,
+            name = %action.name,
+            kind = %action.kind.as_str(),
+            "executed quick action"
+        );
+        Ok(Some(action.name.clone()))
+    }
+
     /// Helper for seed data: if the DB is empty, insert a few demo tasks so
     /// the kanban is not blank on first run.
     pub fn seed_demo_if_empty(&self) -> Result<()> {

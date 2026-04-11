@@ -78,6 +78,13 @@ fn main() -> Result<()> {
         label_store.seed_presets_if_empty()?;
         auto_tag_seed_tasks(&state)?;
     }
+    // Phase 5: seed the default Quick Actions + Settings on first run.
+    {
+        let qa_store = crate::quick_actions::QuickActionStore::new(&state.db.conn);
+        qa_store.seed_defaults_if_empty()?;
+        let settings_store = crate::settings::Settings::new(&state.db.conn);
+        settings_store.seed_defaults_if_empty()?;
+    }
 
     // Initial blank framebuffer.
     window.set_frame(Image::from_rgba8_premultiplied(
@@ -550,8 +557,36 @@ fn main() -> Result<()> {
         });
     }
     {
+        // Key dispatcher — checked in priority order:
+        //
+        // 1. Cmd/Ctrl + Alt + digit (1..9) → execute quick action at
+        //    (digit - 1) index. Short-circuits so the digit never reaches
+        //    the PTY.
+        // 2. Otherwise, translate to xterm bytes and forward to the
+        //    active session.
+        //
+        // Cmd (meta on macOS) vs Ctrl on Linux/Windows is handled by
+        // accepting either — in practice Slint reports Ctrl on Linux
+        // and the user presses the right key for their OS.
         let state = state.clone();
         window.on_key_pressed(move |text, ctrl, alt, shift| {
+            // Cmd/Ctrl + Alt + digit — quick action shortcut.
+            if ctrl && alt && text.len() == 1 {
+                let c = text.chars().next().unwrap_or(' ');
+                if let Some(digit) = c.to_digit(10)
+                    && (1..=9).contains(&digit)
+                {
+                    let idx = (digit - 1) as usize;
+                    match state.execute_quick_action(idx) {
+                        Ok(Some(name)) => tracing::info!(%name, idx, "quick action fired"),
+                        Ok(None) => tracing::debug!(idx, "no quick action at index"),
+                        Err(err) => tracing::warn!(%err, idx, "quick action failed"),
+                    }
+                    return;
+                }
+            }
+
+            // Fall-through: normal PTY input.
             let bytes = key_text_to_bytes(text.as_str(), ctrl, alt, shift);
             if !bytes.is_empty() {
                 state.write_to_active(&bytes);
