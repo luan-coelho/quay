@@ -1223,10 +1223,17 @@ export component MainWindow inherits Window {
                 }
                 LineEdit {
                     text: root.active-task-instructions;
-                    placeholder-text: "e.g. Add dark mode with a toggle in settings";
+                    placeholder-text: "e.g. Add dark mode with a toggle in settings — press Enter to Implement";
                     font-size: 12px;
                     edited(new-text) => {
                         root.instructions-changed(new-text);
+                    }
+                    // Polish 12: pressing Enter inside the Instructions
+                    // field fires start-implement — the most common
+                    // gesture is "type a quick prompt, hit Enter".
+                    accepted(new-text) => {
+                        root.instructions-changed(new-text);
+                        root.start-implement(root.active-task-id);
                     }
                 }
 

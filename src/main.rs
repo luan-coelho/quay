@@ -1338,7 +1338,27 @@ fn main() -> Result<()> {
                 }
             }
 
-            // 2. Global primary-modifier shortcuts.
+            // 2. Escape — close any open modal. Polish 12.
+            if text == "\u{001b}" {
+                if let Some(w) = weak.upgrade() {
+                    if w.get_settings_open() {
+                        w.set_settings_open(false);
+                        return;
+                    }
+                    if w.get_new_project_open() {
+                        w.set_new_project_open(false);
+                        return;
+                    }
+                    if w.get_new_task_open() {
+                        w.set_new_task_open(false);
+                        return;
+                    }
+                }
+                // No modal open — fall through so Esc still reaches the
+                // PTY (needed for vim/less/etc).
+            }
+
+            // 3. Global primary-modifier shortcuts.
             if primary && !alt && text.len() == 1 {
                 match text.chars().next().unwrap_or('\0') {
                     'n' | 'N' => {
@@ -1374,7 +1394,7 @@ fn main() -> Result<()> {
                 }
             }
 
-            // 3. Fall-through: normal PTY input.
+            // 4. Fall-through: normal PTY input.
             let bytes = key_text_to_bytes(text.as_str(), ctrl, alt, _shift);
             if !bytes.is_empty() {
                 state.write_to_active(&bytes);
