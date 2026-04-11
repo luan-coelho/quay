@@ -123,14 +123,44 @@ fn main() -> Result<()> {
     window.set_menu_items(ModelRc::from(menu_model));
 
     // Sidebar: projects (placeholder data; real project loading is a future task).
-    let projects_model = Rc::new(VecModel::<ProjectData>::default());
-    for (id, name) in [("backend", "backend"), ("frontend", "frontend")] {
-        projects_model.push(ProjectData {
-            id: id.into(),
-            name: name.into(),
-        });
+    // Sidebar: projects. Polish 2 — seed a default "Home" project on
+    // first run pointing at the user's home directory, then load the
+    // real list from `ProjectStore`. The list is refreshed whenever
+    // the user creates a new project (via the `+` button in the
+    // Projects section) or deletes one.
+    {
+        let project_store = crate::kanban::ProjectStore::new(&state.db.conn);
+        if project_store.list_all().map(|v| v.is_empty()).unwrap_or(false) {
+            let _ = project_store.insert(&crate::kanban::Project::new(
+                "Home",
+                state.default_cwd.clone(),
+                "main",
+            ));
+        }
     }
-    window.set_projects(ModelRc::from(projects_model));
+    let projects_model = Rc::new(VecModel::<ProjectData>::default());
+    window.set_projects(ModelRc::from(projects_model.clone()));
+
+    // Helper closure for rebuilding the sidebar project list.
+    let refresh_projects = {
+        let state = state.clone();
+        let model = projects_model.clone();
+        move || {
+            let list = crate::kanban::ProjectStore::new(&state.db.conn)
+                .list_all()
+                .unwrap_or_default();
+            while model.row_count() > 0 {
+                model.remove(model.row_count() - 1);
+            }
+            for p in list {
+                model.push(ProjectData {
+                    id: SharedString::from(p.id.to_string()),
+                    name: SharedString::from(p.name),
+                });
+            }
+        }
+    };
+    refresh_projects();
 
     // Kanban column models — one VecModel per TaskState (6 total after
     // Phase 2's Review + Misc addition).
