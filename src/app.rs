@@ -115,12 +115,68 @@ impl AppState {
         let Some(new_state) = next(task.state) else {
             return Ok(());
         };
+
+        // When moving a task into Done, consult the worktree status. A
+        // clean worktree auto-removes on the transition (matches Lanes).
+        // A dirty worktree is kept and logged — a confirmation dialog is
+        // a Phase 2.5 UX polish. Non-git repo_paths or missing worktrees
+        // are no-ops.
+        if matches!(new_state, TaskState::Done) {
+            if let Some(worktree_path) = task.worktree_path.clone() {
+                if let Err(err) = self.cleanup_worktree_on_done(&task.repo_path, &worktree_path) {
+                    tracing::warn!(
+                        task_id = %id,
+                        worktree = %worktree_path.display(),
+                        %err,
+                        "worktree cleanup on Done failed; leaving worktree in place"
+                    );
+                }
+            }
+        }
+
         task.state = new_state;
         // Drop to the bottom of the new column.
         let existing = store.list_by_state(new_state)?;
         task.position = existing.iter().map(|t| t.position).max().unwrap_or(-1) + 1;
         task.updated_at = unix_millis_now();
         store.update(&task)?;
+        Ok(())
+    }
+
+    /// If the worktree is clean, remove it via `git worktree remove`. If
+    /// dirty, log a warning and leave it in place (Phase 2.5 will add a
+    /// confirmation dialog).
+    fn cleanup_worktree_on_done(
+        &self,
+        repo: &Path,
+        worktree_path: &Path,
+    ) -> Result<()> {
+        // If the directory no longer exists (e.g. the user manually rm'd
+        // it), there is nothing to clean.
+        if !worktree_path.exists() {
+            return Ok(());
+        }
+
+        let status = git::status::read_status(worktree_path)
+            .with_context(|| format!("read status of {}", worktree_path.display()))?;
+
+        if !status.clean {
+            tracing::warn!(
+                worktree = %worktree_path.display(),
+                modified = status.modified_count,
+                untracked = status.untracked_count,
+                staged = status.staged_count,
+                "worktree dirty on Done — keeping it; user can clean it up manually"
+            );
+            return Ok(());
+        }
+
+        let mgr = git::worktree::WorktreeManager::detect()?;
+        mgr.remove(repo, worktree_path)?;
+        tracing::info!(
+            worktree = %worktree_path.display(),
+            "clean worktree auto-removed on Done transition"
+        );
         Ok(())
     }
 

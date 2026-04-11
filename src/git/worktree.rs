@@ -106,9 +106,8 @@ impl WorktreeManager {
     /// Equivalent shell command:
     ///     git -C <repo> worktree remove --force <worktree_path>
     ///
-    /// `#[allow(dead_code)]` until Phase 2 wires worktree cleanup on the
-    /// Done transition.
-    #[allow(dead_code)]
+    /// Called from `AppState::cleanup_worktree_on_done` when a task
+    /// transitions into the Done column with a clean worktree.
     pub fn remove(&self, repo: &Path, worktree_path: &Path) -> Result<()> {
         let output = Command::new(&self.git)
             .arg("-C")
