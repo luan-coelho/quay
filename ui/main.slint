@@ -606,6 +606,14 @@ export component MainWindow inherits Window {
     in property <[FileEntryData]> file-entries;
     in-out property <string> file-current-dir: "";
 
+    // Editor state (Phase 7). When `editor-open` is true, the Files tab
+    // shows the editor surface instead of the directory listing.
+    in-out property <bool> editor-open: false;
+    in-out property <string> editor-file-path: "";
+    in-out property <string> editor-file-content: "";
+    in property <string> editor-syntax-name: "Plain Text";
+    in property <bool> editor-file-dirty: false;
+
     // Git Changes tab data — refreshed ~1×/s while the tab is open.
     in property <[DiffFileData]> git-diff-files;
     in property <[CommitEntryData]> git-commit-log;
@@ -629,6 +637,9 @@ export component MainWindow inherits Window {
     callback process-force-kill(int);  // SIGKILL
     callback refresh-processes();
     callback file-entry-clicked(string, string);   // path, kind
+    callback editor-content-changed(string);
+    callback editor-save();
+    callback editor-close();
     callback key-pressed(string, bool, bool, bool);
 
     // Layout constants.
@@ -1399,7 +1410,8 @@ export component MainWindow inherits Window {
             }
         }
 
-        // Files tab — simple flat directory listing with parent nav.
+        // Files tab — shows either the directory listing or the inline
+        // editor, depending on `editor-open`.
         Rectangle {
             visible: root.active-right-tab == "files";
             x: right-pad-h;
@@ -1412,11 +1424,11 @@ export component MainWindow inherits Window {
             border-color: Tokens.border-soft;
             clip: true;
 
-            VerticalLayout {
+            // ── File tree mode ─────────────────────────────────────
+            if !root.editor-open: VerticalLayout {
                 padding: 12px;
                 spacing: 8px;
 
-                // Breadcrumb showing the current directory.
                 HorizontalLayout {
                     spacing: 6px;
                     Text {
@@ -1477,9 +1489,126 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                // Footer hint: tell the user what the file click does.
                 Text {
-                    text: "Click a file to open it in $EDITOR (fallback: xdg-open / open / start).";
+                    text: "Click a text file to open it in the built-in editor. Binary or very large files fall back to $EDITOR.";
+                    color: Tokens.text-tertiary;
+                    font-size: 9px;
+                }
+            }
+
+            // ── Inline editor mode (Phase 7) ───────────────────────
+            if root.editor-open: VerticalLayout {
+                padding: 12px;
+                spacing: 8px;
+
+                // Header with path, syntax, dirty indicator, save/close buttons.
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+
+                    // Back / close button.
+                    TouchArea {
+                        width: 22px;
+                        height: 22px;
+                        clicked => { root.editor-close(); }
+                        Rectangle {
+                            background: parent.has-hover ? #1f2331 : transparent;
+                            border-radius: 4px;
+                            Text {
+                                text: "←";
+                                color: Tokens.text-secondary;
+                                font-size: 13px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: root.editor-file-path;
+                        color: Tokens.text-primary;
+                        font-size: 11px;
+                        font-family: "JetBrains Mono";
+                        overflow: elide;
+                        vertical-alignment: center;
+                    }
+
+                    // Dirty dot.
+                    Rectangle {
+                        visible: root.editor-file-dirty;
+                        width: 6px;
+                        height: 6px;
+                        y: (parent.height - self.height) / 2;
+                        border-radius: 3px;
+                        background: #f5b54e;
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    // Syntax badge.
+                    Rectangle {
+                        width: syn-text.preferred-width + 12px;
+                        height: 18px;
+                        border-radius: 9px;
+                        border-width: 1px;
+                        border-color: Tokens.border-soft;
+                        syn-text := Text {
+                            text: root.editor-syntax-name;
+                            color: Tokens.text-secondary;
+                            font-size: 9px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+
+                    // Save button.
+                    TouchArea {
+                        width: 56px;
+                        height: 22px;
+                        clicked => { root.editor-save(); }
+                        Rectangle {
+                            background: parent.has-hover ? rgba(16, 185, 129, 20%) : rgba(16, 185, 129, 12%);
+                            border-radius: 4px;
+                            border-width: 1px;
+                            border-color: rgba(16, 185, 129, 40%);
+                            Text {
+                                text: "save";
+                                color: Tokens.kind-enhancement;
+                                font-size: 10px;
+                                font-weight: 600;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle { height: 1px; background: Tokens.border-very-soft; }
+
+                // The actual text area. Uses Slint's built-in TextEdit —
+                // multi-line, wraps, integrates with keyboard. Bound
+                // two-way: on edit we call back into Rust to update the
+                // EditorBuffer and mark it dirty.
+                TextEdit {
+                    text: root.editor-file-content;
+                    wrap: no-wrap;
+                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
+                    font-family: "JetBrains Mono";
+                    font-size: 12px;
+                    edited => {
+                        root.editor-content-changed(self.text);
+                    }
+                }
+
+                Text {
+                    text: "Slint's built-in text editor. Press save to persist. Syntax highlighting will be enriched in a follow-up iteration.";
                     color: Tokens.text-tertiary;
                     font-size: 9px;
                 }

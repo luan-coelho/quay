@@ -25,7 +25,10 @@ use anyhow::Result;
 use slint::{ComponentHandle, Image, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 use uuid::Uuid;
 
+use std::cell::RefCell;
+
 use crate::app::AppState;
+use crate::editor::EditorBuffer;
 use crate::kanban::{
     DependencyStore, Label, LabelStore, SessionState, StartMode, Task, TaskKind, TaskState,
 };
@@ -162,6 +165,15 @@ fn main() -> Result<()> {
     let file_entries_model = Rc::new(VecModel::<FileEntryData>::default());
     window.set_file_entries(ModelRc::from(file_entries_model.clone()));
     window.set_file_current_dir("".into());
+
+    // Phase 7 editor state. A single shared `EditorBuffer` is opened on
+    // demand when the user clicks a text file in the Files tab.
+    let editor_buffer: Rc<RefCell<Option<EditorBuffer>>> = Rc::new(RefCell::new(None));
+    window.set_editor_open(false);
+    window.set_editor_file_path("".into());
+    window.set_editor_file_content("".into());
+    window.set_editor_file_dirty(false);
+    window.set_editor_syntax_name("Plain Text".into());
 
     // Settings modal state — initial values loaded from SQLite.
     let settings_qa_model = Rc::new(VecModel::<QuickActionRowData>::default());
@@ -753,18 +765,93 @@ fn main() -> Result<()> {
     {
         // Click handler for file tree entries.
         // - Parent / Directory → refresh the listing against the new dir.
-        // - File → shell out to $EDITOR (or platform fallback).
+        // - File → try to open inline in the editor. If the file is
+        //   binary or too large (>1 MB), fall back to $EDITOR.
         let refresh = refresh_files.clone();
+        let weak = window.as_weak();
+        let buffer = editor_buffer.clone();
         window.on_file_entry_clicked(move |path_str, kind_str| {
             let path = PathBuf::from(path_str.as_str());
             match kind_str.as_str() {
                 "directory" | "parent" => refresh(path),
                 "file" => {
+                    // Open inline if readable as UTF-8 and under 1 MB.
+                    let open_inline = match std::fs::metadata(&path) {
+                        Ok(m) => m.len() < 1_000_000 && !is_likely_binary(&path),
+                        Err(_) => false,
+                    };
+                    if open_inline {
+                        match EditorBuffer::open(&path) {
+                            Ok(buf) => {
+                                if let Some(w) = weak.upgrade() {
+                                    w.set_editor_file_path(
+                                        path.to_string_lossy().into_owned().into(),
+                                    );
+                                    w.set_editor_file_content(buf.rope.to_string().into());
+                                    w.set_editor_syntax_name(
+                                        buf.syntax_name.clone().into(),
+                                    );
+                                    w.set_editor_file_dirty(false);
+                                    w.set_editor_open(true);
+                                }
+                                *buffer.borrow_mut() = Some(buf);
+                                return;
+                            }
+                            Err(err) => {
+                                tracing::warn!(%err, "EditorBuffer::open failed; falling back to $EDITOR");
+                            }
+                        }
+                    }
                     if let Err(err) = crate::file_tree::open_in_editor(&path) {
                         tracing::warn!(%err, path = %path.display(), "open_in_editor failed");
                     }
                 }
                 _ => {}
+            }
+        });
+    }
+    {
+        let buffer = editor_buffer.clone();
+        let weak = window.as_weak();
+        window.on_editor_content_changed(move |new_text| {
+            if let Some(buf) = buffer.borrow_mut().as_mut() {
+                buf.replace_all(new_text.as_str());
+                if let Some(w) = weak.upgrade() {
+                    w.set_editor_file_dirty(buf.dirty);
+                }
+            }
+        });
+    }
+    {
+        let buffer = editor_buffer.clone();
+        let weak = window.as_weak();
+        window.on_editor_save(move || {
+            let mut borrow = buffer.borrow_mut();
+            let Some(buf) = borrow.as_mut() else { return };
+            match buf.save() {
+                Ok(()) => {
+                    if let Some(w) = weak.upgrade() {
+                        w.set_editor_file_dirty(false);
+                    }
+                    tracing::info!(
+                        path = %buf.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default(),
+                        "editor save ok"
+                    );
+                }
+                Err(err) => tracing::warn!(%err, "editor save failed"),
+            }
+        });
+    }
+    {
+        let buffer = editor_buffer.clone();
+        let weak = window.as_weak();
+        window.on_editor_close(move || {
+            *buffer.borrow_mut() = None;
+            if let Some(w) = weak.upgrade() {
+                w.set_editor_open(false);
+                w.set_editor_file_path("".into());
+                w.set_editor_file_content("".into());
+                w.set_editor_file_dirty(false);
             }
         });
     }
@@ -992,6 +1079,52 @@ fn parse_hex_rgb(hex: &str) -> Option<(u8, u8, u8)> {
     let g = u8::from_str_radix(&s[2..4], 16).ok()?;
     let b = u8::from_str_radix(&s[4..6], 16).ok()?;
     Some((r, g, b))
+}
+
+/// Heuristic: is this path likely a binary file the inline editor
+/// should not try to load? Checks the extension against a short list;
+/// returns true for common binary formats. False positives (e.g. a
+/// user's `.dat` text file) are acceptable — they just fall back to
+/// $EDITOR.
+fn is_likely_binary(path: &std::path::Path) -> bool {
+    let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+        return false;
+    };
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "webp"
+            | "bmp"
+            | "ico"
+            | "pdf"
+            | "zip"
+            | "gz"
+            | "bz2"
+            | "xz"
+            | "7z"
+            | "tar"
+            | "exe"
+            | "dll"
+            | "so"
+            | "dylib"
+            | "bin"
+            | "ttf"
+            | "otf"
+            | "woff"
+            | "woff2"
+            | "wasm"
+            | "mp3"
+            | "mp4"
+            | "mkv"
+            | "mov"
+            | "avi"
+            | "flac"
+            | "ogg"
+            | "webm"
+    )
 }
 
 /// Phase 4 seed tagging: auto-attach a colour label to each seed task

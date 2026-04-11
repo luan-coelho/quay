@@ -14,4 +14,5 @@
 
 pub mod buffer;
 
+#[allow(unused_imports)]
 pub use buffer::{EditorBuffer, HlSpan};
