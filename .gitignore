@@ -1,7 +1,91 @@
+# ── Rust build artifacts ───────────────────────────────────────────────
 /target
+**/target/
 **/*.rs.bk
+
+# Cargo.lock IS committed for binary crates (we want reproducible builds).
+# Only the .bak file from cargo's recovery flow is ignored.
 Cargo.lock.bak
+
+# Incremental compilation cache.
+**/*.incremental/
+
+# Profile-guided optimisation files.
+*.profraw
+*.profdata
+
+# ── OS / Editor cruft ──────────────────────────────────────────────────
 .DS_Store
+Thumbs.db
+desktop.ini
 *.swp
+*.swo
+*~
+.#*
+\#*#
+
+# IDE / editor config (per-user, not project-shared).
 .idea/
 .vscode/
+*.code-workspace
+.fleet/
+.zed/
+
+# ── Local app data ─────────────────────────────────────────────────────
+# Quay's runtime data lives outside the repo (under
+# `~/.local/share/quay/` on Linux, `~/Library/Application Support/quay/`
+# on macOS, `%APPDATA%\quay\` on Windows). If something accidentally
+# writes to the repo root, ignore the common names so they don't get
+# committed.
+quay.db
+quay.db-*
+*.sqlite
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+quay.log
+*.log
+
+# Worktrees that get created in-place during testing should never be
+# tracked. The convention is `<repo>/.worktrees/<slug>` (Polish 1).
+/.worktrees/
+
+# ── Build outputs ──────────────────────────────────────────────────────
+*.dSYM/
+*.pdb
+*.exe
+*.dll
+*.so
+*.dylib
+
+# ── Test scratch ───────────────────────────────────────────────────────
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# ── Tarballs / archives accidentally generated locally ─────────────────
+*.tar
+*.tar.gz
+*.zip
+*.7z
+
+# ── Coverage + flamegraph reports ──────────────────────────────────────
+tarpaulin-report.html
+cobertura.xml
+flamegraph.svg
+perf.data
+perf.data.old
+
+# ── Skia / Slint build cache (if regenerated next to the source) ───────
+skia-build/
+slint-build-cache/
+
+# ── Personal scratch ───────────────────────────────────────────────────
+# Anything starting with `.scratch-` or `_scratch_` is treated as local
+# experimentation and should never be committed.
+.scratch-*
+_scratch_*
+SCRATCH.md
+TODO.local.md
+NOTES.local.md
