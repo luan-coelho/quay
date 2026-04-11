@@ -4,12 +4,8 @@
 //! the git CLI, which matters because the kanban polls these queries
 //! frequently to keep card badges (dirty flag, branch name) up to date.
 //!
-//! Phase 1 does not yet call `read_status` — that wiring lands in Phase 2
-//! (kanban poller populates the dirty flag on each visible card, and the
-//! Done transition consults it to decide whether to auto-remove the worktree
-//! or prompt the user). `#![allow(dead_code)]` is kept until then.
-
-#![allow(dead_code)]
+//! Wired into `refresh_kanban` as of Phase 2 — every card with a
+//! `worktree_path` runs one `read_status` to populate its dirty dot.
 
 use std::path::Path;
 

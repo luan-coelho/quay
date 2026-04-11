@@ -161,7 +161,27 @@ fn main() -> Result<()> {
             for task in &tasks {
                 let display_id = display_ids.get(&task.id).copied().unwrap_or(0);
                 let running = active_uuid == Some(task.id);
-                let card = task_to_card(task, display_id, running);
+                // Dirty flag: only meaningful when the task actually has a
+                // worktree. `git::status::read_status` is cheap (libgit2
+                // in-process) but we still skip the call when there's
+                // nothing to inspect to keep refresh latency low on big
+                // kanbans.
+                let dirty = task
+                    .worktree_path
+                    .as_deref()
+                    .and_then(|p| match crate::git::status::read_status(p) {
+                        Ok(status) => Some(!status.clean),
+                        Err(err) => {
+                            tracing::debug!(
+                                task_id = %task.id,
+                                %err,
+                                "read_status failed for worktree, treating as clean"
+                            );
+                            None
+                        }
+                    })
+                    .unwrap_or(false);
+                let card = task_to_card(task, display_id, running, dirty);
                 match task.state {
                     TaskState::Backlog => backlog_v.push(card),
                     TaskState::Planning => planning_v.push(card),
@@ -465,7 +485,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn task_to_card(task: &Task, display_id: i32, running: bool) -> TaskCardData {
+fn task_to_card(task: &Task, display_id: i32, running: bool, dirty: bool) -> TaskCardData {
     let kind = TaskKind::from_title(&task.title);
     TaskCardData {
         id: SharedString::from(task.id.to_string()),
@@ -473,6 +493,7 @@ fn task_to_card(task: &Task, display_id: i32, running: bool) -> TaskCardData {
         title: SharedString::from(task.title.as_str()),
         kind: SharedString::from(kind_to_str(kind)),
         running,
+        dirty,
     }
 }
 

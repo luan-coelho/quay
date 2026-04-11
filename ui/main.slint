@@ -45,6 +45,9 @@ export struct TaskCardData {
     title: string,
     kind: string,         // "enhancement" | "feature" | "bug"
     running: bool,
+    // Whether the task's git worktree has uncommitted or untracked changes.
+    // Populated from `git::status::read_status` during refresh_kanban.
+    dirty: bool,
 }
 
 export struct MenuItemData {
@@ -342,6 +345,19 @@ component CardRow inherits Rectangle {
         VerticalLayout {
             alignment: center;
             KindChip { kind: task.kind; }
+        }
+
+        // Dirty dot — small amber circle if the task's worktree has
+        // uncommitted changes. Shown to the left of the running dot so
+        // the two signals read naturally (uncommitted → running).
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 6px;
+                height: 6px;
+                border-radius: 3px;
+                background: task.dirty ? #f5b54e : transparent;
+            }
         }
 
         // Status dot (running indicator)
