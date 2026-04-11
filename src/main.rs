@@ -21,7 +21,9 @@ use slint::{ComponentHandle, Image, Model, ModelRc, SharedString, Timer, TimerMo
 use uuid::Uuid;
 
 use crate::app::AppState;
-use crate::kanban::{SessionState, StartMode, Task, TaskKind, TaskState};
+use crate::kanban::{
+    DependencyStore, Label, LabelStore, SessionState, StartMode, Task, TaskKind, TaskState,
+};
 use crate::persistence::QuayDirs;
 use crate::terminal::{GlyphAtlas, key_text_to_bytes};
 
@@ -65,6 +67,14 @@ fn main() -> Result<()> {
         "claude".to_string(),
     )?);
     state.seed_demo_if_empty()?;
+    // Phase 4: seed the Lanes preset label palette on first run and
+    // auto-tag any seed demo tasks by their heuristic TaskKind so the
+    // kanban has colour from day one.
+    {
+        let label_store = LabelStore::new(&state.db.conn);
+        label_store.seed_presets_if_empty()?;
+        auto_tag_seed_tasks(&state)?;
+    }
 
     // Initial blank framebuffer.
     window.set_frame(Image::from_rgba8_premultiplied(
@@ -130,9 +140,25 @@ fn main() -> Result<()> {
     window.set_git_diff_files(ModelRc::from(git_diff_model.clone()));
     window.set_git_commit_log(ModelRc::from(git_log_model.clone()));
 
+    // All labels — rendered as filter chips above the task list.
+    let all_labels_model = Rc::new(VecModel::<LabelPillData>::default());
+    window.set_all_labels(ModelRc::from(all_labels_model.clone()));
+    window.set_filter_label_id("".into());
+    {
+        let label_store = LabelStore::new(&state.db.conn);
+        let labels = label_store.list_all().unwrap_or_default();
+        for l in labels {
+            all_labels_model.push(label_to_pill(&l));
+        }
+    }
+
     // Refresh closure: re-query DB and rebuild every column model.
+    //
+    // Reads the current `filter-label-id` from the window — if set, only
+    // tasks carrying that label survive the filter.
     let refresh_kanban = {
         let state = state.clone();
+        let weak = window.as_weak();
         let backlog = backlog_model.clone();
         let planning = planning_model.clone();
         let implementation = implementation_model.clone();
@@ -157,7 +183,21 @@ fn main() -> Result<()> {
                 display_ids.insert(t.id, (i + 1) as i32);
             }
 
+            // Resolve the active label filter (empty string = no filter).
+            let filter_label_id: Option<Uuid> = weak
+                .upgrade()
+                .and_then(|w| {
+                    let s = w.get_filter_label_id().to_string();
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Uuid::from_str(&s).ok()
+                    }
+                });
+
             let active_uuid = *state.active_task.borrow();
+            let label_store = LabelStore::new(&state.db.conn);
+            let dep_store = DependencyStore::new(&state.db.conn);
 
             let mut backlog_v = Vec::new();
             let mut planning_v = Vec::new();
@@ -169,6 +209,33 @@ fn main() -> Result<()> {
             for task in &tasks {
                 let display_id = display_ids.get(&task.id).copied().unwrap_or(0);
                 let running = active_uuid == Some(task.id);
+
+                // Load the task's labels. Used both for the pills on the
+                // card and for the filter check below.
+                let task_labels = label_store.labels_for_task(task.id).unwrap_or_default();
+
+                // Label filter: skip this task if we have an active
+                // filter and this task doesn't carry the label.
+                if let Some(filter_id) = filter_label_id
+                    && !task_labels.iter().any(|l| l.id == filter_id)
+                {
+                    continue;
+                }
+
+                // Blocked count — how many dependencies are still not Done.
+                let blocked_count: i32 = dep_store
+                    .dependencies_of(task.id)
+                    .unwrap_or_default()
+                    .iter()
+                    .filter(|dep_id| {
+                        tasks
+                            .iter()
+                            .find(|t| t.id == **dep_id)
+                            .map(|t| t.state != TaskState::Done)
+                            .unwrap_or(false)
+                    })
+                    .count() as i32;
+
                 // Dirty flag: only meaningful when the task actually has a
                 // worktree. `git::status::read_status` is cheap (libgit2
                 // in-process) but we still skip the call when there's
@@ -189,7 +256,18 @@ fn main() -> Result<()> {
                         }
                     })
                     .unwrap_or(false);
-                let card = task_to_card(task, display_id, running, dirty);
+
+                let label_pills: Vec<LabelPillData> =
+                    task_labels.iter().map(label_to_pill).collect();
+
+                let card = task_to_card(
+                    task,
+                    display_id,
+                    running,
+                    dirty,
+                    label_pills,
+                    blocked_count,
+                );
                 match task.state {
                     TaskState::Backlog => backlog_v.push(card),
                     TaskState::Planning => planning_v.push(card),
@@ -459,6 +537,16 @@ fn main() -> Result<()> {
         });
     }
     {
+        // Phase 4 filter chip — user clicked a label filter (or "All").
+        // refresh_kanban re-reads the current `filter-label-id` from the
+        // window via its captured weak handle, so we don't need to pass
+        // the new id explicitly.
+        let refresh = refresh_kanban.clone();
+        window.on_filter_changed(move |_new_id| {
+            refresh();
+        });
+    }
+    {
         let state = state.clone();
         window.on_key_pressed(move |text, ctrl, alt, shift| {
             let bytes = key_text_to_bytes(text.as_str(), ctrl, alt, shift);
@@ -572,7 +660,14 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn task_to_card(task: &Task, display_id: i32, running: bool, dirty: bool) -> TaskCardData {
+fn task_to_card(
+    task: &Task,
+    display_id: i32,
+    running: bool,
+    dirty: bool,
+    labels: Vec<LabelPillData>,
+    blocked_count: i32,
+) -> TaskCardData {
     let kind = TaskKind::from_title(&task.title);
     TaskCardData {
         id: SharedString::from(task.id.to_string()),
@@ -581,6 +676,8 @@ fn task_to_card(task: &Task, display_id: i32, running: bool, dirty: bool) -> Tas
         kind: SharedString::from(kind_to_str(kind)),
         running,
         dirty,
+        labels: ModelRc::from(Rc::new(VecModel::from(labels))),
+        blocked_count,
     }
 }
 
@@ -619,8 +716,68 @@ fn replace_log_model(model: &Rc<VecModel<CommitEntryData>>, items: Vec<CommitEnt
     }
 }
 
+/// Convert a `Label` DB record into the Slint-side `LabelPillData`,
+/// parsing the `#rrggbb` hex into separate 8-bit components because
+/// Slint has no built-in string-to-brush conversion.
+fn label_to_pill(label: &Label) -> LabelPillData {
+    let (r, g, b) = parse_hex_rgb(&label.color).unwrap_or((167, 175, 184));
+    LabelPillData {
+        id: SharedString::from(label.id.to_string()),
+        name: SharedString::from(label.name.as_str()),
+        color_r: r as i32,
+        color_g: g as i32,
+        color_b: b as i32,
+    }
+}
+
+/// Parse `#rrggbb` → `(r, g, b)` 8-bit components. Returns None on any
+/// parse error (malformed length, bad hex digits, etc.) so the caller
+/// can fall back to a default colour.
+fn parse_hex_rgb(hex: &str) -> Option<(u8, u8, u8)> {
+    let s = hex.strip_prefix('#').unwrap_or(hex);
+    if s.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+    Some((r, g, b))
+}
+
+/// Phase 4 seed tagging: auto-attach a colour label to each seed task
+/// based on its TaskKind heuristic. Called once at startup, no-op if
+/// any task already has at least one label (so the user's manual
+/// tagging isn't overwritten on restart).
+fn auto_tag_seed_tasks(state: &AppState) -> anyhow::Result<()> {
+    let label_store = LabelStore::new(&state.db.conn);
+    let labels = label_store.list_all()?;
+    let name_to_label: HashMap<String, &Label> =
+        labels.iter().map(|l| (l.name.clone(), l)).collect();
+
+    let kind_to_label = |kind: TaskKind| -> Option<&Label> {
+        let name = match kind {
+            TaskKind::Bug => "Bug",
+            TaskKind::Feature => "Feature",
+            TaskKind::Enhancement => "Enhancement",
+        };
+        name_to_label.get(name).copied()
+    };
+
+    for task in state.list_tasks()? {
+        // Skip if this task already has any labels.
+        if !label_store.labels_for_task(task.id)?.is_empty() {
+            continue;
+        }
+        let kind = TaskKind::from_title(&task.title);
+        if let Some(label) = kind_to_label(kind) {
+            label_store.attach(task.id, label.id)?;
+        }
+    }
+    Ok(())
+}
+
 /// Human-friendly relative time for commit timestamps.
-/// "just now" · "3m ago" · "2h ago" · "4d ago" · "2026-04-10".
+/// "just now" · "3m ago" · "2h ago" · "4d ago".
 fn format_relative_time(commit_time_secs: i64) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let now_secs = SystemTime::now()

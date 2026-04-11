@@ -94,7 +94,24 @@ impl AppState {
     /// (Backlog → Planning → Implementation → Review → Done).
     /// No-op when already in Done or when the task sits in Misc (which is
     /// outside the linear flow).
+    ///
+    /// Phase 4: refuses to advance beyond Planning if the task has any
+    /// unresolved dependencies — the user must either complete the
+    /// prerequisites first or manually remove the dependency edges.
     pub fn move_forward(&self, id: Uuid) -> Result<()> {
+        let deps = crate::kanban::DependencyStore::new(&self.db.conn);
+        if deps.is_blocked(id)? {
+            let current = crate::kanban::TaskStore::new(&self.db.conn)
+                .get(id)?
+                .map(|t| t.state);
+            if matches!(current, Some(TaskState::Planning) | Some(TaskState::Backlog)) {
+                // Allow Backlog → Planning (user can still plan while
+                // blocked), but stop there.
+                if matches!(current, Some(TaskState::Planning)) {
+                    anyhow::bail!("task is blocked by an unresolved dependency");
+                }
+            }
+        }
         self.move_state(id, |s| s.next())
     }
 
