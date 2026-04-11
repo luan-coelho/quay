@@ -13,7 +13,7 @@ mod util;
 
 slint::include_modules!();
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -154,6 +154,18 @@ fn main() -> Result<()> {
     let all_labels_model = Rc::new(VecModel::<LabelPillData>::default());
     window.set_all_labels(ModelRc::from(all_labels_model.clone()));
     window.set_filter_label_id("".into());
+
+    // Settings modal state — initial values loaded from SQLite.
+    let settings_qa_model = Rc::new(VecModel::<QuickActionRowData>::default());
+    let settings_proc_model = Rc::new(VecModel::<ProcessRowData>::default());
+    window.set_settings_quick_actions(ModelRc::from(settings_qa_model.clone()));
+    window.set_settings_processes(ModelRc::from(settings_proc_model.clone()));
+    window.set_settings_open(false);
+    {
+        let settings = crate::settings::Settings::new(&state.db.conn);
+        let base_branch = settings.get_or(crate::settings::KEY_DEFAULT_BASE_BRANCH, "main");
+        window.set_settings_default_base_branch(base_branch.into());
+    }
     {
         let label_store = LabelStore::new(&state.db.conn);
         let labels = label_store.list_all().unwrap_or_default();
@@ -554,6 +566,122 @@ fn main() -> Result<()> {
         let refresh = refresh_kanban.clone();
         window.on_filter_changed(move |_new_id| {
             refresh();
+        });
+    }
+
+    // ── Phase 5 Settings modal wiring ───────────────────────────────────
+
+    // Helper: rebuild the Settings quick action list from the DB.
+    let refresh_settings_qa = {
+        let state = state.clone();
+        let model = settings_qa_model.clone();
+        move || {
+            let actions = crate::quick_actions::QuickActionStore::new(&state.db.conn)
+                .list_all()
+                .unwrap_or_default();
+            while model.row_count() > 0 {
+                model.remove(model.row_count() - 1);
+            }
+            for (i, a) in actions.iter().enumerate() {
+                let shortcut = if i < 9 {
+                    format!("⌘⌥{}", i + 1)
+                } else {
+                    String::new()
+                };
+                model.push(QuickActionRowData {
+                    id: SharedString::from(a.id.to_string()),
+                    name: SharedString::from(a.name.as_str()),
+                    kind: SharedString::from(a.kind.as_str()),
+                    body: SharedString::from(a.body.as_str()),
+                    shortcut: SharedString::from(shortcut),
+                });
+            }
+        }
+    };
+
+    // Helper: rebuild the Settings process list by running the process
+    // manager scan against the current in-memory session PID set.
+    let refresh_settings_processes = {
+        let state = state.clone();
+        let model = settings_proc_model.clone();
+        move || {
+            // Collect tracked PIDs from the live session registry. The
+            // portable-pty Child trait exposes `process_id()` on most
+            // platforms; fall back to empty if not available.
+            let tracked: HashSet<u32> = HashSet::new();
+            // NB: we don't have a public accessor for child.process_id()
+            // on PtySession yet — the Process Manager will still catch
+            // the processes as "Orphan" (parent == Quay) which is fine
+            // for the Phase 5 MVP. Adding a tracked_pids() method on
+            // AppState is a follow-up.
+            let _ = &state; // suppress unused warning until we use it
+
+            let entries = crate::process::enumerate(&tracked);
+            while model.row_count() > 0 {
+                model.remove(model.row_count() - 1);
+            }
+            for e in entries {
+                model.push(ProcessRowData {
+                    pid: e.pid as i32,
+                    name: SharedString::from(e.name),
+                    cmdline: SharedString::from(e.cmdline),
+                    class: SharedString::from(e.class.as_str()),
+                });
+            }
+        }
+    };
+
+    {
+        // Toggle modal: also refresh the quick actions + process list
+        // whenever we open (so the UI reflects any changes made via
+        // sqlite CLI or other out-of-band edits).
+        let weak = window.as_weak();
+        let refresh_qa = refresh_settings_qa.clone();
+        let refresh_procs = refresh_settings_processes.clone();
+        window.on_toggle_settings(move || {
+            if let Some(w) = weak.upgrade() {
+                let opening = !w.get_settings_open();
+                w.set_settings_open(opening);
+                if opening {
+                    refresh_qa();
+                    refresh_procs();
+                }
+            }
+        });
+    }
+    {
+        let state = state.clone();
+        window.on_settings_base_branch_changed(move |new_value| {
+            let s = crate::settings::Settings::new(&state.db.conn);
+            if let Err(err) =
+                s.set(crate::settings::KEY_DEFAULT_BASE_BRANCH, new_value.as_str())
+            {
+                tracing::warn!(%err, "failed to persist base branch setting");
+            }
+        });
+    }
+    {
+        let refresh_procs = refresh_settings_processes.clone();
+        window.on_refresh_processes(move || {
+            refresh_procs();
+        });
+    }
+    {
+        let refresh_procs = refresh_settings_processes.clone();
+        window.on_process_kill(move |pid| {
+            if let Err(err) = crate::process::terminate(pid as u32) {
+                tracing::warn!(%err, pid, "terminate() failed");
+            }
+            refresh_procs();
+        });
+    }
+    {
+        let refresh_procs = refresh_settings_processes;
+        window.on_process_force_kill(move |pid| {
+            if let Err(err) = crate::process::force_kill(pid as u32) {
+                tracing::warn!(%err, pid, "force_kill() failed");
+            }
+            refresh_procs();
         });
     }
     {
