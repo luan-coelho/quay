@@ -2987,7 +2987,13 @@ export component MainWindow inherits Window {
 
         Rectangle {
             x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
+            // Polish 33 — slide-down + fade. The card lands into
+            // place from 12 px above when the modal opens, so the
+            // user perceives it appearing rather than snapping.
+            y: (parent.height - self.height) / 2 + (root.new-task-open ? 0px : -12px);
+            opacity: root.new-task-open ? 1.0 : 0.0;
+            animate y { duration: 200ms; easing: ease-out; }
+            animate opacity { duration: 180ms; easing: ease-out; }
             width: 460px;
             height: 320px;
             background: #14161a;
@@ -3115,7 +3121,11 @@ export component MainWindow inherits Window {
 
         Rectangle {
             x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
+            // Polish 33 — slide-down + fade.
+            y: (parent.height - self.height) / 2 + (root.new-project-open ? 0px : -12px);
+            opacity: root.new-project-open ? 1.0 : 0.0;
+            animate y { duration: 200ms; easing: ease-out; }
+            animate opacity { duration: 180ms; easing: ease-out; }
             width: 420px;
             height: 320px;
             background: #14161a;
@@ -3267,7 +3277,11 @@ export component MainWindow inherits Window {
         Rectangle {
             // Centered card.
             x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
+            // Polish 33 — slide-down + fade.
+            y: (parent.height - self.height) / 2 + (root.settings-open ? 0px : -12px);
+            opacity: root.settings-open ? 1.0 : 0.0;
+            animate y { duration: 200ms; easing: ease-out; }
+            animate opacity { duration: 180ms; easing: ease-out; }
             width: 640px;
             height: 560px;
             background: #14161a;
@@ -3607,7 +3621,11 @@ export component MainWindow inherits Window {
 
         Rectangle {
             x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
+            // Polish 33 — slide-down + fade.
+            y: (parent.height - self.height) / 2 + (root.shortcuts-open ? 0px : -12px);
+            opacity: root.shortcuts-open ? 1.0 : 0.0;
+            animate y { duration: 200ms; easing: ease-out; }
+            animate opacity { duration: 180ms; easing: ease-out; }
             width: 540px;
             height: 460px;
             background: #14161a;
