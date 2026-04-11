@@ -1707,14 +1707,32 @@ fn main() -> Result<()> {
 
     // PTY poll timer — drains bytes from all live sessions and blits the
     // active one. Fires ~60 Hz.
+    //
+    // Polish 22: also drives the window-wide braille spinner phase.
+    // Every 6th tick (~96 ms) advances `spinner-glyph` through the
+    // 8-glyph braille cycle. All Spinner instances on screen read
+    // the same property and stay in lockstep — same convention every
+    // CLI spinner (cargo, npm, rustup, …) follows.
+    const SPINNER_GLYPHS: [&str; 8] = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"];
     let poll_timer = Timer::default();
     {
         let weak = window.as_weak();
         let state = state.clone();
+        let spinner_idx = std::cell::Cell::new(0_usize);
+        let spinner_tick = std::cell::Cell::new(0_u8);
         poll_timer.start(
             TimerMode::Repeated,
             Duration::from_millis(16),
             move || {
+                let t = spinner_tick.get().wrapping_add(1);
+                spinner_tick.set(t);
+                if t % 6 == 0 {
+                    let i = (spinner_idx.get() + 1) % SPINNER_GLYPHS.len();
+                    spinner_idx.set(i);
+                    if let Some(window) = weak.upgrade() {
+                        window.set_spinner_glyph(SPINNER_GLYPHS[i].into());
+                    }
+                }
                 if state.poll_all_sessions() && state.blit_active() {
                     if let Some(window) = weak.upgrade() {
                         window.set_frame(Image::from_rgba8_premultiplied(
@@ -1898,6 +1916,8 @@ fn task_to_card(
         dirty,
         labels: ModelRc::from(Rc::new(VecModel::from(labels))),
         blocked_count,
+        // Polish 22: drives the spinner-vs-static-dot decision in CardRow.
+        session_state: SharedString::from(task.session_state.as_str()),
     }
 }
 

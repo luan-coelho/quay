@@ -116,6 +116,9 @@ export struct TaskCardData {
     labels: [LabelPillData],
     // Number of unresolved prerequisite tasks. Non-zero → blocked badge.
     blocked-count: int,
+    // Polish 22: drives the spinner-vs-static-dot decision in CardRow.
+    // One of "idle" | "busy" | "awaiting" | "stopped" | "exited" | "error".
+    session-state: string,
 }
 
 export struct DiffLineData {
@@ -178,6 +181,40 @@ component KindDiamond inherits Rectangle {
               : kind == "bug" ? Tokens.kind-bug
               : Tokens.text-tertiary;
         font-size: 11px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
+// Polish 22 — busy spinner. Slint 1.15 has no native widget and no
+// rotation-angle on Rectangle/Image, so we drive a single-character
+// braille glyph from a window-wide `spinner-glyph` property cycled
+// in the existing `poll_timer` (~96 ms cadence). All instances
+// share the same global phase — exactly how every CLI spinner
+// (cargo, npm, rustup, git, …) works in practice. Reference Lanes
+// uses an SVG arc; this is the closest pure-text equivalent we
+// can render without adding deps.
+//
+// `font-family: "JetBrains Mono"` is critical: without it some
+// of the 8 braille glyphs fall back to a sans font with different
+// advance widths and the spinner visually "jitters".
+component Spinner inherits Rectangle {
+    in property <string> glyph: "⣾";
+    // Property name avoids the deprecated `color` alias on Rectangle.
+    in property <color> glyph-color: Tokens.kind-feature;
+    in property <length> size: 12px;
+
+    width: size;
+    height: size;
+    background: transparent;
+
+    Text {
+        text: glyph;
+        color: glyph-color;
+        font-size: 11px;
+        font-family: "JetBrains Mono";
         horizontal-alignment: center;
         vertical-alignment: center;
         width: parent.width;
@@ -448,6 +485,10 @@ component SectionHeader inherits Rectangle {
 component CardRow inherits Rectangle {
     in property <TaskCardData> task;
     in property <bool> selected;
+    // Polish 22: piped down from MainWindow because Slint components
+    // can't reach the window root from inside their body. Each
+    // CardRow instance forwards `root.spinner-glyph` here.
+    in property <string> spinner-glyph;
     callback clicked();
     callback move-back();
     callback move-forward();
@@ -582,10 +623,16 @@ component CardRow inherits Rectangle {
             }
         }
 
-        // Status dot (running indicator)
+        // Polish 22: status indicator. Spinner when busy, otherwise
+        // the existing static dot (green if running, hollow if idle).
         VerticalLayout {
             alignment: center;
-            Rectangle {
+            if task.session-state == "busy": Spinner {
+                glyph: root.spinner-glyph;
+                glyph-color: Tokens.kind-feature;
+                size: 10px;
+            }
+            if task.session-state != "busy": Rectangle {
                 width: 8px;
                 height: 8px;
                 border-radius: 4px;
@@ -670,6 +717,9 @@ component OpenTaskTab inherits Rectangle {
     in property <string> kind;             // "feature" / "bug" / "enhancement"
     in property <string> session-state;    // "busy" / "idle" / …
     in property <bool> active;
+    // Polish 22: piped from MainWindow.spinner-glyph by the open-tabs
+    // strip's `for tab in ...:` loop. Drives the busy spinner.
+    in property <string> spinner-glyph;
     callback clicked();
     callback close-clicked();
 
@@ -714,16 +764,25 @@ component OpenTaskTab inherits Rectangle {
             }
         }
 
-        // Session dot — only visible when the session is actually running.
-        if root.session-state == "busy" || root.session-state == "awaiting" || root.session-state == "error": VerticalLayout {
+        // Polish 22: spinner when busy, colored dot for awaiting/error,
+        // hidden otherwise. The braille spinner glyph is window-wide,
+        // piped through `spinner-glyph`.
+        if root.session-state == "busy": VerticalLayout {
+            alignment: center;
+            Spinner {
+                glyph: root.spinner-glyph;
+                glyph-color: Tokens.kind-feature;
+                size: 8px;
+            }
+        }
+        if root.session-state == "awaiting" || root.session-state == "error": VerticalLayout {
             alignment: center;
             Rectangle {
                 width: 6px;
                 height: 6px;
                 border-radius: 3px;
                 background:
-                    root.session-state == "busy"     ? Tokens.kind-enhancement
-                  : root.session-state == "awaiting" ? #f5b54e
+                    root.session-state == "awaiting" ? #f5b54e
                   : root.session-state == "error"    ? Tokens.kind-bug
                                                      : Tokens.text-muted;
             }
@@ -764,6 +823,13 @@ export component MainWindow inherits Window {
     in property <int> cell-h: 22;
     in property <int> cols: 100;
     in property <int> rows: 30;
+
+    // Polish 22: window-wide braille spinner phase, cycled by the
+    // existing poll_timer in main.rs at ~96 ms. All Spinner instances
+    // (CardRow + OpenTaskTab) read this single string so every
+    // spinner stays in lockstep — same convention every CLI spinner
+    // (cargo, npm, rustup, …) follows.
+    in property <string> spinner-glyph: "⣾";
 
     // Selection / context.
     in property <string> active-task-id: "";
@@ -1180,6 +1246,7 @@ export component MainWindow inherits Window {
                         SectionHeader { label: "Backlog"; count: root.tasks-backlog.length; }
                         for task in root.tasks-backlog: CardRow {
                             task: task;
+                            spinner-glyph: root.spinner-glyph;
                             selected: task.id == root.active-task-id;
                             clicked => { root.select-task(task.id); }
                             move-back => { root.move-task-back(task.id); }
@@ -1201,6 +1268,7 @@ export component MainWindow inherits Window {
                         }
                         for task in root.tasks-planning: CardRow {
                             task: task;
+                            spinner-glyph: root.spinner-glyph;
                             selected: task.id == root.active-task-id;
                             clicked => { root.select-task(task.id); }
                             move-back => { root.move-task-back(task.id); }
@@ -1208,6 +1276,7 @@ export component MainWindow inherits Window {
                         }
                         for task in root.tasks-implementation: CardRow {
                             task: task;
+                            spinner-glyph: root.spinner-glyph;
                             selected: task.id == root.active-task-id;
                             clicked => { root.select-task(task.id); }
                             move-back => { root.move-task-back(task.id); }
@@ -1222,6 +1291,7 @@ export component MainWindow inherits Window {
                         SectionHeader { label: "Review"; count: root.tasks-review.length; }
                         for task in root.tasks-review: CardRow {
                             task: task;
+                            spinner-glyph: root.spinner-glyph;
                             selected: task.id == root.active-task-id;
                             clicked => { root.select-task(task.id); }
                             move-back => { root.move-task-back(task.id); }
@@ -1236,6 +1306,7 @@ export component MainWindow inherits Window {
                         SectionHeader { label: "Done"; count: root.tasks-done.length; }
                         for task in root.tasks-done: CardRow {
                             task: task;
+                            spinner-glyph: root.spinner-glyph;
                             selected: task.id == root.active-task-id;
                             clicked => { root.select-task(task.id); }
                             move-back => { root.move-task-back(task.id); }
@@ -1250,6 +1321,7 @@ export component MainWindow inherits Window {
                         SectionHeader { label: "Misc"; count: root.tasks-misc.length; }
                         for task in root.tasks-misc: CardRow {
                             task: task;
+                            spinner-glyph: root.spinner-glyph;
                             selected: task.id == root.active-task-id;
                             clicked => { root.select-task(task.id); }
                             move-back => { root.move-task-back(task.id); }
@@ -1304,6 +1376,7 @@ export component MainWindow inherits Window {
                         kind: tab.kind;
                         session-state: tab.session-state;
                         active: tab.is-active;
+                        spinner-glyph: root.spinner-glyph;
                         clicked => { root.open-task-tab(tab.id); }
                         close-clicked => { root.close-task-tab(tab.id); }
                     }
