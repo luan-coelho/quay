@@ -497,6 +497,17 @@ impl AppState {
         self.sessions.borrow().contains_key(&id)
     }
 
+    /// Collect OS PIDs of every live session — feeds the Process Manager
+    /// classifier so it can tag our spawned children as "Tracked" instead
+    /// of lumping them into "Orphan".
+    pub fn tracked_pids(&self) -> std::collections::HashSet<u32> {
+        self.sessions
+            .borrow()
+            .values()
+            .filter_map(|s| s.child_pid())
+            .collect()
+    }
+
     /// Execute the quick action at `index` (0-based) against the currently
     /// active session. Both Claude-type and Shell-type quick actions write
     /// to the PTY — Claude agents treat the text as a prompt, bare shells

@@ -642,22 +642,16 @@ fn main() -> Result<()> {
     };
 
     // Helper: rebuild the Settings process list by running the process
-    // manager scan against the current in-memory session PID set.
+    // manager scan against the current in-memory session PID set. Polish 1:
+    // the tracked set now comes from `AppState::tracked_pids()`, so our
+    // spawned agent children are classified as "Tracked" instead of
+    // showing up as "Orphans" (which they technically are by parent-pid
+    // relationship, but the classifier rule prefers the explicit registry).
     let refresh_settings_processes = {
         let state = state.clone();
         let model = settings_proc_model.clone();
         move || {
-            // Collect tracked PIDs from the live session registry. The
-            // portable-pty Child trait exposes `process_id()` on most
-            // platforms; fall back to empty if not available.
-            let tracked: HashSet<u32> = HashSet::new();
-            // NB: we don't have a public accessor for child.process_id()
-            // on PtySession yet — the Process Manager will still catch
-            // the processes as "Orphan" (parent == Quay) which is fine
-            // for the Phase 5 MVP. Adding a tracked_pids() method on
-            // AppState is a follow-up.
-            let _ = &state; // suppress unused warning until we use it
-
+            let tracked: HashSet<u32> = state.tracked_pids();
             let entries = crate::process::enumerate(&tracked);
             while model.row_count() > 0 {
                 model.remove(model.row_count() - 1);

@@ -243,6 +243,13 @@ impl PtySession {
     pub fn is_exited(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(Some(_)))
     }
+
+    /// OS-level process id of the spawned child, when portable-pty can
+    /// resolve it. Used by the Process Manager to classify processes as
+    /// "Tracked" instead of mistakenly flagging them as Orphans.
+    pub fn child_pid(&self) -> Option<u32> {
+        self.child.process_id()
+    }
 }
 
 impl Drop for PtySession {
