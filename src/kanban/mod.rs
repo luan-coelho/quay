@@ -12,5 +12,6 @@ pub use model::{
     AgentKind, SessionRecord, SessionState, StartMode, Task, TaskKind, TaskState,
     WorktreeStrategy, unix_millis_now,
 };
+#[allow(unused_imports)]
 pub use projects::{Project, ProjectStore};
 pub use store::{SessionStore, TaskStore};

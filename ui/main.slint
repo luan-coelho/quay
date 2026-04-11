@@ -65,6 +65,15 @@ export struct ProcessRowData {
     class: string,       // "tracked" | "external" | "orphan"
 }
 
+export struct FileEntryData {
+    name: string,
+    /// Absolute path — passed back in the click callback so Rust can
+    /// figure out whether to navigate into a directory or shell out to
+    /// $EDITOR for a file.
+    path: string,
+    kind: string,        // "directory" | "file" | "parent"
+}
+
 export struct TaskCardData {
     id: string,           // UUID for callbacks
     display-id: int,      // sequential numeric ID for display (#1, #2, …)
@@ -593,6 +602,10 @@ export component MainWindow inherits Window {
     in property <[QuickActionRowData]> settings-quick-actions;
     in property <[ProcessRowData]> settings-processes;
 
+    // File browser state for the Files tab (Phase 6).
+    in property <[FileEntryData]> file-entries;
+    in-out property <string> file-current-dir: "";
+
     // Git Changes tab data — refreshed ~1×/s while the tab is open.
     in property <[DiffFileData]> git-diff-files;
     in property <[CommitEntryData]> git-commit-log;
@@ -615,6 +628,7 @@ export component MainWindow inherits Window {
     callback process-kill(int);        // SIGTERM
     callback process-force-kill(int);  // SIGKILL
     callback refresh-processes();
+    callback file-entry-clicked(string, string);   // path, kind
     callback key-pressed(string, bool, bool, bool);
 
     // Layout constants.
@@ -923,6 +937,9 @@ export component MainWindow inherits Window {
                 }
                 VerticalLayout { alignment: end;
                     RightTab { label: "Git Changes"; glyph: "⎇"; selected: root.active-right-tab == "git"; clicked => { root.active-right-tab = "git"; } }
+                }
+                VerticalLayout { alignment: end;
+                    RightTab { label: "Files"; glyph: "▤"; selected: root.active-right-tab == "files"; clicked => { root.active-right-tab = "files"; } }
                 }
                 VerticalLayout { alignment: end;
                     RightTab { label: "History"; glyph: "◷"; selected: root.active-right-tab == "history"; clicked => { root.active-right-tab = "history"; } }
@@ -1378,6 +1395,93 @@ export component MainWindow inherits Window {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // Files tab — simple flat directory listing with parent nav.
+        Rectangle {
+            visible: root.active-right-tab == "files";
+            x: right-pad-h;
+            y: tab-strip-h + right-pad-v;
+            width: parent.width - right-pad-h * 2;
+            height: parent.height - tab-strip-h - right-pad-v * 2 - 22px;
+            background: #14161a;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Tokens.border-soft;
+            clip: true;
+
+            VerticalLayout {
+                padding: 12px;
+                spacing: 8px;
+
+                // Breadcrumb showing the current directory.
+                HorizontalLayout {
+                    spacing: 6px;
+                    Text {
+                        text: "▸";
+                        color: Tokens.text-tertiary;
+                        font-size: 10px;
+                        vertical-alignment: center;
+                    }
+                    Text {
+                        text: root.file-current-dir == "" ? "Select a task with a worktree" : root.file-current-dir;
+                        color: Tokens.text-primary;
+                        font-size: 11px;
+                        font-family: "JetBrains Mono";
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                }
+
+                Rectangle { height: 1px; background: Tokens.border-very-soft; }
+
+                ScrollView {
+                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        spacing: 1px;
+                        for entry in root.file-entries: TouchArea {
+                            height: 24px;
+                            clicked => {
+                                root.file-entry-clicked(entry.path, entry.kind);
+                            }
+                            Rectangle {
+                                background: parent.has-hover ? #1f2331 : transparent;
+                                border-radius: 3px;
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 8px;
+                                    spacing: 8px;
+                                    alignment: start;
+                                    Text {
+                                        text: entry.kind == "directory" ? "▸"
+                                             : entry.kind == "parent" ? "⇧"
+                                                                       : "·";
+                                        color: entry.kind == "file" ? Tokens.text-tertiary : Tokens.kind-feature;
+                                        font-size: 11px;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: entry.name;
+                                        color: Tokens.text-primary;
+                                        font-size: 11px;
+                                        font-family: "JetBrains Mono";
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Footer hint: tell the user what the file click does.
+                Text {
+                    text: "Click a file to open it in $EDITOR (fallback: xdg-open / open / start).";
+                    color: Tokens.text-tertiary;
+                    font-size: 9px;
                 }
             }
         }

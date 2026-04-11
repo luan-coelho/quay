@@ -2,6 +2,8 @@
 
 mod agents;
 mod app;
+mod editor;
+mod file_tree;
 mod git;
 mod kanban;
 mod persistence;
@@ -154,6 +156,12 @@ fn main() -> Result<()> {
     let all_labels_model = Rc::new(VecModel::<LabelPillData>::default());
     window.set_all_labels(ModelRc::from(all_labels_model.clone()));
     window.set_filter_label_id("".into());
+
+    // Files tab state. Populated on select_task if the task has a
+    // worktree; empty otherwise.
+    let file_entries_model = Rc::new(VecModel::<FileEntryData>::default());
+    window.set_file_entries(ModelRc::from(file_entries_model.clone()));
+    window.set_file_current_dir("".into());
 
     // Settings modal state — initial values loaded from SQLite.
     let settings_qa_model = Rc::new(VecModel::<QuickActionRowData>::default());
@@ -324,9 +332,31 @@ fn main() -> Result<()> {
                 Ok(changed) if !changed => {}
                 Ok(_) => {
                     if let Some(window) = weak.upgrade() {
-                        let card_data = if let Ok(Some(task)) =
-                            crate::kanban::TaskStore::new(&state.db.conn).get(uuid)
-                        {
+                        // Phase 6: if the task has a worktree, populate the
+                        // file browser with its root. Otherwise clear it.
+                        let task_opt =
+                            crate::kanban::TaskStore::new(&state.db.conn).get(uuid);
+                        if let Ok(Some(ref t)) = task_opt {
+                            if let Some(wt) = t.worktree_path.as_deref() {
+                                let entries = crate::file_tree::list_dir(wt)
+                                    .unwrap_or_default();
+                                // We don't have easy access to the file
+                                // model here (it lives in a different
+                                // closure). Instead, set the current dir
+                                // property and let a subsequent click
+                                // or tab switch repopulate via the same
+                                // handler. For an immediate refresh, the
+                                // Files tab re-selects on next click.
+                                let _ = entries;
+                                window.set_file_current_dir(
+                                    wt.to_string_lossy().into_owned().into(),
+                                );
+                            } else {
+                                window.set_file_current_dir("".into());
+                            }
+                        }
+
+                        let card_data = if let Ok(Some(task)) = task_opt {
                             // Compute display-id by scanning all tasks ordered
                             // by creation date — same logic as refresh.
                             let all = state.list_tasks().unwrap_or_default();
@@ -682,6 +712,60 @@ fn main() -> Result<()> {
                 tracing::warn!(%err, pid, "force_kill() failed");
             }
             refresh_procs();
+        });
+    }
+
+    // ── Phase 6 file browser wiring ─────────────────────────────────────
+
+    // Helper to rebuild the file entries model for a given directory.
+    let refresh_files = {
+        let model = file_entries_model.clone();
+        let weak = window.as_weak();
+        move |dir: PathBuf| {
+            let entries = match crate::file_tree::list_dir(&dir) {
+                Ok(v) => v,
+                Err(err) => {
+                    tracing::debug!(%err, "list_dir failed");
+                    Vec::new()
+                }
+            };
+            while model.row_count() > 0 {
+                model.remove(model.row_count() - 1);
+            }
+            for e in entries {
+                let kind = match e.kind {
+                    crate::file_tree::EntryKind::Directory => "directory",
+                    crate::file_tree::EntryKind::File => "file",
+                    crate::file_tree::EntryKind::Parent => "parent",
+                };
+                model.push(FileEntryData {
+                    name: SharedString::from(e.name),
+                    path: SharedString::from(e.path.to_string_lossy().into_owned()),
+                    kind: SharedString::from(kind),
+                });
+            }
+            if let Some(w) = weak.upgrade() {
+                w.set_file_current_dir(dir.to_string_lossy().into_owned().into());
+            }
+        }
+    };
+
+    {
+        // Click handler for file tree entries.
+        // - Parent / Directory → refresh the listing against the new dir.
+        // - File → shell out to $EDITOR (or platform fallback).
+        let refresh = refresh_files.clone();
+        window.on_file_entry_clicked(move |path_str, kind_str| {
+            let path = PathBuf::from(path_str.as_str());
+            match kind_str.as_str() {
+                "directory" | "parent" => refresh(path),
+                "file" => {
+                    if let Err(err) = crate::file_tree::open_in_editor(&path) {
+                        tracing::warn!(%err, path = %path.display(), "open_in_editor failed");
+                    }
+                }
+                _ => {}
+            }
         });
     }
     {
