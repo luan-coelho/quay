@@ -1563,23 +1563,26 @@ fn main() -> Result<()> {
         });
     }
     {
-        // Polish 6 key dispatcher — checked in priority order. The
+        // Polish 6 + 18 key dispatcher — checked in priority order. The
         // "primary" modifier (`cmd` on macOS, `ctrl` elsewhere) is
         // computed from `ctrl || meta` so both feel native.
         //
         // Shortcuts (all consume the key so it never reaches the PTY):
         //
-        //   Cmd+Alt+1..9  → execute quick action at (digit - 1)
-        //   Cmd+N         → create new task
-        //   Cmd+D         → move active task forward to Done
-        //   Cmd+,         → toggle settings modal
+        //   Cmd+Alt+1..9   → execute quick action at (digit - 1)
+        //   Cmd+N          → create new task
+        //   Cmd+D          → move active task forward to Done
+        //   Cmd+,          → toggle settings modal
+        //   Cmd+W          → close active open-task tab  (Polish 18)
+        //   Cmd+Shift+]    → cycle to next open tab      (Polish 18)
+        //   Cmd+Shift+[    → cycle to prev open tab      (Polish 18)
         //
         // Everything else falls through to the xterm byte encoder.
         let state = state.clone();
         let weak = window.as_weak();
         let refresh = refresh_kanban.clone();
         let refresh_panels = refresh_active_panels.clone();
-        window.on_key_pressed(move |text, ctrl, alt, _shift, meta| {
+        window.on_key_pressed(move |text, ctrl, alt, shift, meta| {
             let primary = ctrl || meta;
 
             // 1. Quick action shortcut: primary+Alt+digit.
@@ -1650,12 +1653,52 @@ fn main() -> Result<()> {
                         }
                         return;
                     }
+                    'w' | 'W' => {
+                        // Polish 18: Cmd/Ctrl+W — close the active open-task
+                        // tab. Re-uses the same close/fall-back logic as
+                        // clicking the × on the chip by invoking the
+                        // Slint-side `close-task-tab` callback directly.
+                        if let Some(active_id) = *state.active_task.borrow() {
+                            if let Some(w) = weak.upgrade() {
+                                w.invoke_close_task_tab(active_id.to_string().into());
+                            }
+                        }
+                        return;
+                    }
                     _ => {}
                 }
             }
 
+            // Polish 18: Cmd+Shift+] / Cmd+Shift+[ → cycle forward /
+            // backward through the open task tabs. Shift turns `[`
+            // into `{` and `]` into `}` on most keyboards, so we
+            // match the shifted glyph. Wraps at the ends.
+            if primary && shift && text.len() == 1 {
+                let c = text.chars().next().unwrap_or('\0');
+                if c == '}' || c == ']' || c == '{' || c == '[' {
+                    let forward = c == '}' || c == ']';
+                    let tabs = state.open_tabs.borrow().clone();
+                    if tabs.len() >= 2 {
+                        let active = *state.active_task.borrow();
+                        let current_idx = active
+                            .and_then(|id| tabs.iter().position(|t| *t == id))
+                            .unwrap_or(0);
+                        let next_idx = if forward {
+                            (current_idx + 1) % tabs.len()
+                        } else {
+                            (current_idx + tabs.len() - 1) % tabs.len()
+                        };
+                        let next_id = tabs[next_idx];
+                        if let Some(w) = weak.upgrade() {
+                            w.invoke_open_task_tab(next_id.to_string().into());
+                        }
+                    }
+                    return;
+                }
+            }
+
             // 4. Fall-through: normal PTY input.
-            let bytes = key_text_to_bytes(text.as_str(), ctrl, alt, _shift);
+            let bytes = key_text_to_bytes(text.as_str(), ctrl, alt, shift);
             if !bytes.is_empty() {
                 state.write_to_active(&bytes);
             }
