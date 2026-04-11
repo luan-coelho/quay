@@ -669,7 +669,9 @@ export component MainWindow inherits Window {
     callback detach-label(string);   // label id
     callback remove-dependency(string);  // dep task id
     callback delete-task(string);    // task id
-    callback key-pressed(string, bool, bool, bool);
+    // text, ctrl, alt, shift, meta. Meta added in Polish 6 for
+    // Cmd-based shortcuts on macOS.
+    callback key-pressed(string, bool, bool, bool, bool);
 
     // Layout constants.
     property <length> sidebar-w: 200px;
@@ -1000,6 +1002,7 @@ export component MainWindow inherits Window {
                     event.modifiers.control,
                     event.modifiers.alt,
                     event.modifiers.shift,
+                    event.modifiers.meta,
                 );
                 accept
             }

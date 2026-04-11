@@ -1061,21 +1061,27 @@ fn main() -> Result<()> {
         });
     }
     {
-        // Key dispatcher — checked in priority order:
+        // Polish 6 key dispatcher — checked in priority order. The
+        // "primary" modifier (`cmd` on macOS, `ctrl` elsewhere) is
+        // computed from `ctrl || meta` so both feel native.
         //
-        // 1. Cmd/Ctrl + Alt + digit (1..9) → execute quick action at
-        //    (digit - 1) index. Short-circuits so the digit never reaches
-        //    the PTY.
-        // 2. Otherwise, translate to xterm bytes and forward to the
-        //    active session.
+        // Shortcuts (all consume the key so it never reaches the PTY):
         //
-        // Cmd (meta on macOS) vs Ctrl on Linux/Windows is handled by
-        // accepting either — in practice Slint reports Ctrl on Linux
-        // and the user presses the right key for their OS.
+        //   Cmd+Alt+1..9  → execute quick action at (digit - 1)
+        //   Cmd+N         → create new task
+        //   Cmd+D         → move active task forward to Done
+        //   Cmd+,         → toggle settings modal
+        //
+        // Everything else falls through to the xterm byte encoder.
         let state = state.clone();
-        window.on_key_pressed(move |text, ctrl, alt, shift| {
-            // Cmd/Ctrl + Alt + digit — quick action shortcut.
-            if ctrl && alt && text.len() == 1 {
+        let weak = window.as_weak();
+        let refresh = refresh_kanban.clone();
+        let refresh_panels = refresh_active_panels.clone();
+        window.on_key_pressed(move |text, ctrl, alt, _shift, meta| {
+            let primary = ctrl || meta;
+
+            // 1. Quick action shortcut: primary+Alt+digit.
+            if primary && alt && text.len() == 1 {
                 let c = text.chars().next().unwrap_or(' ');
                 if let Some(digit) = c.to_digit(10)
                     && (1..=9).contains(&digit)
@@ -1090,8 +1096,44 @@ fn main() -> Result<()> {
                 }
             }
 
-            // Fall-through: normal PTY input.
-            let bytes = key_text_to_bytes(text.as_str(), ctrl, alt, shift);
+            // 2. Global primary-modifier shortcuts.
+            if primary && !alt && text.len() == 1 {
+                match text.chars().next().unwrap_or('\0') {
+                    'n' | 'N' => {
+                        // Cmd/Ctrl+N — create new task at bottom of Backlog.
+                        let count = state.list_tasks().map(|t| t.len()).unwrap_or(0) + 1;
+                        let title = format!("New task {count}");
+                        if let Err(err) = state.create_task(title) {
+                            tracing::error!(%err, "create_task via shortcut failed");
+                        }
+                        refresh();
+                        return;
+                    }
+                    'd' | 'D' => {
+                        // Cmd/Ctrl+D — move active task forward (towards Done).
+                        if let Some(active_id) = *state.active_task.borrow() {
+                            if let Err(err) = state.move_forward(active_id) {
+                                tracing::warn!(%err, "move_forward via shortcut failed");
+                            }
+                            refresh();
+                            refresh_panels();
+                        }
+                        return;
+                    }
+                    ',' => {
+                        // Cmd/Ctrl+, — toggle the settings modal.
+                        if let Some(w) = weak.upgrade() {
+                            let open = !w.get_settings_open();
+                            w.set_settings_open(open);
+                        }
+                        return;
+                    }
+                    _ => {}
+                }
+            }
+
+            // 3. Fall-through: normal PTY input.
+            let bytes = key_text_to_bytes(text.as_str(), ctrl, alt, _shift);
             if !bytes.is_empty() {
                 state.write_to_active(&bytes);
             }
