@@ -23,7 +23,9 @@ use anyhow::{Context, Result, anyhow};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use uuid::Uuid;
 
-use super::model::{SessionRecord, Task, TaskState};
+use super::model::{
+    AgentKind, SessionRecord, SessionState, StartMode, Task, TaskState, WorktreeStrategy,
+};
 
 // ─── Tasks ───────────────────────────────────────────────────────────────────
 
@@ -40,18 +42,33 @@ impl<'a> TaskStore<'a> {
         self.conn
             .execute(
                 "INSERT INTO tasks (
-                    id, title, description, state, repo_path, worktree_path,
-                    branch_name, agent_kind, position, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                    id, title, description, instructions, state,
+                    repo_path, worktree_path, branch_name, agent_kind,
+                    cli_selection, start_mode, worktree_strategy,
+                    session_state, process_pid,
+                    position, created_at, updated_at
+                ) VALUES (
+                    ?1, ?2, ?3, ?4, ?5,
+                    ?6, ?7, ?8, ?9,
+                    ?10, ?11, ?12,
+                    ?13, ?14,
+                    ?15, ?16, ?17
+                )",
                 params![
                     task.id.to_string(),
                     task.title,
                     task.description,
+                    task.instructions,
                     task.state.as_str(),
                     path_to_string(&task.repo_path),
                     task.worktree_path.as_deref().map(path_to_string),
                     task.branch_name,
                     task.agent_kind,
+                    task.cli_selection.as_str(),
+                    task.start_mode.map(|m| m.as_str()),
+                    task.worktree_strategy.as_str(),
+                    task.session_state.as_str(),
+                    task.process_pid,
                     task.position,
                     task.created_at,
                     task.updated_at,
@@ -68,23 +85,35 @@ impl<'a> TaskStore<'a> {
                 "UPDATE tasks SET
                     title = ?2,
                     description = ?3,
-                    state = ?4,
-                    repo_path = ?5,
-                    worktree_path = ?6,
-                    branch_name = ?7,
-                    agent_kind = ?8,
-                    position = ?9,
-                    updated_at = ?10
+                    instructions = ?4,
+                    state = ?5,
+                    repo_path = ?6,
+                    worktree_path = ?7,
+                    branch_name = ?8,
+                    agent_kind = ?9,
+                    cli_selection = ?10,
+                    start_mode = ?11,
+                    worktree_strategy = ?12,
+                    session_state = ?13,
+                    process_pid = ?14,
+                    position = ?15,
+                    updated_at = ?16
                  WHERE id = ?1",
                 params![
                     task.id.to_string(),
                     task.title,
                     task.description,
+                    task.instructions,
                     task.state.as_str(),
                     path_to_string(&task.repo_path),
                     task.worktree_path.as_deref().map(path_to_string),
                     task.branch_name,
                     task.agent_kind,
+                    task.cli_selection.as_str(),
+                    task.start_mode.map(|m| m.as_str()),
+                    task.worktree_strategy.as_str(),
+                    task.session_state.as_str(),
+                    task.process_pid,
                     task.position,
                     task.updated_at,
                 ],
@@ -106,8 +135,10 @@ impl<'a> TaskStore<'a> {
     pub fn get(&self, id: Uuid) -> Result<Option<Task>> {
         self.conn
             .query_row(
-                "SELECT id, title, description, state, repo_path, worktree_path,
-                        branch_name, agent_kind, position, created_at, updated_at
+                "SELECT id, title, description, instructions, state, repo_path,
+                        worktree_path, branch_name, agent_kind, cli_selection,
+                        start_mode, worktree_strategy, session_state, process_pid,
+                        position, created_at, updated_at
                  FROM tasks WHERE id = ?1",
                 params![id.to_string()],
                 row_to_task,
@@ -119,8 +150,10 @@ impl<'a> TaskStore<'a> {
     /// Every task ordered by (state, position, created_at).
     pub fn list_all(&self) -> Result<Vec<Task>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, description, state, repo_path, worktree_path,
-                    branch_name, agent_kind, position, created_at, updated_at
+            "SELECT id, title, description, instructions, state, repo_path,
+                    worktree_path, branch_name, agent_kind, cli_selection,
+                    start_mode, worktree_strategy, session_state, process_pid,
+                    position, created_at, updated_at
              FROM tasks
              ORDER BY state, position, created_at",
         )?;
@@ -131,8 +164,10 @@ impl<'a> TaskStore<'a> {
     /// Tasks in a single column, ordered by position.
     pub fn list_by_state(&self, state: TaskState) -> Result<Vec<Task>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, description, state, repo_path, worktree_path,
-                    branch_name, agent_kind, position, created_at, updated_at
+            "SELECT id, title, description, instructions, state, repo_path,
+                    worktree_path, branch_name, agent_kind, cli_selection,
+                    start_mode, worktree_strategy, session_state, process_pid,
+                    position, created_at, updated_at
              FROM tasks WHERE state = ?1
              ORDER BY position, created_at",
         )?;
@@ -220,13 +255,24 @@ impl<'a> SessionStore<'a> {
 // ─── Row mappers ────────────────────────────────────────────────────────────
 
 fn row_to_task(row: &Row<'_>) -> rusqlite::Result<Task> {
-    let id_str: String = row.get(0)?;
-    let id = Uuid::parse_str(&id_str)
-        .map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e)))?;
-    let state_str: String = row.get(3)?;
+    // Column order must match the SELECT statements above. Index numbers
+    // are mirrored in comments so it's easy to cross-check.
+    let id_str: String = row.get(0)?;                    // 0  id
+    let id = Uuid::parse_str(&id_str).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            0,
+            rusqlite::types::Type::Text,
+            Box::new(e),
+        )
+    })?;
+    let title: String = row.get(1)?;                     // 1  title
+    let description: Option<String> = row.get(2)?;       // 2  description
+    let instructions: Option<String> = row.get(3)?;      // 3  instructions
+
+    let state_str: String = row.get(4)?;                 // 4  state
     let state = TaskState::parse(&state_str).ok_or_else(|| {
         rusqlite::Error::FromSqlConversionFailure(
-            3,
+            4,
             rusqlite::types::Type::Text,
             Box::new(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -234,21 +280,86 @@ fn row_to_task(row: &Row<'_>) -> rusqlite::Result<Task> {
             )),
         )
     })?;
-    let repo_path: String = row.get(4)?;
-    let worktree_path: Option<String> = row.get(5)?;
+
+    let repo_path: String = row.get(5)?;                 // 5  repo_path
+    let worktree_path: Option<String> = row.get(6)?;     // 6  worktree_path
+    let branch_name: Option<String> = row.get(7)?;       // 7  branch_name
+    let agent_kind: String = row.get(8)?;                // 8  agent_kind
+
+    let cli_str: String = row.get(9)?;                   // 9  cli_selection
+    let cli_selection = AgentKind::parse(&cli_str).ok_or_else(|| {
+        rusqlite::Error::FromSqlConversionFailure(
+            9,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unknown cli_selection {cli_str:?}"),
+            )),
+        )
+    })?;
+
+    let start_mode_str: Option<String> = row.get(10)?;   // 10 start_mode
+    let start_mode = match start_mode_str {
+        Some(s) => Some(StartMode::parse(&s).ok_or_else(|| {
+            rusqlite::Error::FromSqlConversionFailure(
+                10,
+                rusqlite::types::Type::Text,
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("unknown start_mode {s:?}"),
+                )),
+            )
+        })?),
+        None => None,
+    };
+
+    let strat_str: String = row.get(11)?;                // 11 worktree_strategy
+    let worktree_strategy = WorktreeStrategy::parse(&strat_str).ok_or_else(|| {
+        rusqlite::Error::FromSqlConversionFailure(
+            11,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unknown worktree_strategy {strat_str:?}"),
+            )),
+        )
+    })?;
+
+    let sess_str: String = row.get(12)?;                 // 12 session_state
+    let session_state = SessionState::parse(&sess_str).ok_or_else(|| {
+        rusqlite::Error::FromSqlConversionFailure(
+            12,
+            rusqlite::types::Type::Text,
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unknown session_state {sess_str:?}"),
+            )),
+        )
+    })?;
+
+    let process_pid: Option<i32> = row.get(13)?;         // 13 process_pid
+    let position: i64 = row.get(14)?;                    // 14 position
+    let created_at: i64 = row.get(15)?;                  // 15 created_at
+    let updated_at: i64 = row.get(16)?;                  // 16 updated_at
 
     Ok(Task {
         id,
-        title: row.get(1)?,
-        description: row.get(2)?,
+        title,
+        description,
+        instructions,
         state,
         repo_path: PathBuf::from(repo_path),
         worktree_path: worktree_path.map(PathBuf::from),
-        branch_name: row.get(6)?,
-        agent_kind: row.get(7)?,
-        position: row.get(8)?,
-        created_at: row.get(9)?,
-        updated_at: row.get(10)?,
+        branch_name,
+        agent_kind,
+        cli_selection,
+        start_mode,
+        worktree_strategy,
+        session_state,
+        process_pid,
+        position,
+        created_at,
+        updated_at,
     })
 }
 
