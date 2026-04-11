@@ -194,11 +194,14 @@ fn main() -> Result<()> {
     let active_task_labels_model = Rc::new(VecModel::<LabelPillData>::default());
     let active_task_available_labels_model = Rc::new(VecModel::<LabelPillData>::default());
     let active_task_deps_model = Rc::new(VecModel::<TaskCardData>::default());
+    let active_task_available_deps_model = Rc::new(VecModel::<TaskCardData>::default());
     window.set_active_task_labels(ModelRc::from(active_task_labels_model.clone()));
     window
         .set_active_task_available_labels(ModelRc::from(active_task_available_labels_model.clone()));
     window.set_active_task_dependencies(ModelRc::from(active_task_deps_model.clone()));
+    window.set_active_task_available_deps(ModelRc::from(active_task_available_deps_model.clone()));
     window.set_label_picker_open(false);
+    window.set_dep_picker_open(false);
 
     // Files tab state. Populated on select_task if the task has a
     // worktree; empty otherwise.
@@ -383,6 +386,7 @@ fn main() -> Result<()> {
         let labels_model = active_task_labels_model.clone();
         let available_model = active_task_available_labels_model.clone();
         let deps_model = active_task_deps_model.clone();
+        let available_deps_model = active_task_available_deps_model.clone();
         move || {
             // Clear everything first.
             while labels_model.row_count() > 0 {
@@ -393,6 +397,9 @@ fn main() -> Result<()> {
             }
             while deps_model.row_count() > 0 {
                 deps_model.remove(deps_model.row_count() - 1);
+            }
+            while available_deps_model.row_count() > 0 {
+                available_deps_model.remove(available_deps_model.row_count() - 1);
             }
 
             let Some(active_id) = *state.active_task.borrow() else {
@@ -419,6 +426,7 @@ fn main() -> Result<()> {
 
             // Direct dependencies as TaskCardData (reused for ID + title).
             let dep_ids = dep_store.dependencies_of(active_id).unwrap_or_default();
+            let dep_id_set: std::collections::HashSet<Uuid> = dep_ids.iter().copied().collect();
             let all_tasks = state.list_tasks().unwrap_or_default();
             // Stable display-ids: same logic as refresh_kanban.
             let mut sorted = all_tasks.clone();
@@ -428,11 +436,25 @@ fn main() -> Result<()> {
                 .enumerate()
                 .map(|(i, t)| (t.id, (i + 1) as i32))
                 .collect();
-            for dep_id in dep_ids {
-                if let Some(task) = all_tasks.iter().find(|t| t.id == dep_id) {
+            for dep_id in &dep_ids {
+                if let Some(task) = all_tasks.iter().find(|t| t.id == *dep_id) {
                     let display_id = display_ids.get(&task.id).copied().unwrap_or(0);
                     deps_model.push(task_to_card(task, display_id, false, false, Vec::new(), 0));
                 }
+            }
+
+            // Polish 7: available dep candidates = every other task that
+            // isn't already a direct prereq. Cycle detection happens at
+            // insert time in DependencyStore::add, so the picker may
+            // show candidates the store will later reject; that's fine
+            // — we report the error and the user tries another.
+            for task in &all_tasks {
+                if task.id == active_id || dep_id_set.contains(&task.id) {
+                    continue;
+                }
+                let display_id = display_ids.get(&task.id).copied().unwrap_or(0);
+                available_deps_model
+                    .push(task_to_card(task, display_id, false, false, Vec::new(), 0));
             }
         }
     };
@@ -755,6 +777,28 @@ fn main() -> Result<()> {
             }
             refresh_panels();
             refresh();
+        });
+    }
+    {
+        // Polish 7: add_dependency — validated via DependencyStore's
+        // cycle detection. On cycle reject we log a warning and leave
+        // the UI unchanged so the user can pick a different prereq.
+        let state = state.clone();
+        let refresh_panels = refresh_active_panels.clone();
+        let refresh = refresh_kanban.clone();
+        window.on_add_dependency(move |dep_id| {
+            let Some(active_id) = *state.active_task.borrow() else { return };
+            let Ok(dep_uuid) = Uuid::from_str(dep_id.as_str()) else { return };
+            let store = DependencyStore::new(&state.db.conn);
+            match store.add(active_id, dep_uuid) {
+                Ok(()) => {
+                    refresh_panels();
+                    refresh();
+                }
+                Err(err) => {
+                    tracing::warn!(%err, "add_dependency rejected");
+                }
+            }
         });
     }
     {

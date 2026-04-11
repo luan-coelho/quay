@@ -637,7 +637,11 @@ export component MainWindow inherits Window {
     // Potential labels to attach (all available ones the task doesn't have yet).
     in property <[LabelPillData]> active-task-available-labels;
     in property <[TaskCardData]> active-task-dependencies;
+    // Polish 7: available dependency candidates (every task that isn't
+    // this one and isn't already a prereq and wouldn't create a cycle).
+    in property <[TaskCardData]> active-task-available-deps;
     in-out property <bool> label-picker-open: false;
+    in-out property <bool> dep-picker-open: false;
 
     // Git Changes tab data — refreshed ~1×/s while the tab is open.
     in property <[DiffFileData]> git-diff-files;
@@ -668,6 +672,7 @@ export component MainWindow inherits Window {
     callback attach-label(string);   // label id
     callback detach-label(string);   // label id
     callback remove-dependency(string);  // dep task id
+    callback add-dependency(string);     // dep task id
     callback delete-task(string);    // task id
     // text, ctrl, alt, shift, meta. Meta added in Polish 6 for
     // Cmd-based shortcuts on macOS.
@@ -1367,23 +1372,107 @@ export component MainWindow inherits Window {
                 // ── Dependencies section ───────────────────────────
                 HorizontalLayout {
                     spacing: 6px;
+                    alignment: start;
                     Text {
                         text: "BLOCKED BY";
                         color: Tokens.text-tertiary;
                         font-size: 9px;
                         font-weight: 700;
+                        vertical-alignment: center;
                     }
                     Rectangle { horizontal-stretch: 1; }
                     Text {
                         text: root.active-task-dependencies.length;
                         color: Tokens.text-tertiary;
                         font-size: 9px;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        width: 20px;
+                        height: 16px;
+                        clicked => { root.dep-picker-open = !root.dep-picker-open; }
+                        Rectangle {
+                            background: parent.has-hover ? #1f2331 : transparent;
+                            border-radius: 3px;
+                            border-width: 1px;
+                            border-color: Tokens.border-soft;
+                            Text {
+                                text: "+";
+                                color: Tokens.text-secondary;
+                                font-size: 11px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
                     }
                 }
-                if root.active-task-dependencies.length == 0: Text {
-                    text: "No dependencies.";
+                if root.active-task-dependencies.length == 0 && !root.dep-picker-open: Text {
+                    text: "No dependencies — click + to add one.";
                     color: Tokens.text-tertiary;
                     font-size: 10px;
+                }
+
+                // Dep picker drawer
+                if root.dep-picker-open: Rectangle {
+                    height: 90px;
+                    background: #0e0f13;
+                    border-radius: 4px;
+                    border-width: 1px;
+                    border-color: Tokens.border-soft;
+
+                    VerticalLayout {
+                        padding: 6px;
+                        spacing: 4px;
+                        Text {
+                            text: "Pick a task to depend on";
+                            color: Tokens.text-tertiary;
+                            font-size: 9px;
+                        }
+                        ScrollView {
+                            vertical-stretch: 1;
+                            VerticalLayout {
+                                spacing: 2px;
+                                if root.active-task-available-deps.length == 0: Text {
+                                    text: "No candidate tasks.";
+                                    color: Tokens.text-tertiary;
+                                    font-size: 10px;
+                                }
+                                for candidate in root.active-task-available-deps: TouchArea {
+                                    height: 20px;
+                                    clicked => {
+                                        root.add-dependency(candidate.id);
+                                        root.dep-picker-open = false;
+                                    }
+                                    Rectangle {
+                                        background: parent.has-hover ? #1f2331 : transparent;
+                                        border-radius: 3px;
+                                        HorizontalLayout {
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            spacing: 6px;
+                                            alignment: start;
+                                            Text {
+                                                text: "#" + candidate.display-id;
+                                                color: Tokens.text-tertiary;
+                                                font-size: 9px;
+                                                font-family: "JetBrains Mono";
+                                                vertical-alignment: center;
+                                            }
+                                            Text {
+                                                text: candidate.title;
+                                                color: Tokens.text-primary;
+                                                font-size: 10px;
+                                                vertical-alignment: center;
+                                                overflow: elide;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 for dep in root.active-task-dependencies: Rectangle {
                     height: 22px;
