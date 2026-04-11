@@ -2967,13 +2967,19 @@ export component MainWindow inherits Window {
         }
     }
 
-    // ── New Task modal overlay (Polish 10) ──────────────────────────────
+    // ── New Task modal overlay (Polish 10 / 32) ─────────────────────────
     Rectangle {
         visible: root.new-task-open;
         x: 0; y: 0;
         width: parent.width;
         height: parent.height;
         background: rgba(0, 0, 0, 60%);
+        // Polish 32 — fade scrim in/out so the modal doesn't snap.
+        // The `visible` boolean still mounts/unmounts the subtree
+        // (the animation is short enough that the snap to invisible
+        // on `visible: false` is imperceptible).
+        opacity: root.new-task-open ? 1.0 : 0.0;
+        animate opacity { duration: 160ms; easing: ease-out; }
 
         TouchArea {
             clicked => { root.new-task-open = false; }
@@ -3093,13 +3099,15 @@ export component MainWindow inherits Window {
         }
     }
 
-    // ── New Project modal overlay (Polish 8) ────────────────────────────
+    // ── New Project modal overlay (Polish 8 / 32) ───────────────────────
     Rectangle {
         visible: root.new-project-open;
         x: 0; y: 0;
         width: parent.width;
         height: parent.height;
         background: rgba(0, 0, 0, 60%);
+        opacity: root.new-project-open ? 1.0 : 0.0;
+        animate opacity { duration: 160ms; easing: ease-out; }
 
         TouchArea {
             clicked => { root.new-project-open = false; }
@@ -3240,7 +3248,7 @@ export component MainWindow inherits Window {
         }
     }
 
-    // ── Settings modal overlay ──────────────────────────────────────────
+    // ── Settings modal overlay (Polish 32 fade) ─────────────────────────
     Rectangle {
         visible: root.settings-open;
         x: 0;
@@ -3248,6 +3256,8 @@ export component MainWindow inherits Window {
         width: parent.width;
         height: parent.height;
         background: rgba(0, 0, 0, 60%);
+        opacity: root.settings-open ? 1.0 : 0.0;
+        animate opacity { duration: 160ms; easing: ease-out; }
 
         // Click outside the card closes the modal.
         TouchArea {
@@ -3581,13 +3591,15 @@ export component MainWindow inherits Window {
         }
     }
 
-    // ── Polish 26: Keyboard shortcuts overlay ───────────────────────────
+    // ── Polish 26 + 32: Keyboard shortcuts overlay ──────────────────────
     Rectangle {
         visible: root.shortcuts-open;
         x: 0; y: 0;
         width: parent.width;
         height: parent.height;
         background: rgba(0, 0, 0, 60%);
+        opacity: root.shortcuts-open ? 1.0 : 0.0;
+        animate opacity { duration: 160ms; easing: ease-out; }
 
         TouchArea {
             clicked => { root.shortcuts-open = false; }
