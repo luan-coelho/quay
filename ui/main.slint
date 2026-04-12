@@ -72,8 +72,14 @@ export component MainWindow inherits Window {
     in property <image> frame;
     in property <int> cell-w: 10;
     in property <int> cell-h: 22;
-    in property <int> cols: 100;
-    in property <int> rows: 30;
+    // Dynamic terminal dimensions — computed from available right-pane
+    // space so the PTY reflows when the window is resized. Rust reads
+    // these via get_cols()/get_rows() and calls resize_all_sessions()
+    // when they change.
+    property <length> avail-term-w: max(40px * root.cell-w, root.width - sidebar-w - middle-w - right-pad-h * 2);
+    property <length> avail-term-h: max(4px * root.cell-h, root.height - title-bar-h - tab-strip-h - open-tabs-strip-h - right-pad-v * 2 - status-bar-h);
+    out property <int> cols: max(10, floor(avail-term-w / 1px / root.cell-w));
+    out property <int> rows: max(4, floor(avail-term-h / 1px / root.cell-h));
 
     // Polish 22: window-wide braille spinner phase, cycled by the
     // existing poll_timer in main.rs at ~96 ms. All Spinner instances
@@ -128,6 +134,9 @@ export component MainWindow inherits Window {
     in-out property <string> active-task-instructions: "";
     // Session state for the active task: one of idle/busy/awaiting/stopped/exited/error.
     in property <string> active-task-session-state: "idle";
+    // Agent picker: "claude", "opencode", or "bare". Persisted in task.cli_selection.
+    in-out property <string> active-task-agent: "claude";
+    callback agent-changed(string);
 
     // Polish 15 — live stats parsed from the Claude Code session JSONL
     // transcript at ~/.claude/projects/<cwd>/<session-id>.jsonl. A 2s
@@ -277,6 +286,7 @@ export component MainWindow inherits Window {
     callback instructions-changed(string);
     callback start-plan(string);
     callback start-implement(string);
+    callback stop-session(string);
     callback filter-changed(string);  // Phase 4: fires when filter-label-id changes
     callback toggle-settings();
     callback settings-base-branch-changed(string);
@@ -333,10 +343,12 @@ export component MainWindow inherits Window {
     // open, so a single-task workflow keeps the original compact look.
     property <length> open-tabs-strip-h: root.open-task-tabs.length >= 2 ? 34px : 0px;
 
-    preferred-width: sidebar-w + middle-w + term-w + right-pad-h * 2 + 2px;
-    preferred-height: title-bar-h + tab-strip-h + open-tabs-strip-h + term-h + right-pad-v * 2 + 14px + status-bar-h;
-    min-width: sidebar-w + middle-w + term-w + right-pad-h * 2 + 2px;
-    min-height: title-bar-h + tab-strip-h + open-tabs-strip-h + term-h + right-pad-v * 2 + 14px + status-bar-h;
+    // Preferred size uses the default 96×28 terminal; min allows 40×10
+    // so the user can shrink the window and the PTY reflows.
+    preferred-width: sidebar-w + middle-w + 96 * root.cell-w * 1px + right-pad-h * 2 + 2px;
+    preferred-height: title-bar-h + tab-strip-h + open-tabs-strip-h + 28 * root.cell-h * 1px + right-pad-v * 2 + 14px + status-bar-h;
+    min-width: sidebar-w + middle-w + 40 * root.cell-w * 1px + right-pad-h * 2 + 2px;
+    min-height: title-bar-h + tab-strip-h + open-tabs-strip-h + 10 * root.cell-h * 1px + right-pad-v * 2 + 14px + status-bar-h;
 
     init => { right-pane.focus-terminal(); }
 
@@ -435,6 +447,7 @@ export component MainWindow inherits Window {
         active-task-id: root.active-task-id;
         active-task-display: root.active-task-display;
         active-task-session-state: root.active-task-session-state;
+        active-task-agent <=> root.active-task-agent;
         active-task-title <=> root.active-task-title;
         active-task-title-error <=> root.active-task-title-error;
         active-task-description <=> root.active-task-description;
@@ -456,6 +469,8 @@ export component MainWindow inherits Window {
         instructions-changed(t) => { root.instructions-changed(t); }
         start-plan(id) => { root.start-plan(id); }
         start-implement(id) => { root.start-implement(id); }
+        stop-session(id) => { root.stop-session(id); }
+        agent-changed(v) => { root.agent-changed(v); }
         attach-label(id) => { root.attach-label(id); }
         detach-label(id) => { root.detach-label(id); }
         add-dependency(id) => { root.add-dependency(id); }

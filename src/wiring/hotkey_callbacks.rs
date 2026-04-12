@@ -7,6 +7,8 @@
 //! live alongside `classify_hotkey` — that's the only reason for this
 //! file's existence.
 
+use std::str::FromStr;
+
 use slint::ComponentHandle;
 
 use crate::hotkeys::{self, HotkeyAction};
@@ -76,9 +78,13 @@ pub fn wire(window: &MainWindow, ctx: &WiringContext) {
                 }
             }
             HotkeyAction::CreateTask => {
+                let project_id = weak.upgrade().and_then(|w| {
+                    let id_str = w.get_active_project_id().to_string();
+                    uuid::Uuid::from_str(&id_str).ok()
+                });
                 let count = state.list_tasks().map(|t| t.len()).unwrap_or(0) + 1;
                 let title = format!("New task {count}");
-                if let Err(err) = state.create_task(title) {
+                if let Err(err) = state.create_task(title, project_id) {
                     tracing::error!(%err, "create_task via shortcut failed");
                     toast("error", format!("Create failed: {err}"));
                 }

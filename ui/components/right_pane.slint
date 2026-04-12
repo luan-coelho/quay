@@ -52,6 +52,7 @@ export component RightPane inherits Rectangle {
     in property <string> active-task-id;
     in property <string> active-task-display;
     in property <string> active-task-session-state;
+    in-out property <string> active-task-agent;
     in-out property <string> active-task-title;
     in-out property <string> active-task-title-error;
     in-out property <string> active-task-description;
@@ -72,6 +73,8 @@ export component RightPane inherits Rectangle {
     callback instructions-changed(string);
     callback start-plan(string);
     callback start-implement(string);
+    callback stop-session(string);
+    callback agent-changed(string);
     callback attach-label(string);
     callback detach-label(string);
     callback add-dependency(string);
@@ -237,6 +240,7 @@ export component RightPane inherits Rectangle {
         active-task-id: root.active-task-id;
         active-task-display: root.active-task-display;
         active-task-session-state: root.active-task-session-state;
+        active-task-agent <=> root.active-task-agent;
         active-task-title <=> root.active-task-title;
         active-task-title-error <=> root.active-task-title-error;
         active-task-description <=> root.active-task-description;
@@ -258,6 +262,8 @@ export component RightPane inherits Rectangle {
         instructions-changed(t) => { root.instructions-changed(t); }
         start-plan(id) => { root.start-plan(id); }
         start-implement(id) => { root.start-implement(id); }
+        stop-session(id) => { root.stop-session(id); }
+        agent-changed(v) => { root.agent-changed(v); }
         attach-label(id) => { root.attach-label(id); }
         detach-label(id) => { root.detach-label(id); }
         add-dependency(id) => { root.add-dependency(id); }

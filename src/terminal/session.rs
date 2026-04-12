@@ -225,7 +225,6 @@ impl PtySession {
     }
 
     /// Resize the PTY and the mirrored `Term`.
-    #[allow(dead_code)]
     pub fn resize(&mut self, cols: usize, rows: usize) {
         let _ = self.master.resize(PtySize {
             rows: rows as u16,
@@ -239,7 +238,6 @@ impl PtySession {
     }
 
     /// Whether the child process has exited.
-    #[allow(dead_code)]
     pub fn is_exited(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(Some(_)))
     }

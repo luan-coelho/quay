@@ -12,12 +12,13 @@ import { LineEdit, TextEdit, ScrollView } from "std-widgets.slint";
 import { IconSet } from "@lucide";
 import { Tokens } from "../tokens.slint";
 import { LabelPillData, TaskCardData } from "../data.slint";
-import { LucideIcon, CloseButton, Button, StatsChip, Card, FormField, Input } from "atoms.slint";
+import { LucideIcon, CloseButton, Button, StatsChip, Card, FormField, Input, Select } from "atoms.slint";
 
 export component DescriptionPanel inherits Card {
     in property <string> active-task-id;
     in property <string> active-task-display;
     in property <string> active-task-session-state;
+    in-out property <string> active-task-agent;
     in-out property <string> active-task-title;
     in-out property <string> active-task-title-error;
     in-out property <string> active-task-description;
@@ -45,6 +46,8 @@ export component DescriptionPanel inherits Card {
     callback instructions-changed(string);
     callback start-plan(string);
     callback start-implement(string);
+    callback stop-session(string);
+    callback agent-changed(string);
     callback attach-label(string);
     callback detach-label(string);
     callback add-dependency(string);
@@ -210,14 +213,32 @@ export component DescriptionPanel inherits Card {
             }
         }
 
-        // Plan / Implement action row (Polish 39 — Implement uses the
-        // Button `success` variant which preserves the tinted green fill
-        // + colored border from the original hand-rolled version).
-        // Leading icons via Button's string-dispatched `leading-icon`
-        // slot — both resolved to Lucide (Sparkles / Zap) instead of
-        // the earlier ✦ / ⚡ unicode glyphs.
+        // Agent picker + Plan / Implement action row.
         HorizontalLayout {
             spacing: Tokens.space-2;
+            alignment: start;
+
+            // Agent selector — maps internal values (claude/opencode/bare)
+            // to display labels for the Select dropdown.
+            Select {
+                width: 160px;
+                options: ["Claude Code", "OpenCode", "Terminal"];
+                value: root.active-task-agent == "opencode" ? "OpenCode"
+                     : root.active-task-agent == "bare" ? "Terminal"
+                     : "Claude Code";
+                changed(label) => {
+                    if (label == "OpenCode") {
+                        root.active-task-agent = "opencode";
+                        root.agent-changed("opencode");
+                    } else if (label == "Terminal") {
+                        root.active-task-agent = "bare";
+                        root.agent-changed("bare");
+                    } else {
+                        root.active-task-agent = "claude";
+                        root.agent-changed("claude");
+                    }
+                }
+            }
 
             Button {
                 text: "Plan";
@@ -231,6 +252,13 @@ export component DescriptionPanel inherits Card {
                 variant: "success";
                 leading-icon: "zap";
                 clicked => { root.start-implement(root.active-task-id); }
+            }
+
+            if root.active-task-session-state == "busy" || root.active-task-session-state == "awaiting": Button {
+                text: "Stop";
+                variant: "destructive";
+                leading-icon: "square";
+                clicked => { root.stop-session(root.active-task-id); }
             }
 
             Rectangle { horizontal-stretch: 1; }

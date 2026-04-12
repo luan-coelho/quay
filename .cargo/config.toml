@@ -13,4 +13,4 @@
 # macOS and Windows intentionally omitted — macOS already ships lld-equivalent
 # via ld64.lld, and Windows uses MSVC's link.exe. No action required there.
 [target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+rustflags = ["-C", "link-arg=-fuse-ld=lld"]
