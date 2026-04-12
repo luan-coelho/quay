@@ -15,15 +15,30 @@
 // decorative `accent-*` slots used by the title bar avatar.
 
 export global Tokens {
-    // === Core semantic colours (shadcn zinc-dark) ===
+    // === Core semantic colours (shadcn zinc-dark BASE + blue PRIMARY) ===
+    //
+    // Neutrals (bg/card/popover/secondary/muted/accent/border/input) are
+    // the zinc dark palette ported from shadcn's default dark mode. Only
+    // the accent/brand tokens — `primary`, `primary-foreground`, `ring`,
+    // and the matching sidebar-primary pair — were overridden to match
+    // shadcn's "blue" theme variant:
+    //
+    //   primary            oklch(0.707 0.165 254.624)  ≈ #3b82f6
+    //   primary-foreground oklch(0.97  0.014 254.604)  ≈ #f0f9ff
+    //   ring               same as primary
+    //
+    // The switch turns every Button{variant:"default"} (new task "Create",
+    // new project "Create") and every keyboard focus ring blue instead
+    // of the previous zinc near-white, matching the shadcn registry-item
+    // example for a custom blue theme.
     out property <color> background: #0a0a0a;
     out property <color> foreground: #fafafa;
     out property <color> card: #171717;
     out property <color> card-foreground: #fafafa;
     out property <color> popover: #171717;
     out property <color> popover-foreground: #fafafa;
-    out property <color> primary: #e5e5e5;
-    out property <color> primary-foreground: #171717;
+    out property <color> primary: #3b82f6;
+    out property <color> primary-foreground: #f0f9ff;
     out property <color> secondary: #262626;
     out property <color> secondary-foreground: #fafafa;
     out property <color> muted: #262626;
@@ -34,14 +49,20 @@ export global Tokens {
     out property <color> destructive-foreground: #fafafa;
     out property <color> border: rgba(255, 255, 255, 10%);
     out property <color> input: rgba(255, 255, 255, 15%);
-    out property <color> ring: #787878;
+    out property <color> ring: #3b82f6;
 
     // Sidebar tokens (shadcn has dedicated sidebar-* variables).
+    // `sidebar-primary` mirrors the blue brand accent so any future
+    // sidebar CTA (e.g. "New Task" highlighted row) picks up the same
+    // colour as the main Button variant="default".
     out property <color> sidebar: #171717;
     out property <color> sidebar-foreground: #fafafa;
+    out property <color> sidebar-primary: #3b82f6;
+    out property <color> sidebar-primary-foreground: #f0f9ff;
     out property <color> sidebar-accent: #262626;
     out property <color> sidebar-accent-foreground: #fafafa;
     out property <color> sidebar-border: rgba(255, 255, 255, 10%);
+    out property <color> sidebar-ring: #3b82f6;
 
     // === Radius scale (shadcn: --radius 0.625rem = 10px) ===
     out property <length> radius-sm: 6px;  // calc(radius * 0.6)
@@ -72,6 +93,24 @@ export global Tokens {
     out property <length> space-6: 24px;
     out property <length> space-8: 32px;
     out property <length> space-10: 40px;
+
+    // === Elevation / shadow scale ===
+    // shadcn uses `shadow-sm`, `shadow-md`, `shadow-lg`, `shadow-xl` on
+    // elevated surfaces (cards, popovers, dialogs). Slint 1.15's Rectangle
+    // supports `drop-shadow-color/blur/offset-x/offset-y` natively — we
+    // expose the blur radius + a reference color here so every callsite
+    // picks the same physical parameters. Shadows are all black with
+    // alpha since the whole app is dark-mode and a coloured shadow would
+    // tint the underlying surface.
+    out property <length> shadow-sm-blur: 2px;   // subtle hover bump
+    out property <length> shadow-md-blur: 6px;   // resting card/tab
+    out property <length> shadow-lg-blur: 14px;  // popover/dropdown
+    out property <length> shadow-xl-blur: 28px;  // modal dialog
+    out property <length> shadow-offset-y: 2px;
+    out property <color> shadow-color-sm: rgba(0, 0, 0, 25%);
+    out property <color> shadow-color-md: rgba(0, 0, 0, 35%);
+    out property <color> shadow-color-lg: rgba(0, 0, 0, 45%);
+    out property <color> shadow-color-xl: rgba(0, 0, 0, 55%);
 
     // === Domain colours (kanban kinds — preserved) ===
     out property <color> kind-enhancement: #10b981;

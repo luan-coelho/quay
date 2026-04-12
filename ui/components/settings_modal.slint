@@ -10,7 +10,7 @@ import { LineEdit, ScrollView } from "std-widgets.slint";
 import { IconSet } from "@lucide";
 import { Tokens } from "../tokens.slint";
 import { QuickActionRowData, ProcessRowData } from "../data.slint";
-import { LucideIcon, CloseButton, Button, Card, Input, ModalFrame } from "atoms.slint";
+import { LucideIcon, CloseButton, Button, Card, Input, ModalFrame, Divider } from "atoms.slint";
 
 export component SettingsModal inherits Rectangle {
     in-out property <bool> open;
@@ -59,7 +59,7 @@ export component SettingsModal inherits Rectangle {
             }
 
             // ── Quick Actions section ─────────────────────────────
-            Rectangle { height: 1px; background: Tokens.border; }
+            Divider { }
             HorizontalLayout {
                 spacing: Tokens.space-1 + 2px;
                 Text {
@@ -98,8 +98,12 @@ export component SettingsModal inherits Rectangle {
                 }
             }
 
+            // Quick actions list: intrinsic height (each row is 50px +
+            // 4px gap) clamped at 180px. With 1 QA the list is ~54px
+            // tall instead of 180px of empty space; with 4+ QAs the
+            // list scrolls inside 180px.
             ScrollView {
-                height: 180px;
+                height: min(root.quick-actions.length * 54px + 8px, 180px);
                 VerticalLayout {
                     spacing: Tokens.space-1;
                     for qa in root.quick-actions: Rectangle {
@@ -192,7 +196,7 @@ export component SettingsModal inherits Rectangle {
             }
 
             // ── Process Manager section ───────────────────────────
-            Rectangle { height: 1px; background: Tokens.border; }
+            Divider { }
             HorizontalLayout {
                 spacing: Tokens.space-1 + 2px;
                 Text {
@@ -202,42 +206,12 @@ export component SettingsModal inherits Rectangle {
                     font-weight: Tokens.weight-bold;
                 }
                 Rectangle { horizontal-stretch: 1; height: 1px; }
-                TouchArea {
-                    width: 60px;
-                    height: 18px;
+                Button {
+                    text: "refresh";
+                    variant: "outline";
+                    size: "sm";
+                    leading-icon: "rotate-cw";
                     clicked => { root.refresh-processes(); }
-                    Rectangle {
-                        background: parent.has-hover ? Tokens.accent : transparent;
-                        border-radius: Tokens.radius-sm;
-                        border-width: 1px;
-                        border-color: Tokens.border;
-                        animate background { duration: 120ms; easing: ease-out; }
-                        HorizontalLayout {
-                            alignment: center;
-                            spacing: Tokens.space-1;
-                            padding-left: Tokens.space-1;
-                            padding-right: Tokens.space-1;
-                            VerticalLayout {
-                                alignment: center;
-                                LucideIcon {
-                                    icon: IconSet.RotateCw;
-                                    size: 9px;
-                                    stroke: Tokens.muted-foreground;
-                                    stroke-width: 2.2;
-                                }
-                            }
-                            VerticalLayout {
-                                alignment: center;
-                                Text {
-                                    text: "refresh";
-                                    color: Tokens.muted-foreground;
-                                    font-size: Tokens.text-xs;
-                                    font-weight: Tokens.weight-medium;
-                                    vertical-alignment: center;
-                                }
-                            }
-                        }
-                    }
                 }
                 Text {
                     text: root.processes.length;
@@ -294,49 +268,17 @@ export component SettingsModal inherits Rectangle {
                                     font-size: Tokens.text-xs;
                                 }
                             }
-                            TouchArea {
-                                width: 54px;
-                                height: 24px;
+                            Button {
+                                text: "stop";
+                                variant: "outline";
+                                size: "sm";
                                 clicked => { root.process-kill(p.pid); }
-                                Rectangle {
-                                    background: parent.has-hover ? rgba(245, 181, 78, 15%) : transparent;
-                                    border-radius: Tokens.radius-sm;
-                                    border-width: 1px;
-                                    border-color: rgba(245, 181, 78, 40%);
-                                    animate background { duration: 120ms; easing: ease-out; }
-                                    Text {
-                                        text: "stop";
-                                        color: #f5b54e;
-                                        font-size: Tokens.text-xs;
-                                        font-weight: Tokens.weight-semibold;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                        width: parent.width;
-                                        height: parent.height;
-                                    }
-                                }
                             }
-                            TouchArea {
-                                width: 54px;
-                                height: 24px;
+                            Button {
+                                text: "kill";
+                                variant: "destructive";
+                                size: "sm";
                                 clicked => { root.process-force-kill(p.pid); }
-                                Rectangle {
-                                    background: parent.has-hover ? rgba(229, 73, 62, 15%) : transparent;
-                                    border-radius: Tokens.radius-sm;
-                                    border-width: 1px;
-                                    border-color: rgba(229, 73, 62, 40%);
-                                    animate background { duration: 120ms; easing: ease-out; }
-                                    Text {
-                                        text: "kill";
-                                        color: Tokens.destructive;
-                                        font-size: Tokens.text-xs;
-                                        font-weight: Tokens.weight-semibold;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
-                                        width: parent.width;
-                                        height: parent.height;
-                                    }
-                                }
                             }
                         }
                     }

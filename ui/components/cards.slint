@@ -7,7 +7,7 @@
 import { IconSet } from "@lucide";
 import { Tokens } from "../tokens.slint";
 import { TaskCardData } from "../data.slint";
-import { LucideIcon, KindDiamond, KindChip, Spinner, Badge } from "atoms.slint";
+import { LucideIcon, KindDiamond, KindChip, Spinner, Badge, CloseButton } from "atoms.slint";
 
 export component CardRow inherits Rectangle {
     in property <TaskCardData> task;
@@ -17,8 +17,10 @@ export component CardRow inherits Rectangle {
     // CardRow instance forwards `root.spinner-glyph` here.
     in property <string> spinner-glyph;
     callback clicked();
-    callback move-back();
-    callback move-forward();
+    // NOTE: `move-back` / `move-forward` callbacks were removed with
+    // the chevron arrows — task state transitions will be handled
+    // automatically by the system (session events → column promotion)
+    // in a future iteration, not through manual per-row controls.
 
     height: 30px;
     background: selected ? Tokens.secondary
@@ -54,7 +56,9 @@ export component CardRow inherits Rectangle {
         padding-left: Tokens.space-3;
         padding-right: Tokens.space-2;
         spacing: Tokens.space-2;
-        alignment: start;
+        // NO `alignment: start` — default `stretch` is required so the
+        // spacer Rectangle below can absorb leftover horizontal space
+        // and push the KindChip + status indicators flush to the right.
 
         // Display ID
         VerticalLayout {
@@ -68,16 +72,16 @@ export component CardRow inherits Rectangle {
             }
         }
 
-        // Diamond
+        // Kind diamond — small coloured bullet between the ID and
+        // the title (matches the Lanes reference screenshot).
         VerticalLayout {
             alignment: center;
             KindDiamond { kind: task.kind; }
         }
 
-        // Title (stretches)
+        // Title (natural width, elides if too long).
         VerticalLayout {
             alignment: center;
-            horizontal-stretch: 1;
             Text {
                 text: task.title;
                 color: selected ? Tokens.foreground : Tokens.muted-foreground;
@@ -88,35 +92,33 @@ export component CardRow inherits Rectangle {
             }
         }
 
-        // Tag chip
-        // Label pills — one small coloured pill per attached label.
-        // Rendered in a horizontal strip before the KindChip; wraps
-        // gracefully if a card has many labels by just truncating
-        // (Slint HorizontalLayout will push later items off-screen,
-        // which is fine for 1-3 labels per card).
-        VerticalLayout {
-            alignment: center;
-            HorizontalLayout {
-                spacing: 3px;
-                for label in task.labels: Badge {
-                    text: label.name;
-                    custom-bg: rgb(label.color-r, label.color-g, label.color-b);
-                    custom-fg: #0b0d11;
-                    badge-height: 14px;
-                }
-            }
-        }
+        // Spacer — absorbs all remaining horizontal space so the
+        // KindChip + status indicators that follow sit flush with
+        // the right edge of the row. Without this spacer the chip
+        // would sit immediately after the title with a large gap
+        // before the status dot.
+        Rectangle { horizontal-stretch: 1; }
 
+        // Kind chip (outline pill with coloured dot + label text) —
+        // parked at the end of the row, right before the status
+        // indicators. Labels (user-attached `task.labels`) used to
+        // render as filled pills left of this chip but they caused
+        // visual duplication when the seeded labels happened to share
+        // names with kinds ("Enhancement" / "Feature" / "Bug"). Labels
+        // are still fully functional — attach/detach lives in the
+        // Description panel — they're just not surfaced on CardRow.
         VerticalLayout {
             alignment: center;
             KindChip { kind: task.kind; }
         }
 
         // Blocked badge — small lock icon + count if the task has any
-        // unresolved dependencies.
-        VerticalLayout {
+        // unresolved dependencies. Uses `if` (not `visible:`) so the
+        // element is removed from the layout when the count is 0 and
+        // doesn't leave phantom horizontal space pushing the status
+        // indicators away from the right edge.
+        if task.blocked-count > 0: VerticalLayout {
             alignment: center;
-            visible: task.blocked-count > 0;
             Rectangle {
                 width: blocked-row.preferred-width + 10px;
                 height: 14px;
@@ -150,20 +152,25 @@ export component CardRow inherits Rectangle {
         }
 
         // Dirty dot — small amber circle if the task's worktree has
-        // uncommitted changes. Shown to the left of the running dot so
-        // the two signals read naturally (uncommitted → running).
-        VerticalLayout {
+        // uncommitted changes. Same pattern: `if` instead of
+        // `visible:` so the 6px column only exists when there's
+        // actually a dot to draw.
+        if task.dirty: VerticalLayout {
             alignment: center;
             Rectangle {
                 width: 6px;
                 height: 6px;
                 border-radius: 3px;
-                background: task.dirty ? #f5b54e : transparent;
+                background: #f5b54e;
             }
         }
 
         // Polish 22: status indicator. Spinner when busy, otherwise
         // the existing static dot (green if running, hollow if idle).
+        // Sits flush next to the KindChip cluster — manual move
+        // arrows used to live to the right of this dot but were
+        // removed in favor of a future automatic system that will
+        // promote tasks between columns based on session events.
         VerticalLayout {
             alignment: center;
             if task.session-state == "busy": Spinner {
@@ -178,40 +185,6 @@ export component CardRow inherits Rectangle {
                 background: task.running ? Tokens.kind-enhancement : transparent;
                 border-width: 1px;
                 border-color: task.running ? Tokens.kind-enhancement : Tokens.border;
-            }
-        }
-
-        // Move arrows — visible only on hover/selected, very subtle.
-        Rectangle {
-            width: 24px;
-            background: transparent;
-            visible: root.selected || ta.has-hover;
-
-            HorizontalLayout {
-                spacing: 0px;
-                alignment: center;
-                TouchArea {
-                    width: 12px;
-                    clicked => { root.move-back(); }
-                    LucideIcon {
-                        icon: IconSet.ChevronLeft;
-                        size: 11px;
-                        stroke: Tokens.muted-foreground;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                    }
-                }
-                TouchArea {
-                    width: 12px;
-                    clicked => { root.move-forward(); }
-                    LucideIcon {
-                        icon: IconSet.ChevronRight;
-                        size: 11px;
-                        stroke: Tokens.muted-foreground;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                    }
-                }
             }
         }
     }
@@ -237,9 +210,15 @@ export component OpenTaskTab inherits Rectangle {
     // the parent can anchor the dropdown menu at the cursor.
     callback right-clicked(length, length);
 
-    height: 26px;
+    // Tab-style shape — rounded top corners, flat bottom so the
+    // open-tabs strip merges with the divider line beneath it
+    // (same anchor pattern as FilterChip + RightTab).
+    height: 28px;
     width: body.preferred-width + 14px;
-    border-radius: Tokens.radius-md;
+    border-top-left-radius: Tokens.radius-md;
+    border-top-right-radius: Tokens.radius-md;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
     border-width: 1px;
     border-color: active ? Tokens.ring : Tokens.border;
     background: active ? Tokens.secondary : (ta.has-hover ? Tokens.accent : transparent);
@@ -273,15 +252,7 @@ export component OpenTaskTab inherits Rectangle {
         // Kind diamond — same palette used on CardRow.
         VerticalLayout {
             alignment: center;
-            Text {
-                text: "◆";
-                font-size: Tokens.text-xs;
-                color:
-                    root.kind == "bug"         ? Tokens.kind-bug
-                  : root.kind == "enhancement" ? Tokens.kind-enhancement
-                                               : Tokens.kind-feature;
-                vertical-alignment: center;
-            }
+            KindDiamond { kind: root.kind; }
         }
 
         // Display id + title.
@@ -320,22 +291,13 @@ export component OpenTaskTab inherits Rectangle {
             }
         }
 
-        // × close button.
+        // × close button — shared CloseButton atom for consistent
+        // hover/focus semantics across the app.
         VerticalLayout {
             alignment: center;
-            Rectangle {
-                width: 14px;
-                height: 14px;
-                border-radius: 7px;
-                background: close-ta.has-hover ? rgba(229, 73, 62, 20%) : transparent;
-                close-ta := TouchArea { clicked => { root.close-clicked(); } }
-                LucideIcon {
-                    icon: IconSet.X;
-                    size: 10px;
-                    stroke: close-ta.has-hover ? Tokens.destructive : Tokens.muted-foreground;
-                    x: (parent.width - self.width) / 2;
-                    y: (parent.height - self.height) / 2;
-                }
+            CloseButton {
+                size: 16px;
+                clicked => { root.close-clicked(); }
             }
         }
     }

@@ -178,8 +178,6 @@ export component KanbanGrid inherits Rectangle {
                         spinner-glyph: root.spinner-glyph;
                         selected: task.id == root.active-task-id;
                         clicked => { root.select-task(task.id); }
-                        move-back => { root.move-task-back(task.id); }
-                        move-forward => { root.move-task-forward(task.id); }
                     }
                 }
 
@@ -198,16 +196,12 @@ export component KanbanGrid inherits Rectangle {
                         spinner-glyph: root.spinner-glyph;
                         selected: task.id == root.active-task-id;
                         clicked => { root.select-task(task.id); }
-                        move-back => { root.move-task-back(task.id); }
-                        move-forward => { root.move-task-forward(task.id); }
                     }
                     for task in root.tasks-implementation: CardRow {
                         task: task;
                         spinner-glyph: root.spinner-glyph;
                         selected: task.id == root.active-task-id;
                         clicked => { root.select-task(task.id); }
-                        move-back => { root.move-task-back(task.id); }
-                        move-forward => { root.move-task-forward(task.id); }
                     }
                 }
 
@@ -221,8 +215,6 @@ export component KanbanGrid inherits Rectangle {
                         spinner-glyph: root.spinner-glyph;
                         selected: task.id == root.active-task-id;
                         clicked => { root.select-task(task.id); }
-                        move-back => { root.move-task-back(task.id); }
-                        move-forward => { root.move-task-forward(task.id); }
                     }
                 }
 
@@ -236,8 +228,6 @@ export component KanbanGrid inherits Rectangle {
                         spinner-glyph: root.spinner-glyph;
                         selected: task.id == root.active-task-id;
                         clicked => { root.select-task(task.id); }
-                        move-back => { root.move-task-back(task.id); }
-                        move-forward => { root.move-task-forward(task.id); }
                     }
                 }
 
@@ -251,8 +241,6 @@ export component KanbanGrid inherits Rectangle {
                         spinner-glyph: root.spinner-glyph;
                         selected: task.id == root.active-task-id;
                         clicked => { root.select-task(task.id); }
-                        move-back => { root.move-task-back(task.id); }
-                        move-forward => { root.move-task-forward(task.id); }
                     }
                 }
             }

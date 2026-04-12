@@ -6,7 +6,7 @@
 import { ScrollView } from "std-widgets.slint";
 import { Tokens } from "../tokens.slint";
 import { TaskCardData } from "../data.slint";
-import { KindDiamond, Card, Input } from "atoms.slint";
+import { KindDiamond, Card, Input, Divider } from "atoms.slint";
 
 export component TaskSearchModal inherits Rectangle {
     in-out property <bool> open;
@@ -51,7 +51,7 @@ export component TaskSearchModal inherits Rectangle {
                 }
             }
 
-            Rectangle { height: 1px; background: Tokens.border; }
+            Divider { }
 
             // Results list.
             ScrollView {

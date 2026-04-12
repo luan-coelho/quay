@@ -6,11 +6,13 @@
 // container exists purely to provide layout + tab dispatch — no
 // per-panel logic lives here.
 
+import { IconSet } from "@lucide";
 import { Tokens } from "../tokens.slint";
 import {
     LabelPillData, TaskCardData, OpenTaskTabData, FileEntryData,
     HighlightedLineData, DiffFileData, CommitEntryData,
 } from "../data.slint";
+import { LucideIcon } from "atoms.slint";
 import { OpenTaskTab } from "cards.slint";
 import { RightTab } from "menu.slint";
 import { TerminalView } from "terminal_view.slint";
@@ -198,14 +200,30 @@ export component RightPane inherits Rectangle {
         }
     }
 
-    // Footer status line.
-    Text {
+    // Footer status line. The leading ‖ was migrated to a Lucide
+    // Terminal icon so the decoration goes through the same vector
+    // rendering path as the rest of the chrome.
+    HorizontalLayout {
         x: right-pad-h + Tokens.space-1;
         y: parent.height - 22px;
-        text: "‖ Quay terminal · esc to interrupt the active session";
-        color: Tokens.kind-enhancement;
-        font-size: Tokens.text-xs;
-        font-family: Tokens.font-mono;
+        spacing: Tokens.space-1 + 2px;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            LucideIcon {
+                icon: IconSet.Terminal;
+                size: 11px;
+                stroke: Tokens.kind-enhancement;
+                stroke-width: 2;
+            }
+        }
+        Text {
+            text: "Quay terminal · esc to interrupt the active session";
+            color: Tokens.kind-enhancement;
+            font-size: Tokens.text-xs;
+            font-family: Tokens.font-mono;
+            vertical-alignment: center;
+        }
     }
 
     // Description tab.

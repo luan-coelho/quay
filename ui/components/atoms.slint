@@ -26,17 +26,21 @@ export component KindDiamond inherits Rectangle {
     height: 12px;
     background: transparent;
 
-    Text {
-        text: "◆";
-        color: kind == "enhancement" ? Tokens.kind-enhancement
+    // Kanban kind indicator. Previously drawn as a Unicode ◆ glyph;
+    // migrated to Lucide `Diamond` for vector rendering consistency
+    // with the rest of the icon set. The outline stroke-width of
+    // 2.5px approximates the visual weight of the filled ◆ at this
+    // size so the kanban card rows stay dense.
+    LucideIcon {
+        icon: IconSet.Diamond;
+        size: 11px;
+        stroke: kind == "enhancement" ? Tokens.kind-enhancement
               : kind == "feature" ? Tokens.kind-feature
               : kind == "bug" ? Tokens.kind-bug
               : Tokens.muted-foreground;
-        font-size: Tokens.text-sm;
-        horizontal-alignment: center;
-        vertical-alignment: center;
-        width: parent.width;
-        height: parent.height;
+        stroke-width: 2.5;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
     }
 }
 
@@ -218,6 +222,11 @@ export component Button inherits Rectangle {
     in property <string> variant: "default";
     in property <string> size: "md";
     in property <bool> disabled: false;
+    // Optional Lucide icon rendered to the left of the text. String
+    // dispatch pattern (mirroring files_panel's per-icon branch):
+    // known values are `"sparkles"`, `"zap"`, `"plus"`, `"rotate-cw"`,
+    // `"check"`, `"x"`. Empty string renders no icon.
+    in property <string> leading-icon;
     callback clicked();
 
     // Derived metrics.
@@ -311,6 +320,37 @@ export component Button inherits Rectangle {
 
     body := HorizontalLayout {
         alignment: center;
+        spacing: Tokens.space-1 + 2px;
+
+        // Leading Lucide icon — rendered on the left of the label.
+        // String dispatch keeps the Button API token-friendly: callers
+        // write `leading-icon: "sparkles"` instead of plumbing
+        // `IconSet.*` through a nested property.
+        if root.leading-icon == "sparkles": VerticalLayout {
+            alignment: center;
+            LucideIcon { icon: IconSet.Sparkles; size: 13px; stroke: root.fg; stroke-width: 2; }
+        }
+        if root.leading-icon == "zap": VerticalLayout {
+            alignment: center;
+            LucideIcon { icon: IconSet.Zap; size: 13px; stroke: root.fg; stroke-width: 2; }
+        }
+        if root.leading-icon == "plus": VerticalLayout {
+            alignment: center;
+            LucideIcon { icon: IconSet.Plus; size: 13px; stroke: root.fg; stroke-width: 2; }
+        }
+        if root.leading-icon == "rotate-cw": VerticalLayout {
+            alignment: center;
+            LucideIcon { icon: IconSet.RotateCw; size: 13px; stroke: root.fg; stroke-width: 2; }
+        }
+        if root.leading-icon == "check": VerticalLayout {
+            alignment: center;
+            LucideIcon { icon: IconSet.Check; size: 13px; stroke: root.fg; stroke-width: 2; }
+        }
+        if root.leading-icon == "x": VerticalLayout {
+            alignment: center;
+            LucideIcon { icon: IconSet.X; size: 13px; stroke: root.fg; stroke-width: 2; }
+        }
+
         Text {
             text: root.text;
             color: root.fg;
@@ -451,6 +491,198 @@ export component FormField inherits Rectangle {
     }
 }
 
+// shadcn/ui Select. A dropdown built in pure Slint. Styles are
+// ported 1:1 from shadcn/ui's `SelectTrigger` + `SelectContent` +
+// `SelectItem` class strings:
+//
+//   trigger:  h-9 rounded-md border px-3 text-sm chevron-16
+//   content:  rounded-md border bg-popover shadow-md
+//   item:     rounded-sm py-1.5 pl-2 text-sm focus:bg-accent check-16
+//
+// IMPORTANT: the dropdown expands INLINE inside a VerticalLayout,
+// which means the Select's preferred-height changes when `open`
+// flips. Parents that embed a Select must use a layout that reflows
+// (VerticalLayout) AND must leave enough vertical slack (via a
+// `vertical-stretch: 1` spacer or a taller card) so the dropdown
+// can grow without overflowing. This avoids the z-order trap of
+// overlay-style popups in Slint 1.15 (no `z-index`, later siblings
+// always draw on top).
+//
+// Keyboard: Space/Enter toggles the dropdown when the trigger is
+// focused; Escape closes an open dropdown. The dropdown list is
+// capped at `dropdown-max-height` and clips overflow.
+export component Select inherits Rectangle {
+    in property <[string]> options;
+    in-out property <string> value;
+    in property <string> placeholder: "Select…";
+    in property <bool> disabled: false;
+    in property <bool> error-state: false;
+    in property <length> dropdown-max-height: 200px;
+    callback changed(string);
+
+    // `open` is self-contained so the parent doesn't have to plumb
+    // the popover state through an extra property.
+    in-out property <bool> open: false;
+    property <bool> has-focus: fs.has-focus;
+    property <length> gap: 4px;
+    property <length> content-h: min(
+        max(root.options.length, 1) * 26px + Tokens.space-1 * 2 + 2px,
+        root.dropdown-max-height,
+    );
+
+    min-height: 36px + (root.open ? (root.gap + content-h) : 0px);
+    preferred-height: self.min-height;
+
+    VerticalLayout {
+        spacing: root.gap;
+
+        // ── Trigger ────────────────────────────────────────────
+        trigger := Rectangle {
+            height: 36px;
+            background: root.disabled ? Tokens.muted : Tokens.input;
+            border-radius: Tokens.radius-md;
+            border-width: 1px;
+            border-color: root.error-state ? Tokens.destructive
+                        : (root.open || root.has-focus) ? Tokens.ring
+                                                        : Tokens.border;
+            animate border-color { duration: 120ms; easing: ease-out; }
+
+            fs := FocusScope {
+                key-pressed(event) => {
+                    if (event.text == " " || event.text == "\n") && !root.disabled {
+                        root.open = !root.open;
+                        accept
+                    } else if event.text == "\u{1b}" && root.open {
+                        root.open = false;
+                        accept
+                    } else {
+                        reject
+                    }
+                }
+            }
+
+            TouchArea {
+                clicked => {
+                    if !root.disabled {
+                        fs.focus();
+                        root.open = !root.open;
+                    }
+                }
+            }
+
+            HorizontalLayout {
+                padding-left: Tokens.space-3;
+                padding-right: Tokens.space-3;
+                spacing: Tokens.space-2;
+                alignment: stretch;
+
+                Text {
+                    text: root.value == "" ? root.placeholder : root.value;
+                    color: root.value == "" ? Tokens.muted-foreground : Tokens.foreground;
+                    font-size: Tokens.text-base;
+                    font-weight: Tokens.weight-medium;
+                    vertical-alignment: center;
+                    horizontal-alignment: left;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    LucideIcon {
+                        icon: IconSet.ChevronDown;
+                        size: 14px;
+                        stroke: Tokens.muted-foreground;
+                        stroke-width: 2;
+                    }
+                }
+            }
+        }
+
+        // ── Dropdown content ───────────────────────────────────
+        if root.open: Rectangle {
+            height: content-h;
+            background: Tokens.popover;
+            border-radius: Tokens.radius-md;
+            border-width: 1px;
+            border-color: Tokens.border;
+            drop-shadow-color: Tokens.shadow-color-lg;
+            drop-shadow-blur: Tokens.shadow-lg-blur;
+            drop-shadow-offset-y: Tokens.shadow-offset-y + 2px;
+            clip: true;
+
+            VerticalLayout {
+                padding: Tokens.space-1;
+                spacing: 0px;
+
+                for opt in root.options: Rectangle {
+                    height: 24px;
+                    background: item-ta.has-hover ? Tokens.accent : transparent;
+                    border-radius: Tokens.radius-sm;
+                    animate background { duration: 100ms; easing: ease-out; }
+
+                    item-ta := TouchArea {
+                        clicked => {
+                            root.value = opt;
+                            root.open = false;
+                            root.changed(opt);
+                        }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: Tokens.space-2;
+                        padding-right: Tokens.space-2;
+                        spacing: Tokens.space-2;
+                        alignment: stretch;
+
+                        Text {
+                            text: opt;
+                            color: Tokens.foreground;
+                            font-size: Tokens.text-base;
+                            font-weight: Tokens.weight-medium;
+                            vertical-alignment: center;
+                            horizontal-alignment: left;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+
+                        // Check icon on the selected row.
+                        VerticalLayout {
+                            alignment: center;
+                            width: 14px;
+                            if root.value == opt: LucideIcon {
+                                icon: IconSet.Check;
+                                size: 13px;
+                                stroke: Tokens.foreground;
+                                stroke-width: 2.5;
+                            }
+                        }
+                    }
+                }
+
+                // Empty state when no options are available (e.g.
+                // the user hasn't picked a repo path yet). Matches
+                // shadcn's "No results" row in Command/Combobox.
+                if root.options.length == 0: Rectangle {
+                    height: 24px;
+                    background: transparent;
+                    HorizontalLayout {
+                        padding-left: Tokens.space-2;
+                        padding-right: Tokens.space-2;
+                        Text {
+                            text: "No branches available";
+                            color: Tokens.muted-foreground;
+                            font-size: Tokens.text-base;
+                            vertical-alignment: center;
+                            horizontal-alignment: left;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // shadcn/ui Badge. Variants:
 // - `default`: primary tinted
 // - `secondary`: secondary surface
@@ -499,7 +731,9 @@ export component Badge inherits Rectangle {
 }
 
 // shadcn/ui Card. A surface container with the standard
-// `card` bg + 1px `border` + `radius-lg`. The caller is
+// `card` bg + 1px `border` + `radius-lg` + a `shadow-md` drop
+// shadow so the card floats off the background the same way
+// shadcn's `<Card>` does with `shadow-sm`. The caller is
 // responsible for laying out children (Card is a pure surface
 // primitive, NOT a layout). This mirrors how shadcn/ui's React
 // `<Card>` behaves — it only styles, children-arrangement is
@@ -509,8 +743,25 @@ export component Card inherits Rectangle {
     border-radius: Tokens.radius-lg;
     border-width: 1px;
     border-color: Tokens.border;
+    drop-shadow-color: Tokens.shadow-color-md;
+    drop-shadow-blur: Tokens.shadow-md-blur;
+    drop-shadow-offset-y: Tokens.shadow-offset-y;
 
     @children
+}
+
+// Hairline horizontal divider. Replaces the open-coded
+// `Rectangle { height: 1px; background: Tokens.border }`
+// scattered across modals and panels (7 occurrences before
+// the extraction). Vertical variant is `VDivider` below.
+export component Divider inherits Rectangle {
+    height: 1px;
+    background: Tokens.border;
+}
+
+export component VDivider inherits Rectangle {
+    width: 1px;
+    background: Tokens.border;
 }
 
 // StatsChip — the small 18px tall labelled value chip used across
@@ -601,14 +852,28 @@ export component ModalFrame inherits Rectangle {
 
     Card {
         x: (parent.width - self.width) / 2;
-        // Slide-down + fade on open (Polish 33).
+        // Slide-down + scale-up + fade on open (Polish 33 +
+        // shadcn-style entrance). The card shrinks to 96% of its
+        // final size when closed so the open animation has a subtle
+        // zoom-in effect — width/height are animated so Slint
+        // interpolates between the two states in lockstep with
+        // the opacity and y properties.
         y: (parent.height - self.height) / 2 + (root.open ? 0px : -12px);
         opacity: root.open ? 1.0 : 0.0;
+        width: root.open ? root.card-width : root.card-width * 0.96;
+        height: root.open ? root.card-height : root.card-height * 0.96;
         animate y { duration: 200ms; easing: ease-out; }
         animate opacity { duration: 180ms; easing: ease-out; }
-        width: root.card-width;
-        height: root.card-height;
+        animate width { duration: 200ms; easing: ease-out; }
+        animate height { duration: 200ms; easing: ease-out; }
         clip: true;
+
+        // Elevated modal: shadow-xl instead of the Card atom's
+        // baseline shadow-md so the dialog visually lifts off the
+        // scrim the way shadcn AlertDialog/Dialog does.
+        drop-shadow-color: Tokens.shadow-color-xl;
+        drop-shadow-blur: Tokens.shadow-xl-blur;
+        drop-shadow-offset-y: Tokens.shadow-offset-y * 2;
 
         // Swallow clicks so they don't reach the scrim.
         TouchArea { }

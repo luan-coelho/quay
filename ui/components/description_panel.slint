@@ -213,18 +213,23 @@ export component DescriptionPanel inherits Card {
         // Plan / Implement action row (Polish 39 — Implement uses the
         // Button `success` variant which preserves the tinted green fill
         // + colored border from the original hand-rolled version).
+        // Leading icons via Button's string-dispatched `leading-icon`
+        // slot — both resolved to Lucide (Sparkles / Zap) instead of
+        // the earlier ✦ / ⚡ unicode glyphs.
         HorizontalLayout {
             spacing: Tokens.space-2;
 
             Button {
-                text: "✦ Plan";
+                text: "Plan";
                 variant: "secondary";
+                leading-icon: "sparkles";
                 clicked => { root.start-plan(root.active-task-id); }
             }
 
             Button {
-                text: "⚡ Implement";
+                text: "Implement";
                 variant: "success";
+                leading-icon: "zap";
                 clicked => { root.start-implement(root.active-task-id); }
             }
 

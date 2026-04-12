@@ -17,6 +17,7 @@ export component Sidebar inherits Rectangle {
     callback menu-item-clicked(string);
     callback open-new-project();
     callback project-clicked(string);
+    callback toggle-collapsed();
 
     background: Tokens.sidebar;
 
@@ -33,6 +34,45 @@ export component Sidebar inherits Rectangle {
         padding: Tokens.space-2;
         padding-top: Tokens.space-3;
         spacing: Tokens.space-4;
+
+        // Collapse/expand toggle — shadcn `SidebarTrigger` pattern.
+        // Rendered inside the sidebar itself (not in the window title
+        // bar) because the title bar is now owned by the OS chrome.
+        // Icon flips between `PanelLeftClose` (when expanded → click
+        // to collapse) and `PanelLeftOpen` (when collapsed → click
+        // to expand) so the affordance is immediately readable.
+        HorizontalLayout {
+            height: 28px;
+            alignment: root.collapsed ? center : end;
+            padding-right: root.collapsed ? 0px : Tokens.space-1;
+            TouchArea {
+                width: 28px;
+                height: 28px;
+                clicked => {
+                    root.collapsed = !root.collapsed;
+                    root.toggle-collapsed();
+                }
+                Rectangle {
+                    background: parent.has-hover ? Tokens.sidebar-accent : transparent;
+                    border-radius: Tokens.radius-sm;
+                    animate background { duration: 120ms; easing: ease-out; }
+                    if root.collapsed: LucideIcon {
+                        icon: IconSet.PanelLeftOpen;
+                        size: 15px;
+                        stroke: Tokens.muted-foreground;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                    if !root.collapsed: LucideIcon {
+                        icon: IconSet.PanelLeftClose;
+                        size: 15px;
+                        stroke: Tokens.muted-foreground;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+            }
+        }
 
         // Menu items.
         VerticalLayout {

@@ -51,6 +51,12 @@ anyhow = "1"
 which = "6"
 sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 
+# Native folder/file picker dialogs used by the New Project modal to
+# let the user browse for a repository path instead of typing it by
+# hand. Uses rfd's default backends: `xdg-portal` on Linux (Flatpak-
+# friendly, no GTK runtime dep), Cocoa on macOS, Win32 on Windows.
+rfd = "0.15"
+
 # Form validation — declarative #[validate(...)] attributes on form
 # structs. Used by `src/wiring/validation.rs` to surface inline field
 # errors in the modal forms (NewTask / NewProject / DescriptionPanel).

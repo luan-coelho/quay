@@ -1,17 +1,21 @@
-// Top window title bar — traffic-light decoration, sidebar toggle,
-// centered app name, current task display + Avatar. Matches Lanes
-// reference visually.
+// In-app title bar strip — purely a contextual breadcrumb for the
+// active task + the user Avatar. Ownership of window chrome (title
+// text, close/minimize/maximize, sidebar-collapse trigger) is
+// deliberately split:
+//
+//   - OS compositor: window title + macro controls (close/min/max).
+//   - Sidebar header: the collapse/expand toggle (shadcn
+//     `SidebarTrigger` pattern) — it lives where the thing it
+//     controls lives, not on a separate bar.
+//   - This TitleBar: just the "what task am I looking at?" breadcrumb
+//     and Avatar, so the strip has a reason to exist beyond decoration.
 
-import { IconSet } from "@lucide";
 import { Tokens } from "../tokens.slint";
-import { LucideIcon, Avatar } from "atoms.slint";
+import { Avatar } from "atoms.slint";
 
 export component TitleBar inherits Rectangle {
     in property <string> active-task-display;
     in property <string> active-task-title;
-    in-out property <bool> sidebar-collapsed;
-    in property <length> sidebar-w;
-    callback toggle-sidebar();
 
     background: Tokens.background;
 
@@ -19,50 +23,6 @@ export component TitleBar inherits Rectangle {
         x: 0; y: parent.height - 1px;
         width: parent.width; height: 1px;
         background: Tokens.border;
-    }
-
-    // Traffic-light styled trio (decorative — purely visual).
-    // Colours are the canonical macOS hex values; these are
-    // intentionally hardcoded (not tokenised) so macOS users
-    // read them instantly.
-    HorizontalLayout {
-        x: Tokens.space-3;
-        y: (parent.height - self.preferred-height) / 2;
-        spacing: Tokens.space-2 - 2px;
-        Rectangle { width: 11px; height: 11px; border-radius: 5.5px; background: #ff5f57; }
-        Rectangle { width: 11px; height: 11px; border-radius: 5.5px; background: #febc2e; }
-        Rectangle { width: 11px; height: 11px; border-radius: 5.5px; background: #28c840; }
-    }
-
-    // Polish 24 — sidebar toggle (hamburger). Now actually collapses
-    // the sidebar to a 56 px icon-only strip via the `sidebar-collapsed`
-    // property. Pure Slint, no Rust round-trip.
-    TouchArea {
-        x: root.sidebar-w + Tokens.space-2;
-        y: (parent.height - self.height) / 2;
-        width: 22px;
-        height: 22px;
-        clicked => {
-            root.sidebar-collapsed = !root.sidebar-collapsed;
-            root.toggle-sidebar();
-        }
-        LucideIcon {
-            icon: IconSet.Menu;
-            size: 14px;
-            stroke: Tokens.muted-foreground;
-            x: (parent.width - self.width) / 2;
-            y: (parent.height - self.height) / 2;
-        }
-    }
-
-    // Centered app name.
-    Text {
-        x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
-        text: "Quay";
-        color: Tokens.muted-foreground;
-        font-size: Tokens.text-sm;
-        font-weight: Tokens.weight-semibold;
     }
 
     // Polish 27 — active task display id + truncated title. Was just

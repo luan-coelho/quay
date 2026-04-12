@@ -173,6 +173,12 @@ export component MainWindow inherits Window {
     in-out property <string> new-project-name: "";
     in-out property <string> new-project-repo-path: "";
     in-out property <string> new-project-base-branch: "main";
+    // Populated by Rust whenever `new-project-repo-path` changes to
+    // a valid git repo. Drives the BASE BRANCH Select in the modal.
+    // Empty list = no repo picked yet (or the picked path isn't a
+    // git repo), in which case the Select shows "No branches
+    // available" until the user browses to a real repository.
+    in property <[string]> new-project-branches: [];
     // Inline validation errors for the New Project form. Written by
     // Rust (`on_create_project`) on submit failure and cleared by the
     // modal itself when the user types into the corresponding field.
@@ -287,6 +293,15 @@ export component MainWindow inherits Window {
     callback add-dependency(string);     // dep task id
     callback delete-task(string);    // task id
     callback create-project();
+    // Opens the native folder picker (via Rust `rfd`) so the user
+    // can browse for a repository path instead of typing the
+    // absolute path by hand. On success, Rust writes the picked
+    // path into `new-project-repo-path` and refreshes
+    // `new-project-branches` to reflect the repo's local branches.
+    callback pick-new-project-repo-path();
+    // Fires every time the repo path text changes, so Rust can
+    // refresh `new-project-branches` for the BASE BRANCH Select.
+    callback new-project-repo-path-changed(string);
     callback project-clicked(string);   // project id
     callback submit-new-task();         // actually inserts the task from the modal fields
     callback add-quick-action();        // opens inline editor with blank row
@@ -333,9 +348,6 @@ export component MainWindow inherits Window {
 
         active-task-display: root.active-task-display;
         active-task-title: root.active-task-title;
-        sidebar-collapsed <=> root.sidebar-collapsed;
-        sidebar-w: root.sidebar-w;
-        toggle-sidebar => { root.toggle-sidebar(); }
     }
 
     // ── Sidebar ──────────────────────────────────────────────────────────
@@ -357,6 +369,7 @@ export component MainWindow inherits Window {
         }
         open-new-project => { root.new-project-open = true; }
         project-clicked(id) => { root.project-clicked(id); }
+        toggle-collapsed => { root.toggle-sidebar(); }
     }
 
     // ── Middle pane: kanban grid ────────────────────────────────────────
@@ -517,8 +530,11 @@ export component MainWindow inherits Window {
         name-text <=> root.new-project-name;
         repo-path-text <=> root.new-project-repo-path;
         base-branch-text <=> root.new-project-base-branch;
+        branches: root.new-project-branches;
         name-error <=> root.new-project-name-error;
         repo-path-error <=> root.new-project-repo-path-error;
+        browse-repo => { root.pick-new-project-repo-path(); }
+        repo-path-changed(t) => { root.new-project-repo-path-changed(t); }
         submit => { root.create-project(); }
     }
 

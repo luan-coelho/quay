@@ -2,9 +2,10 @@
 //! project filter by clicking a row, and submit a new project from
 //! the New Project modal.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
-use slint::{ComponentHandle, SharedString};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use validator::Validate;
 
 use crate::MainWindow;
@@ -14,6 +15,8 @@ use crate::wiring::validation::{NewProjectForm, first_errors};
 pub fn wire(window: &MainWindow, ctx: &WiringContext) {
     wire_project_clicked(window, ctx);
     wire_create_project(window, ctx);
+    wire_browse_new_project_repo(window);
+    wire_new_project_repo_path_changed(window);
 }
 
 /// Polish 9: click a project in the sidebar to filter the kanban by
@@ -96,9 +99,122 @@ fn wire_create_project(window: &MainWindow, ctx: &WiringContext) {
         w.set_new_project_name(SharedString::from(""));
         w.set_new_project_repo_path(SharedString::from(""));
         w.set_new_project_base_branch(SharedString::from("main"));
+        w.set_new_project_branches(ModelRc::from(Rc::new(VecModel::<SharedString>::default())));
         w.set_new_project_open(false);
 
         toast("success", format!("Created project “{project_name}”"));
         refresh_projects();
     });
+}
+
+/// Opens the native folder picker (via `rfd`) so the user can browse
+/// for a repository path instead of typing the absolute path by hand.
+/// The picker runs synchronously on the Slint event thread — `rfd`
+/// uses `xdg-portal` on Linux, Cocoa on macOS, and Win32 on Windows,
+/// all of which block the caller until the user dismisses the dialog.
+///
+/// On success, writes the picked path into `new-project-repo-path`
+/// and immediately refreshes the BASE BRANCH Select with the repo's
+/// local branches — mirroring what `on_new_project_repo_path_changed`
+/// does for typed input.
+fn wire_browse_new_project_repo(window: &MainWindow) {
+    let weak = window.as_weak();
+    window.on_pick_new_project_repo_path(move || {
+        // Anchor the dialog's starting directory on whatever is
+        // currently in the text field (if it exists), falling back to
+        // `$HOME`. Picking the exact defaults shadcn's own pattern of
+        // "start where the user was last looking".
+        let Some(w) = weak.upgrade() else { return };
+        let current = w.get_new_project_repo_path().to_string();
+        let start_dir = {
+            let candidate = PathBuf::from(current.trim());
+            if !current.trim().is_empty() && candidate.exists() {
+                Some(candidate)
+            } else {
+                directories::BaseDirs::new().map(|d| d.home_dir().to_path_buf())
+            }
+        };
+
+        let mut dialog = rfd::FileDialog::new().set_title("Pick a repository folder");
+        if let Some(dir) = start_dir {
+            dialog = dialog.set_directory(dir);
+        }
+
+        let Some(picked) = dialog.pick_folder() else {
+            // User cancelled — nothing to do.
+            return;
+        };
+
+        let path_str = picked.to_string_lossy().to_string();
+        w.set_new_project_repo_path(SharedString::from(path_str.clone()));
+        // Typing via the picker should also clear any stale error
+        // banner on the repo-path field.
+        w.set_new_project_repo_path_error("".into());
+
+        let (branches, preferred) = load_branches_with_preferred(&picked);
+        w.set_new_project_branches(branches);
+        if let Some(b) = preferred {
+            w.set_new_project_base_branch(SharedString::from(b));
+        }
+    });
+}
+
+/// Whenever the repository-path text changes (either through typing
+/// or through the Browse button), we re-read the repo's local
+/// branches and push them into `new-project-branches`. If the path
+/// doesn't resolve to a git repository we fall back to an empty
+/// list, which the Select renders as "No branches available".
+fn wire_new_project_repo_path_changed(window: &MainWindow) {
+    let weak = window.as_weak();
+    window.on_new_project_repo_path_changed(move |new_path| {
+        let Some(w) = weak.upgrade() else { return };
+        let trimmed = new_path.to_string();
+        let trimmed = trimmed.trim();
+        if trimmed.is_empty() {
+            w.set_new_project_branches(ModelRc::from(Rc::new(VecModel::<SharedString>::default())));
+            return;
+        }
+        let path = PathBuf::from(trimmed);
+        let (branches, preferred) = load_branches_with_preferred(&path);
+        w.set_new_project_branches(branches);
+
+        // Only overwrite the base-branch value if the currently-
+        // selected one isn't in the new list — otherwise typing a
+        // character in the path would blow away a user's branch
+        // choice on every keystroke.
+        if let Some(pref) = preferred {
+            let current = w.get_new_project_base_branch().to_string();
+            let model = w.get_new_project_branches();
+            let has_current = (0..model.row_count())
+                .any(|i| model.row_data(i).map(|s| s.as_str() == current).unwrap_or(false));
+            if !has_current {
+                w.set_new_project_base_branch(SharedString::from(pref));
+            }
+        }
+    });
+}
+
+/// Best-effort branch enumeration for a picked repository path.
+/// Returns `(branches_model, preferred_default)` where `preferred_default`
+/// is the branch the caller should auto-select if the current value is
+/// not already in the list (`main` → `master` → first entry).
+fn load_branches_with_preferred(path: &Path) -> (ModelRc<SharedString>, Option<String>) {
+    let branches = match crate::git::status::list_branches(path) {
+        Ok(b) => b,
+        Err(err) => {
+            tracing::debug!(?err, path = %path.display(), "list_branches failed");
+            Vec::new()
+        }
+    };
+
+    let preferred = branches
+        .iter()
+        .find(|b| b.as_str() == "main")
+        .or_else(|| branches.iter().find(|b| b.as_str() == "master"))
+        .or_else(|| branches.first())
+        .cloned();
+
+    let shared: Vec<SharedString> = branches.into_iter().map(SharedString::from).collect();
+    let model = Rc::new(VecModel::from(shared));
+    (ModelRc::from(model), preferred)
 }

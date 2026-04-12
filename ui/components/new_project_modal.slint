@@ -4,24 +4,40 @@
 //
 // Chrome (scrim + card + header + close + divider) is delegated to
 // the `ModalFrame` primitive; this file only owns the form.
+//
+// Repository path field has a trailing "Browse" button that opens
+// the native OS folder picker (via Rust `rfd`). Typing a path or
+// picking one through the browser populates the BASE BRANCH Select
+// with the real local branches of the repository, defaulting to
+// `main`/`master` if present — no more guessing branch names.
 
+import { IconSet } from "@lucide";
 import { Tokens } from "../tokens.slint";
-import { Button, FormField, Input, ModalFrame } from "atoms.slint";
+import { Button, FormField, Input, LucideIcon, ModalFrame, Select } from "atoms.slint";
 
 export component NewProjectModal inherits Rectangle {
     in-out property <bool> open;
     in-out property <string> name-text;
     in-out property <string> repo-path-text;
     in-out property <string> base-branch-text;
+    in property <[string]> branches;
     in-out property <string> name-error;
     in-out property <string> repo-path-error;
     callback submit();
+    callback browse-repo();
+    callback repo-path-changed(string);
+
+    property <bool> has-repo-error: repo-path-error != "";
 
     ModalFrame {
         open <=> root.open;
         title: "New Project";
-        card-width: 420px;
-        card-height: 340px;
+        card-width: 440px;
+        // Taller than the baseline 340px so the BASE BRANCH Select
+        // has room to expand inline when its dropdown opens. Without
+        // this the dropdown would push the action row below the
+        // card's bottom edge (ModalFrame's Card has `clip: true`).
+        card-height: 440px;
         closed => { root.open = false; }
 
         // Name
@@ -36,24 +52,75 @@ export component NewProjectModal inherits Rectangle {
             }
         }
 
-        // Repo path
-        FormField {
-            label: "REPOSITORY PATH";
-            text <=> root.repo-path-text;
-            placeholder: "/absolute/path/to/repo";
-            error: root.repo-path-error;
-            edited(t) => {
-                root.repo-path-text = t;
-                root.repo-path-error = "";
+        // Repository path — label + HorizontalLayout(Input, Button).
+        // Inlined here (instead of reusing FormField) because
+        // FormField doesn't support a trailing button slot and we
+        // only need this composition once.
+        VerticalLayout {
+            spacing: Tokens.space-1;
+
+            Text {
+                text: "REPOSITORY PATH";
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-xs;
+                font-weight: Tokens.weight-bold;
+            }
+
+            HorizontalLayout {
+                spacing: Tokens.space-2;
+
+                Input {
+                    horizontal-stretch: 1;
+                    text <=> root.repo-path-text;
+                    placeholder: "/absolute/path/to/repo";
+                    error-state: root.has-repo-error;
+                    edited(t) => {
+                        root.repo-path-text = t;
+                        root.repo-path-error = "";
+                        root.repo-path-changed(t);
+                    }
+                }
+
+                // Browse button — opens the OS folder picker via
+                // Rust. The label is deliberately short so the
+                // Input still gets the majority of the row width.
+                Button {
+                    text: "Browse";
+                    variant: "outline";
+                    size: "md";
+                    clicked => { root.browse-repo(); }
+                }
+            }
+
+            if root.has-repo-error: Text {
+                text: root.repo-path-error;
+                color: Tokens.destructive;
+                font-size: Tokens.text-xs;
+                font-weight: Tokens.weight-medium;
             }
         }
 
-        // Base branch
-        FormField {
-            label: "BASE BRANCH";
-            text <=> root.base-branch-text;
-            placeholder: "main";
-            edited(t) => { root.base-branch-text = t; }
+        // Base branch — Select populated from the repository's
+        // local branches. When `root.branches` is empty (user
+        // hasn't picked a valid git repo yet) the Select renders
+        // the "No branches available" empty state.
+        VerticalLayout {
+            spacing: Tokens.space-1;
+
+            Text {
+                text: "BASE BRANCH";
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-xs;
+                font-weight: Tokens.weight-bold;
+            }
+
+            Select {
+                options: root.branches;
+                value <=> root.base-branch-text;
+                placeholder: "Select a branch";
+                dropdown-max-height: 160px;
+                changed(b) => { root.base-branch-text = b; }
+            }
         }
 
         Rectangle { vertical-stretch: 1; }

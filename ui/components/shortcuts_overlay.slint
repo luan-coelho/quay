@@ -4,7 +4,7 @@
 // the actual hotkey table in `src/hotkeys.rs::classify_hotkey`.
 
 import { Tokens } from "../tokens.slint";
-import { CloseButton } from "atoms.slint";
+import { CloseButton, Divider } from "atoms.slint";
 import { ShortcutRow } from "menu.slint";
 
 export component ShortcutsOverlay inherits Rectangle {
@@ -56,7 +56,7 @@ export component ShortcutsOverlay inherits Rectangle {
                 }
             }
 
-            Rectangle { height: 1px; background: Tokens.border; }
+            Divider { }
 
             VerticalLayout {
                 spacing: Tokens.space-4;

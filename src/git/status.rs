@@ -10,7 +10,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use git2::{Repository, Status, StatusOptions};
+use git2::{BranchType, Repository, Status, StatusOptions};
 
 /// Snapshot of a worktree's git status, suitable for rendering on a kanban card.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -84,6 +84,39 @@ pub fn read_status(worktree_path: &Path) -> Result<WorktreeStatus> {
     })
 }
 
+/// Enumerate the local branches of the repository that contains
+/// `repo_path`. Used by the New Project modal to populate the "base
+/// branch" Select with the real branches of whatever folder the user
+/// just picked, instead of a free-text field.
+///
+/// Returns a stable ordering: `main` / `master` first (if present),
+/// then the rest alphabetically. Non-UTF-8 branch names are silently
+/// skipped — realistic repos do not ship those.
+pub fn list_branches(repo_path: &Path) -> Result<Vec<String>> {
+    let repo = Repository::discover(repo_path)
+        .with_context(|| format!("failed to discover repo at {}", repo_path.display()))?;
+
+    let mut names: Vec<String> = Vec::new();
+    for branch in repo.branches(Some(BranchType::Local))? {
+        let (branch, _) = branch?;
+        if let Some(name) = branch.name()?.map(String::from) {
+            names.push(name);
+        }
+    }
+
+    // Sort: main/master float to the top, everything else alphabetical.
+    names.sort_by(|a, b| {
+        let rank = |s: &str| match s {
+            "main" => 0,
+            "master" => 1,
+            _ => 2,
+        };
+        rank(a).cmp(&rank(b)).then_with(|| a.cmp(b))
+    });
+
+    Ok(names)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,6 +182,43 @@ mod tests {
         assert!(!status.clean);
         assert_eq!(status.untracked_count, 1);
         assert_eq!(status.modified_count, 0);
+    }
+
+    #[test]
+    fn list_branches_returns_local_branches_with_main_first() {
+        let (_tmp, repo) = init_repo();
+        // Create two extra local branches.
+        let run = |args: &[&str]| {
+            let out = Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(args)
+                .output()
+                .expect("git");
+            assert!(out.status.success(), "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr));
+        };
+        run(&["branch", "feature/xyz"]);
+        run(&["branch", "bugfix/abc"]);
+
+        let branches = list_branches(&repo).expect("list branches");
+        assert_eq!(branches.first().map(String::as_str), Some("main"));
+        assert!(branches.contains(&"feature/xyz".to_string()));
+        assert!(branches.contains(&"bugfix/abc".to_string()));
+        // `bugfix/abc` sorts before `feature/xyz` alphabetically.
+        let f = branches.iter().position(|b| b == "feature/xyz").unwrap();
+        let b = branches.iter().position(|b| b == "bugfix/abc").unwrap();
+        assert!(b < f, "alpha order among non-main branches: {branches:?}");
+    }
+
+    #[test]
+    fn list_branches_on_missing_repo_errors() {
+        let tmp = tempdir().unwrap();
+        let err = list_branches(tmp.path()).expect_err("should fail");
+        assert!(
+            err.to_string().contains("failed to discover repo"),
+            "error should mention discovery, got: {err}"
+        );
     }
 
     #[test]

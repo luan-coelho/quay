@@ -228,9 +228,17 @@ export component FilterChip inherits Rectangle {
     in property <bool> selected;
     callback clicked();
 
-    height: 24px;
+    // Tab-style chip — rounded TOP corners only so the bottom edge
+    // sits flush against the divider line that runs underneath the
+    // filter strip. This is the Lanes/shadcn tab look where each
+    // chip "anchors" to the strip's baseline rather than floating
+    // as a fully-rounded pill.
+    height: 26px;
     width: chip-row.preferred-width + 16px;
-    border-radius: Tokens.radius-sm;
+    border-top-left-radius: Tokens.radius-md;
+    border-top-right-radius: Tokens.radius-md;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
     border-width: 1px;
     border-color: selected ? Tokens.ring : Tokens.border;
     background: selected ? Tokens.secondary : transparent;
@@ -247,14 +255,15 @@ export component FilterChip inherits Rectangle {
         alignment: center;
         // Polish 23: kind glyph on the left of the label, matching
         // the Lanes reference. Color is muted because filter chips
-        // aren't kinded.
+        // aren't kinded. Rendered via Lucide Diamond for consistency
+        // with the other diamond indicators across the kanban.
         VerticalLayout {
             alignment: center;
-            Text {
-                text: "◆";
-                color: Tokens.muted-foreground;
-                font-size: Tokens.text-xs;
-                vertical-alignment: center;
+            LucideIcon {
+                icon: IconSet.Diamond;
+                size: 10px;
+                stroke: Tokens.muted-foreground;
+                stroke-width: 2.5;
             }
         }
         VerticalLayout {
@@ -331,9 +340,15 @@ export component RightTab inherits Rectangle {
     in property <bool> selected;
     callback clicked();
 
-    height: 26px;
+    // Tab-style shape — rounded top, flat bottom — so the tab strip
+    // visually merges with the divider line beneath it (same pattern
+    // as FilterChip in the middle pane).
+    height: 28px;
     width: row.preferred-width + 18px;
-    border-radius: Tokens.radius-md;
+    border-top-left-radius: Tokens.radius-md;
+    border-top-right-radius: Tokens.radius-md;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
     border-width: 1px;
     border-color: selected ? Tokens.ring : Tokens.border;
     background: selected ? Tokens.secondary : (ta.has-hover ? Tokens.accent : transparent);

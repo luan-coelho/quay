@@ -8,7 +8,7 @@ import { ScrollView, TextEdit } from "std-widgets.slint";
 import { IconSet } from "@lucide";
 import { Tokens } from "../tokens.slint";
 import { FileEntryData, HighlightedLineData } from "../data.slint";
-import { LucideIcon } from "atoms.slint";
+import { LucideIcon, Button, Divider } from "atoms.slint";
 
 export component FilesPanel inherits Rectangle {
     in property <[FileEntryData]> file-entries;
@@ -57,7 +57,7 @@ export component FilesPanel inherits Rectangle {
             }
         }
 
-        Rectangle { height: 1px; background: Tokens.border; }
+        Divider { }
 
         ScrollView {
             horizontal-stretch: 1;
@@ -258,32 +258,18 @@ export component FilesPanel inherits Rectangle {
                 }
             }
 
-            // Save button.
-            TouchArea {
-                width: 56px;
-                height: 22px;
+            // Save button — shadcn Button with the `success` variant
+            // to keep the kind-enhancement green tint of the original.
+            Button {
+                text: "save";
+                variant: "success";
+                size: "sm";
+                leading-icon: "check";
                 clicked => { root.save(); }
-                Rectangle {
-                    background: parent.has-hover ? rgba(16, 185, 129, 20%) : rgba(16, 185, 129, 12%);
-                    border-radius: Tokens.radius-sm;
-                    border-width: 1px;
-                    border-color: rgba(16, 185, 129, 40%);
-                    animate background { duration: 120ms; easing: ease-out; }
-                    Text {
-                        text: "save";
-                        color: Tokens.kind-enhancement;
-                        font-size: Tokens.text-xs;
-                        font-weight: Tokens.weight-semibold;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
-                    }
-                }
             }
         }
 
-        Rectangle { height: 1px; background: Tokens.border; }
+        Divider { }
 
         // ── Syntect-coloured read-only preview ──────────────
         // Shows the last saved state of the file with per-token
