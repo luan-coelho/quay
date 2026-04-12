@@ -25,6 +25,8 @@ use std::rc::Rc;
 
 use crate::app::AppState;
 
+pub type ToastFn = dyn Fn(&str, String);
+
 #[derive(Clone)]
 pub struct WiringContext {
     pub state: Rc<AppState>,
@@ -34,5 +36,5 @@ pub struct WiringContext {
     pub refresh_files: Rc<dyn Fn()>,
     pub refresh_settings_qa: Rc<dyn Fn()>,
     pub refresh_settings_processes: Rc<dyn Fn()>,
-    pub show_toast: Rc<dyn Fn(&str, String)>,
+    pub show_toast: Rc<ToastFn>,
 }

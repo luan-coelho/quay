@@ -198,10 +198,10 @@ fn wire_close_other_tabs(window: &MainWindow, ctx: &WiringContext) {
     window.on_close_other_task_tabs(move |id| {
         let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
         let switch = state.close_other_open_tabs(uuid);
-        if let Some(window) = weak.upgrade() {
-            if let Some(next) = switch {
-                window.invoke_open_task_tab(next.to_string().into());
-            }
+        if let Some(window) = weak.upgrade()
+            && let Some(next) = switch
+        {
+            window.invoke_open_task_tab(next.to_string().into());
         }
         toast("info", "Closed other tabs".to_string());
         refresh();
@@ -247,10 +247,10 @@ fn wire_close_tabs_right_of(window: &MainWindow, ctx: &WiringContext) {
     window.on_close_task_tabs_right_of(move |id| {
         let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
         let switch = state.close_tabs_right_of(uuid);
-        if let Some(window) = weak.upgrade() {
-            if let Some(next) = switch {
-                window.invoke_open_task_tab(next.to_string().into());
-            }
+        if let Some(window) = weak.upgrade()
+            && let Some(next) = switch
+        {
+            window.invoke_open_task_tab(next.to_string().into());
         }
         toast("info", "Closed tabs to the right".to_string());
         refresh();

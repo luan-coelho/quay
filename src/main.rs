@@ -279,7 +279,7 @@ fn main() -> Result<()> {
     // to surface errors. A monotonic generation counter cancels
     // older auto-dismiss timers when a newer toast lands.
     let toast_generation: Rc<std::cell::Cell<u32>> = Rc::new(std::cell::Cell::new(0));
-    let show_toast: Rc<dyn Fn(&str, String)> = {
+    let show_toast: Rc<crate::wiring::context::ToastFn> = {
         let weak = window.as_weak();
         let gen_cell = toast_generation.clone();
         Rc::new(move |kind: &str, msg: String| {
@@ -300,10 +300,10 @@ fn main() -> Result<()> {
                 TimerMode::SingleShot,
                 Duration::from_millis(3200),
                 move || {
-                    if dismiss_gen.get() == my_gen {
-                        if let Some(w) = dismiss_weak.upgrade() {
-                            w.set_toast_visible(false);
-                        }
+                    if dismiss_gen.get() == my_gen
+                        && let Some(w) = dismiss_weak.upgrade()
+                    {
+                        w.set_toast_visible(false);
                     }
                 },
             );
@@ -507,7 +507,7 @@ fn main() -> Result<()> {
             move || {
                 let t = spinner_tick.get().wrapping_add(1);
                 spinner_tick.set(t);
-                if t % 6 == 0 {
+                if t.is_multiple_of(6) {
                     let i = (spinner_idx.get() + 1) % SPINNER_GLYPHS.len();
                     spinner_idx.set(i);
                     if let Some(window) = weak.upgrade() {

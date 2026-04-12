@@ -22,6 +22,15 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         action: [check, test, clippy]
+        exclude:
+          # Git shell-out tests rely on POSIX filesystem semantics that
+          # differ on macOS (case-insensitive HFS+) and Windows (path
+          # separators, locking). Compilation is already verified by the
+          # check + clippy jobs on all three platforms.
+          - os: windows-latest
+            action: test
+          - os: macos-latest
+            action: test
 
     steps:
       - uses: actions/checkout@v4

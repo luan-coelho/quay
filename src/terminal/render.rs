@@ -90,16 +90,17 @@ impl Framebuffer {
                     );
                 }
 
-                if cell.c != ' ' && cell.c != '\0' {
-                    if let Some(glyph) = atlas.glyph(cell.c) {
-                        draw_glyph(
-                            bytes, fb_w, fb_h,
-                            col * cell_w, row * cell_h,
-                            baseline,
-                            &glyph,
-                            fg,
-                        );
-                    }
+                if cell.c != ' '
+                    && cell.c != '\0'
+                    && let Some(glyph) = atlas.glyph(cell.c)
+                {
+                    draw_glyph(
+                        bytes, fb_w, fb_h,
+                        col * cell_w, row * cell_h,
+                        baseline,
+                        &glyph,
+                        fg,
+                    );
                 }
             }
         }
@@ -120,16 +121,17 @@ impl Framebuffer {
                 [0xe6, 0xe7, 0xea, 0xff],
             );
             let cell = &grid[Line(cr as i32)][Column(cursor_col)];
-            if cell.c != ' ' && cell.c != '\0' {
-                if let Some(glyph) = atlas.glyph(cell.c) {
-                    draw_glyph(
-                        bytes, fb_w, fb_h,
-                        cursor_col * cell_w, cr * cell_h,
-                        baseline,
-                        &glyph,
-                        DEFAULT_BG,
-                    );
-                }
+            if cell.c != ' '
+                && cell.c != '\0'
+                && let Some(glyph) = atlas.glyph(cell.c)
+            {
+                draw_glyph(
+                    bytes, fb_w, fb_h,
+                    cursor_col * cell_w, cr * cell_h,
+                    baseline,
+                    &glyph,
+                    DEFAULT_BG,
+                );
             }
         }
     }
@@ -156,6 +158,7 @@ fn fill_rect(
 
 /// Blend a rasterized glyph's alpha mask into the framebuffer, over whatever
 /// background has already been drawn.
+#[allow(clippy::too_many_arguments)]
 fn draw_glyph(
     bytes: &mut [u8],
     fb_w: usize,

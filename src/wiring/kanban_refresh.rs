@@ -119,10 +119,10 @@ pub fn rebuild(state: &AppState, window: &MainWindow, models: &KanbanModels) {
         // Project filter: skip tasks whose project_id doesn't match
         // the active project. Tasks with no project are hidden whenever
         // a project filter is active.
-        if let Some(project_filter) = filter_project_id {
-            if task.project_id != Some(project_filter) {
-                continue;
-            }
+        if let Some(project_filter) = filter_project_id
+            && task.project_id != Some(project_filter)
+        {
+            continue;
         }
 
         // Blocked count — how many dependencies are still not Done.

@@ -982,9 +982,7 @@ fn pin_tab_in_place(tabs: &mut Vec<Uuid>, id: Uuid) -> bool {
 /// the caller should focus (same index, clamped to the new tail).
 /// Otherwise returns `None`.
 fn close_tab_in_place(tabs: &mut Vec<Uuid>, id: Uuid, was_active: bool) -> Option<Uuid> {
-    let Some(idx) = tabs.iter().position(|t| *t == id) else {
-        return None;
-    };
+    let idx = tabs.iter().position(|t| *t == id)?;
     tabs.remove(idx);
     if !was_active {
         return None;

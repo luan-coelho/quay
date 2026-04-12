@@ -110,10 +110,10 @@ pub fn wire(window: &MainWindow, ctx: &WiringContext) {
                 // Polish 18: re-uses the same close/fall-back logic
                 // as clicking × on the chip by invoking the
                 // Slint-side close-task-tab callback directly.
-                if let Some(active_id) = *state.active_task.borrow() {
-                    if let Some(w) = weak.upgrade() {
-                        w.invoke_close_task_tab(active_id.to_string().into());
-                    }
+                if let Some(active_id) = *state.active_task.borrow()
+                    && let Some(w) = weak.upgrade()
+                {
+                    w.invoke_close_task_tab(active_id.to_string().into());
                 }
             }
             HotkeyAction::OpenTaskSearch => {
