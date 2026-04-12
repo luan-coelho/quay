@@ -162,12 +162,12 @@ mod tests {
         File::create(&old).unwrap().write_all(b"{}").unwrap();
 
         let spawn_time = SystemTime::now();
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::sleep(Duration::from_millis(50));
 
         // Two new files; the second should win because of mtime.
         let first = dir.join("first-session.jsonl");
         File::create(&first).unwrap().write_all(b"{}").unwrap();
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::sleep(Duration::from_millis(50));
         let second = dir.join("second-session.jsonl");
         File::create(&second).unwrap().write_all(b"{}").unwrap();
 
@@ -201,7 +201,7 @@ mod tests {
         File::create(&stale_a).unwrap().write_all(b"{}").unwrap();
         File::create(&stale_b).unwrap().write_all(b"{}").unwrap();
 
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::sleep(Duration::from_millis(50));
         let spawn_time = SystemTime::now();
 
         let result = find_latest_session(dir, spawn_time).unwrap();
