@@ -67,6 +67,20 @@ lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
 
+# An optimized-but-fast-to-build profile for iteration. Keeps opt-level=3 so
+# the binary runs at release-like speed, but drops LTO and uses the default
+# parallel codegen-units so rebuilds are minutes instead of 10-15 minutes.
+# Use this for smoke tests, multi-worktree agent sessions, and any workflow
+# that needs a working binary but not a ship-quality one.
+#   cargo build --profile release-fast
+#   ./target/release-fast/quay
+[profile.release-fast]
+inherits = "release"
+lto = "off"
+codegen-units = 16
+debug = 0
+strip = "debuginfo"
+
 # Reduce debug info from full DWARF to line tables only. Backtraces still
 # show file:line, but the debug binary drops from ~430 MB to ~50-80 MB and
 # the link step skips relocating hundreds of MB of debug sections. Measured

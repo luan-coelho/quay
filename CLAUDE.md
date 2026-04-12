@@ -4,25 +4,57 @@
 > (Claude Code, OpenCode) operam em paralelo. Inspirado no Lanes.sh
 > mas escrito em Rust + Slint, GPU-acelerado, ~60 FPS no Linux.
 
+## ⚠️ REGRA ABSOLUTA — NUNCA use `--release` em desenvolvimento
+
+**NÃO rode**, sob NENHUMA circunstância, os seguintes comandos durante
+iteração de código:
+
+- ❌ `cargo build --release`
+- ❌ `cargo test --release`
+- ❌ `cargo check --release`
+- ❌ `cargo run --release`
+- ❌ `cargo clippy --release`
+
+Esses comandos levam **8–15 MINUTOS cada** porque o release profile
+tem `lto = "thin" + codegen-units = 1`, que serializam todo o codegen
+e forçam LLVM a re-otimizar o binário inteiro. Rodar em loop trava
+o desenvolvimento.
+
+**Use em vez disso:**
+
+- ✅ `cargo build` — debug, rebuild incremental em ~6s
+- ✅ `cargo check` — type-check, rebuild em ~3s
+- ✅ `cargo nextest run --all-targets` (ou `cargo test --all-targets`)
+- ✅ `cargo clippy --all-targets -- -D warnings`
+- ✅ `./target/debug/quay` — smoke launch em debug funciona igualzinho
+
+O binário debug renderiza exatamente a mesma UI que o release. A UI
+não precisa de otimizações -O3 pra funcionar. **`--release` existe
+exclusivamente para builds de distribuição** (CI release job, upload
+de artifact, medição de performance final).
+
+Se um teste depende de runtime performance (rare), use o profile
+`release-fast` (definido no `Cargo.toml`): `cargo test --profile
+release-fast`. Ele mantém `-O3` mas desliga LTO, então rebuild é
+~2 min em vez de 15 min.
+
 ## TL;DR para o Claude
 
 - **Stack**: Rust 2024 + Slint 1.15 (renderer Skia) + portable-pty +
   alacritty_terminal + git2 + rusqlite + syntect/ropey (editor).
 - **Comunicação com o usuário**: **português brasileiro**. Termos
   técnicos e identificadores ficam em inglês.
-- **Build**: `cargo build --release`. **Cold build leva 8–12 min** —
-  o gargalo é compilação de C++ (Skia via skia-bindings, ~200 MB de
-  fonte) + libgit2 + SQLite, não o LTO do Rust propriamente dito.
-- **Testes**: `cargo nextest run --all-targets` (preferido, paraleliza)
-  ou `cargo test --all-targets`. Rebuild incremental em ~12s após a
-  primeira build; cache hit total em <1s. Rodar em `--release` só
-  se precisar medir performance de runtime — não é necessário pra
-  validar correção.
+- **Build do dia-a-dia**: `cargo build` (debug). Rebuild incremental
+  em ~6s. Ver seção "Build / test workflow" abaixo.
+- **Testes**: `cargo nextest run --all-targets` (preferido) ou
+  `cargo test --all-targets`. NUNCA com `--release`.
 - **Linker rápido no Linux**: o projeto usa `mold` via
   `.cargo/config.toml`. Instalação: `sudo apt install mold`.
-- **Smoke launch**: `timeout 3 ./target/release/quay 2>&1 | tail -5`
-  — verifica que a janela abre e o glyph atlas é construído.
+- **Smoke launch**: `./target/debug/quay` (ou release após build
+  final). Janela abre igual.
 - **Cargo.lock está commitado** (é um binário, não uma lib).
+- **Cold build do zero**: ~10 min inescapáveis — Skia (C++ 200+ MB)
+  + libgit2 + SQLite precisam compilar uma vez. Depois cache.
 
 ## Por que Quay existe
 
@@ -163,21 +195,43 @@ componente. Se aparece 1 vez, não.
 
 ## Build / test workflow
 
+**IMPORTANTE — escolhendo o profile certo:** este projeto tem 3 profiles
+de build, cada um com propósito distinto. Usar o errado desperdiça
+minutos ou horas de compilação.
+
 ```bash
-# Build de produção (lento — 8-12 min na primeira vez, depois cacheado)
-cargo build --release
+# 1. DEV (cargo build padrão) — o caminho default pra iteração.
+#    Rebuild incremental em ~6s. Use pra smoke launch, quase sempre.
+cargo build                          # debug, ~6s incremental
+timeout 3 ./target/debug/quay 2>&1   # smoke launch em debug (funciona igual)
 
-# Testes — forma preferida (nextest paraleliza, 2-3x mais rápido que
-# cargo test quando a suite cresce). Instalação: `cargo install
-# cargo-nextest --locked`. Fallback: `cargo test --all-targets`.
-cargo nextest run --all-targets
+# 2. RELEASE-FAST — quando você precisa do binário otimizado (teste de
+#    performance, reproducao de bug runtime-only) mas não quer o LTO.
+#    Rebuild em ~1-2 min, binário roda perto da velocidade release.
+cargo build --profile release-fast
+./target/release-fast/quay
 
-# Smoke launch (verifica que a janela abre)
-timeout 3 ./target/release/quay 2>&1 | tail -5
+# 3. RELEASE — APENAS para builds de distribuição (CI release job,
+#    upload de artifact, benchmark final). Leva 8-15 min porque usa
+#    `lto = "thin" + codegen-units = 1`. NÃO USE PRA ITERAÇÃO.
+cargo build --release                # 8-15 min, use raramente
+
+# Testes — nextest paraleliza e é o comando preferido
+cargo nextest run --all-targets      # ~6s + <1s execução
 
 # Lints
 cargo clippy --all-targets -- -D warnings
 ```
+
+**Regra geral:** se você está iterando código, use `cargo build` (debug)
+ou `cargo build --profile release-fast`. **Nunca use `cargo build --release`
+em loop de desenvolvimento** — é exclusivamente pra builds de distribuição.
+
+**Multi-worktree (agentes em paralelo):** cada worktree tem seu próprio
+`target/`, então cold build é pago por worktree. Mitigação: `sccache`
+está configurado globalmente (`rustc-wrapper` em `~/.cargo/config.toml`),
+então artifacts do rustc (Skia, libgit2, SQLite) são compartilhados via
+content-addressable cache. Segundo worktree de uma branch é quase instant.
 
 ### Performance do build
 
