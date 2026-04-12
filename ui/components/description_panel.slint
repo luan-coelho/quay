@@ -257,14 +257,12 @@ export component DescriptionPanel inherits Card {
                     border-width: 1px;
                     border-color: Tokens.border;
                     animate background { duration: 120ms; easing: ease-out; }
-                    Text {
-                        text: "+";
-                        color: Tokens.muted-foreground;
-                        font-size: Tokens.text-sm;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
+                    LucideIcon {
+                        icon: IconSet.Plus;
+                        size: 11px;
+                        stroke: Tokens.muted-foreground;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
                     }
                 }
             }
@@ -387,14 +385,12 @@ export component DescriptionPanel inherits Card {
                     border-width: 1px;
                     border-color: Tokens.border;
                     animate background { duration: 120ms; easing: ease-out; }
-                    Text {
-                        text: "+";
-                        color: Tokens.muted-foreground;
-                        font-size: Tokens.text-sm;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        width: parent.width;
-                        height: parent.height;
+                    LucideIcon {
+                        icon: IconSet.Plus;
+                        size: 11px;
+                        stroke: Tokens.muted-foreground;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
                     }
                 }
             }
