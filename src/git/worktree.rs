@@ -225,8 +225,12 @@ mod tests {
         assert!(init.status.success(), "git init failed: {}",
             String::from_utf8_lossy(&init.stderr));
 
-        // Local identity for commits.
-        for kv in [("user.email", "test@quay.local"), ("user.name", "Quay Test")] {
+        // Local identity for commits + disable CRLF for Windows.
+        for kv in [
+            ("user.email", "test@quay.local"),
+            ("user.name", "Quay Test"),
+            ("core.autocrlf", "false"),
+        ] {
             let out = Command::new("git")
                 .arg("-C")
                 .arg(&repo)
@@ -279,9 +283,14 @@ mod tests {
         );
 
         // The new worktree should be visible in `worktree list`.
+        // Canonicalize both sides — on Windows, tempdir() may return a
+        // different prefix (\\?\C:\ vs C:\) than git outputs.
         let listed = mgr.list(&repo).expect("list worktrees");
+        let wt_canon = worktree.canonicalize().unwrap_or_else(|_| worktree.clone());
         assert!(
-            listed.iter().any(|p| p == &worktree),
+            listed
+                .iter()
+                .any(|p| p.canonicalize().unwrap_or_else(|_| p.clone()) == wt_canon),
             "newly created worktree should appear in `git worktree list`, got {listed:?}"
         );
 

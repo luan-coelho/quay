@@ -22,18 +22,18 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         action: [check, test, clippy]
-        exclude:
-          # Git shell-out tests rely on POSIX filesystem semantics that
-          # differ on macOS (case-insensitive HFS+) and Windows (path
-          # separators, locking). Compilation is already verified by the
-          # check + clippy jobs on all three platforms.
-          - os: windows-latest
-            action: test
-          - os: macos-latest
-            action: test
 
     steps:
       - uses: actions/checkout@v4
+
+      # Git identity + settings needed by tests that shell out to git.
+      # Without this, `git commit` may fail on runners that lack a
+      # global user.name/user.email (macOS, Windows).
+      - name: Configure git for tests
+        run: |
+          git config --global user.email "ci@quay.dev"
+          git config --global user.name "Quay CI"
+          git config --global init.defaultBranch main
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
