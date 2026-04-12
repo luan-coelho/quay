@@ -1,0 +1,261 @@
+// Middle pane — top filter strip + scrollable kanban with 5 sections.
+//
+// Polish 21 collapsed Planning + Implementation under one combined
+// header. Polish 28 added the friendly empty-state placeholder. The
+// component just consumes the 6 column models the parent rebuilds via
+// `wiring::kanban_refresh::rebuild`.
+
+import { ScrollView } from "std-widgets.slint";
+import { IconSet } from "@lucide";
+import { Tokens } from "../tokens.slint";
+import { TaskCardData, LabelPillData } from "../data.slint";
+import { LucideIcon } from "atoms.slint";
+import { FilterChip, SectionHeader } from "menu.slint";
+import { CardRow } from "cards.slint";
+
+export component KanbanGrid inherits Rectangle {
+    in property <[TaskCardData]> tasks-backlog;
+    in property <[TaskCardData]> tasks-planning;
+    in property <[TaskCardData]> tasks-implementation;
+    in property <[TaskCardData]> tasks-review;
+    in property <[TaskCardData]> tasks-done;
+    in property <[TaskCardData]> tasks-misc;
+    in property <[LabelPillData]> all-labels;
+    in-out property <string> filter-label-id;
+    in property <string> active-project-id;
+    in property <string> active-task-id;
+    in property <string> spinner-glyph;
+    in property <length> tab-strip-h: 32px;
+
+    callback select-task(string);
+    callback move-task-back(string);
+    callback move-task-forward(string);
+    callback filter-changed(string);
+
+    background: Tokens.background;
+
+    // Polish 28 — derived state for the empty-state placeholder.
+    property <bool> kanban-empty:
+        root.tasks-backlog.length == 0
+        && root.tasks-planning.length == 0
+        && root.tasks-implementation.length == 0
+        && root.tasks-review.length == 0
+        && root.tasks-done.length == 0
+        && root.tasks-misc.length == 0;
+
+    Rectangle {
+        x: parent.width - 1px;
+        y: 0;
+        width: 1px;
+        height: parent.height;
+        background: Tokens.border;
+    }
+
+    VerticalLayout {
+        spacing: 0px;
+
+        // Filter chips.
+        Rectangle {
+            height: tab-strip-h;
+            background: Tokens.background;
+
+            Rectangle {
+                x: 0; y: parent.height - 1px;
+                width: parent.width; height: 1px;
+                background: Tokens.border;
+            }
+
+            HorizontalLayout {
+                padding-left: Tokens.space-2;
+                padding-right: Tokens.space-2;
+                spacing: Tokens.space-1;
+                alignment: start;
+
+                VerticalLayout {
+                    alignment: end;
+                    FilterChip {
+                        label: "All";
+                        selected: root.filter-label-id == "";
+                        clicked => {
+                            root.filter-label-id = "";
+                            root.filter-changed("");
+                        }
+                    }
+                }
+                for lbl in root.all-labels: VerticalLayout {
+                    alignment: end;
+                    FilterChip {
+                        label: lbl.name;
+                        selected: root.filter-label-id == lbl.id;
+                        clicked => {
+                            if root.filter-label-id == lbl.id {
+                                root.filter-label-id = "";
+                                root.filter-changed("");
+                            } else {
+                                root.filter-label-id = lbl.id;
+                                root.filter-changed(lbl.id);
+                            }
+                        }
+                    }
+                }
+                // Polish 23: spacer pushes the funnel icon to the right
+                // edge of the strip.
+                Rectangle { horizontal-stretch: 1; }
+                // Polish 23: funnel icon stub. Slint 1.15 has no
+                // dedicated funnel codepoint in its built-in font, so
+                // we use a chevron as the closest visual hint. Click
+                // is a no-op for now — wiring an actual filter menu
+                // is a future polish.
+                VerticalLayout {
+                    alignment: end;
+                    TouchArea {
+                        width: 22px;
+                        height: 22px;
+                        clicked => { /* stub */ }
+                        LucideIcon {
+                            icon: IconSet.ChevronDown;
+                            size: 12px;
+                            stroke: Tokens.muted-foreground;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Scrollable task list.
+        ScrollView {
+            vertical-scrollbar-policy: as-needed;
+
+            VerticalLayout {
+                spacing: 0px;
+
+                // Polish 28 — friendly placeholder when every section
+                // is empty (no tasks at all, or filter returned zero
+                // results). Centered glyph + title + hint text.
+                if root.kanban-empty: VerticalLayout {
+                    padding-top: 80px;
+                    padding-left: Tokens.space-6;
+                    padding-right: Tokens.space-6;
+                    spacing: Tokens.space-3;
+                    alignment: start;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        LucideIcon {
+                            icon: IconSet.Sparkles;
+                            size: 56px;
+                            stroke: Tokens.muted-foreground;
+                            stroke-width: 1.4;
+                        }
+                    }
+                    Text {
+                        text: root.filter-label-id == "" && root.active-project-id == ""
+                            ? "No tasks yet"
+                            : "No tasks match the current filter";
+                        color: Tokens.foreground;
+                        font-size: Tokens.text-lg;
+                        font-weight: Tokens.weight-semibold;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: root.filter-label-id == "" && root.active-project-id == ""
+                            ? "Press ⌘N to create your first task"
+                            : "Click the active filter chip again to clear it";
+                        color: Tokens.muted-foreground;
+                        font-size: Tokens.text-sm;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                // Polish 21: Backlog — always visible.
+                if !root.kanban-empty: VerticalLayout {
+                    spacing: 0px;
+                    SectionHeader { label: "Backlog"; count: root.tasks-backlog.length; }
+                    for task in root.tasks-backlog: CardRow {
+                        task: task;
+                        spinner-glyph: root.spinner-glyph;
+                        selected: task.id == root.active-task-id;
+                        clicked => { root.select-task(task.id); }
+                        move-back => { root.move-task-back(task.id); }
+                        move-forward => { root.move-task-forward(task.id); }
+                    }
+                }
+
+                // Polish 21: Planning + Implementation merged under a
+                // single header. Two consecutive `for` loops render
+                // contiguously — same visual as one combined model,
+                // with zero schema/Rust changes.
+                if !root.kanban-empty: VerticalLayout {
+                    spacing: 0px;
+                    SectionHeader {
+                        label: "Planning & Implementation";
+                        count: root.tasks-planning.length + root.tasks-implementation.length;
+                    }
+                    for task in root.tasks-planning: CardRow {
+                        task: task;
+                        spinner-glyph: root.spinner-glyph;
+                        selected: task.id == root.active-task-id;
+                        clicked => { root.select-task(task.id); }
+                        move-back => { root.move-task-back(task.id); }
+                        move-forward => { root.move-task-forward(task.id); }
+                    }
+                    for task in root.tasks-implementation: CardRow {
+                        task: task;
+                        spinner-glyph: root.spinner-glyph;
+                        selected: task.id == root.active-task-id;
+                        clicked => { root.select-task(task.id); }
+                        move-back => { root.move-task-back(task.id); }
+                        move-forward => { root.move-task-forward(task.id); }
+                    }
+                }
+
+                // Polish 21: Review — hidden when empty.
+                VerticalLayout {
+                    visible: root.tasks-review.length > 0;
+                    spacing: 0px;
+                    SectionHeader { label: "Review"; count: root.tasks-review.length; }
+                    for task in root.tasks-review: CardRow {
+                        task: task;
+                        spinner-glyph: root.spinner-glyph;
+                        selected: task.id == root.active-task-id;
+                        clicked => { root.select-task(task.id); }
+                        move-back => { root.move-task-back(task.id); }
+                        move-forward => { root.move-task-forward(task.id); }
+                    }
+                }
+
+                // Polish 21: Done — hidden when empty.
+                VerticalLayout {
+                    visible: root.tasks-done.length > 0;
+                    spacing: 0px;
+                    SectionHeader { label: "Done"; count: root.tasks-done.length; }
+                    for task in root.tasks-done: CardRow {
+                        task: task;
+                        spinner-glyph: root.spinner-glyph;
+                        selected: task.id == root.active-task-id;
+                        clicked => { root.select-task(task.id); }
+                        move-back => { root.move-task-back(task.id); }
+                        move-forward => { root.move-task-forward(task.id); }
+                    }
+                }
+
+                // Polish 21: Misc — hidden when empty.
+                VerticalLayout {
+                    visible: root.tasks-misc.length > 0;
+                    spacing: 0px;
+                    SectionHeader { label: "Misc"; count: root.tasks-misc.length; }
+                    for task in root.tasks-misc: CardRow {
+                        task: task;
+                        spinner-glyph: root.spinner-glyph;
+                        selected: task.id == root.active-task-id;
+                        clicked => { root.select-task(task.id); }
+                        move-back => { root.move-task-back(task.id); }
+                        move-forward => { root.move-task-forward(task.id); }
+                    }
+                }
+            }
+        }
+    }
+}

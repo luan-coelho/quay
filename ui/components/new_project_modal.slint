@@ -1,0 +1,81 @@
+// Polish 8 / 32 — modal for creating a new sidebar project. Fields
+// are `<=>` bound to MainWindow properties; `submit()` is the
+// clicked-Create callback.
+//
+// Chrome (scrim + card + header + close + divider) is delegated to
+// the `ModalFrame` primitive; this file only owns the form.
+
+import { Tokens } from "../tokens.slint";
+import { Button, FormField, Input, ModalFrame } from "atoms.slint";
+
+export component NewProjectModal inherits Rectangle {
+    in-out property <bool> open;
+    in-out property <string> name-text;
+    in-out property <string> repo-path-text;
+    in-out property <string> base-branch-text;
+    in-out property <string> name-error;
+    in-out property <string> repo-path-error;
+    callback submit();
+
+    ModalFrame {
+        open <=> root.open;
+        title: "New Project";
+        card-width: 420px;
+        card-height: 340px;
+        closed => { root.open = false; }
+
+        // Name
+        FormField {
+            label: "NAME";
+            text <=> root.name-text;
+            placeholder: "e.g. my-backend";
+            error: root.name-error;
+            edited(t) => {
+                root.name-text = t;
+                root.name-error = "";
+            }
+        }
+
+        // Repo path
+        FormField {
+            label: "REPOSITORY PATH";
+            text <=> root.repo-path-text;
+            placeholder: "/absolute/path/to/repo";
+            error: root.repo-path-error;
+            edited(t) => {
+                root.repo-path-text = t;
+                root.repo-path-error = "";
+            }
+        }
+
+        // Base branch
+        FormField {
+            label: "BASE BRANCH";
+            text <=> root.base-branch-text;
+            placeholder: "main";
+            edited(t) => { root.base-branch-text = t; }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        // Actions
+        HorizontalLayout {
+            spacing: Tokens.space-2;
+            Rectangle { horizontal-stretch: 1; }
+
+            Button {
+                text: "Cancel";
+                variant: "outline";
+                size: "sm";
+                clicked => { root.open = false; }
+            }
+
+            Button {
+                text: "Create";
+                variant: "default";
+                size: "sm";
+                clicked => { root.submit(); }
+            }
+        }
+    }
+}

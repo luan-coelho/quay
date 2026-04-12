@@ -1,0 +1,97 @@
+// Polish 13 — bottom status bar showing per-column counts and live
+// session info. The 8 properties below are pushed by `refresh_kanban`
+// in Rust on every refresh; nothing in here mutates state.
+
+import { Tokens } from "../tokens.slint";
+
+export component StatusBar inherits Rectangle {
+    in property <int> stats-backlog: 0;
+    in property <int> stats-planning: 0;
+    in property <int> stats-implementation: 0;
+    in property <int> stats-review: 0;
+    in property <int> stats-done: 0;
+    in property <int> stats-misc: 0;
+    in property <int> stats-sessions: 0;
+    in property <int> stats-total: 0;
+
+    background: Tokens.card;
+
+    Rectangle {
+        x: 0; y: 0;
+        width: parent.width; height: 1px;
+        background: Tokens.border;
+    }
+
+    HorizontalLayout {
+        padding-left: Tokens.space-3;
+        padding-right: Tokens.space-3;
+        spacing: Tokens.space-3;
+        alignment: start;
+
+        Text {
+            text: "Backlog " + root.stats-backlog;
+            color: Tokens.muted-foreground;
+            font-size: Tokens.text-xs;
+            font-family: Tokens.font-mono;
+            vertical-alignment: center;
+        }
+        Text { text: "·"; color: Tokens.muted-foreground; font-size: Tokens.text-xs; vertical-alignment: center; }
+        Text {
+            text: "Planning " + root.stats-planning;
+            color: Tokens.muted-foreground;
+            font-size: Tokens.text-xs;
+            font-family: Tokens.font-mono;
+            vertical-alignment: center;
+        }
+        Text { text: "·"; color: Tokens.muted-foreground; font-size: Tokens.text-xs; vertical-alignment: center; }
+        Text {
+            text: "Impl " + root.stats-implementation;
+            color: Tokens.muted-foreground;
+            font-size: Tokens.text-xs;
+            font-family: Tokens.font-mono;
+            vertical-alignment: center;
+        }
+        Text { text: "·"; color: Tokens.muted-foreground; font-size: Tokens.text-xs; vertical-alignment: center; }
+        Text {
+            text: "Review " + root.stats-review;
+            color: Tokens.muted-foreground;
+            font-size: Tokens.text-xs;
+            font-family: Tokens.font-mono;
+            vertical-alignment: center;
+        }
+        Text { text: "·"; color: Tokens.muted-foreground; font-size: Tokens.text-xs; vertical-alignment: center; }
+        Text {
+            text: "Done " + root.stats-done;
+            color: Tokens.muted-foreground;
+            font-size: Tokens.text-xs;
+            font-family: Tokens.font-mono;
+            vertical-alignment: center;
+        }
+        Text { text: "·"; color: Tokens.muted-foreground; font-size: Tokens.text-xs; vertical-alignment: center; }
+        Text {
+            text: "Misc " + root.stats-misc;
+            color: Tokens.muted-foreground;
+            font-size: Tokens.text-xs;
+            font-family: Tokens.font-mono;
+            vertical-alignment: center;
+        }
+
+        Rectangle { horizontal-stretch: 1; }
+
+        Text {
+            text: root.stats-sessions + " live session" + (root.stats-sessions == 1 ? "" : "s");
+            color: root.stats-sessions > 0 ? Tokens.kind-enhancement : Tokens.muted-foreground;
+            font-size: Tokens.text-xs;
+            font-family: Tokens.font-mono;
+            vertical-alignment: center;
+        }
+        Text { text: "·"; color: Tokens.muted-foreground; font-size: Tokens.text-xs; vertical-alignment: center; }
+        Text {
+            text: root.stats-total + " tasks total";
+            color: Tokens.muted-foreground;
+            font-size: Tokens.text-xs;
+            font-family: Tokens.font-mono;
+            vertical-alignment: center;
+        }
+    }
+}

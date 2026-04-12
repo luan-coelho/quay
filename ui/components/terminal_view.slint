@@ -1,0 +1,86 @@
+// PTY terminal pane — renders the live framebuffer image driven by
+// `wiring::poll_timer` in main.rs. Owns the FocusScope so keyboard
+// input flows through `key-pressed`. The empty-state placeholder
+// (Polish 29) appears when no task is selected.
+
+import { IconSet } from "@lucide";
+import { Tokens } from "../tokens.slint";
+import { LucideIcon } from "atoms.slint";
+
+export component TerminalView {
+    in property <image> frame;
+    in property <string> active-task-id;
+    callback key-pressed(string, bool, bool, bool, bool);
+    // Slint requires the FocusScope reference to be requestable from
+    // the parent so the window-level `init` callback can call .focus()
+    // on it. Renamed from `focus` to `focus-input` to avoid colliding
+    // with the built-in `focus()` function on every Slint element.
+    public function focus-input() { focus-scope.focus(); }
+
+    focus-scope := FocusScope {
+        key-pressed(event) => {
+            root.key-pressed(
+                event.text,
+                event.modifiers.control,
+                event.modifiers.alt,
+                event.modifiers.shift,
+                event.modifiers.meta,
+            );
+            accept
+        }
+
+        Rectangle {
+            background: Tokens.background;
+            border-radius: Tokens.radius-md;
+            border-width: 1px;
+            border-color: Tokens.border;
+            clip: true;
+
+            Image {
+                source: root.frame;
+                x: 0; y: 0;
+                width: parent.width;
+                height: parent.height;
+                image-fit: contain;
+                image-rendering: pixelated;
+            }
+
+            // Polish 29 — empty state. Glyph + title + actionable hint
+            // matching the kanban empty state from Polish 28.
+            Rectangle {
+                visible: root.active-task-id == "";
+                background: Tokens.background;
+                VerticalLayout {
+                    x: 0;
+                    y: (parent.height - self.preferred-height) / 2;
+                    width: parent.width;
+                    spacing: Tokens.space-2 + 2px;
+                    alignment: center;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        LucideIcon {
+                            icon: IconSet.Play;
+                            size: 48px;
+                            stroke: Tokens.muted-foreground;
+                            stroke-width: 1.5;
+                        }
+                    }
+                    Text {
+                        text: "No active session";
+                        color: Tokens.foreground;
+                        font-size: Tokens.text-lg;
+                        font-weight: Tokens.weight-semibold;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: "Click a task in the kanban, then press Plan or Implement.";
+                        color: Tokens.muted-foreground;
+                        font-size: Tokens.text-sm;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

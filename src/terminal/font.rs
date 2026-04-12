@@ -1,22 +1,26 @@
 //! Monospace glyph atlas built on top of `fontdue`.
 //!
-//! Loads JetBrains Mono Regular (bundled via `include_bytes!`) once at startup,
+//! Loads Geist Mono Regular (bundled via `include_bytes!`) once at startup,
 //! computes the cell metrics and pre-rasterizes the printable ASCII range. Non-
 //! ASCII glyphs are rasterized lazily on first use and cached so that typical
 //! streams of terminal output pay the rasterization cost at most once per char.
 //!
 //! All glyphs are stored as 8-bit alpha coverage masks — the renderer in
 //! `render.rs` blends them against the cell foreground/background colours.
+//!
+//! The terminal atlas uses the same monospace face (Geist Mono) that the
+//! Slint chrome loads via `Tokens.font-mono`, so there's a single coherent
+//! typographic identity between the PTY surface and the surrounding UI.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 
 use fontdue::{Font, FontSettings};
 
-/// Bundled font. JetBrains Mono Regular — Apache-2.0, fully compatible with
-/// our `MIT OR Apache-2.0` license.
+/// Bundled font. Geist Mono Regular — SIL Open Font License, fully compatible
+/// with our `MIT OR Apache-2.0` license.
 pub const FONT_DATA: &[u8] =
-    include_bytes!("../../assets/fonts/JetBrainsMono-Regular.ttf");
+    include_bytes!("../../assets/fonts/GeistMono-Regular.ttf");
 
 /// A single rasterized glyph: an alpha-coverage bitmap plus positioning offsets.
 #[derive(Clone)]
@@ -46,7 +50,7 @@ impl GlyphAtlas {
     /// 16.0–18.0 for comfortable reading on a typical HiDPI display.
     pub fn new(font_size: f32) -> Self {
         let font = Font::from_bytes(FONT_DATA, FontSettings::default())
-            .expect("bundled JetBrains Mono font must be valid");
+            .expect("bundled Geist Mono font must be valid");
 
         // Monospace: use 'M' as the canonical cell width reference.
         let (m_metrics, _) = font.rasterize('M', font_size);
@@ -54,7 +58,7 @@ impl GlyphAtlas {
 
         let lm = font
             .horizontal_line_metrics(font_size)
-            .expect("JetBrains Mono has horizontal line metrics");
+            .expect("Geist Mono has horizontal line metrics");
         let cell_h = (lm.ascent - lm.descent + lm.line_gap).ceil() as usize;
         let baseline = lm.ascent.round() as usize;
 

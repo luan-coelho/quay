@@ -51,6 +51,11 @@ anyhow = "1"
 which = "6"
 sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 
+# Form validation — declarative #[validate(...)] attributes on form
+# structs. Used by `src/wiring/validation.rs` to surface inline field
+# errors in the modal forms (NewTask / NewProject / DescriptionPanel).
+validator = { version = "0.20", features = ["derive"] }
+
 # Phase 7 editor
 syntect = { version = "5", default-features = false, features = ["default-fancy"] }
 ropey = "1"

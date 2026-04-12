@@ -147,23 +147,32 @@ fn append_children(
     Ok(())
 }
 
-/// Polish 40 — pick a glyph + RGB color for a file tree entry based
-/// on its kind and (for files) its lowercase extension. The result
-/// is consumed by the Slint side via `FileEntryData::icon` /
-/// `icon_r` / `icon_g` / `icon_b`.
+/// Polish 40 + 40b — pick a Lucide icon name + RGB stroke color
+/// for a file tree entry based on its kind and (for files) its
+/// lowercase extension. The result is consumed by the Slint side
+/// via `FileEntryData::icon` / `icon_r` / `icon_g` / `icon_b`.
 ///
-/// Returns `(glyph, (r, g, b))`.
+/// Returns `(icon_name, (r, g, b))` where `icon_name` is one of
+/// the supported Lucide identifiers — the Slint file tree row
+/// has a parallel `if entry.icon == "X": LucideIcon { icon:
+/// IconSet.X; … }` chain that resolves the string to the actual
+/// `IconSet` constant. Adding a new icon means: (a) returning a
+/// new name from this fn, and (b) appending one branch in Slint.
 ///
-/// Glyph palette:
-/// - Directory: `▤` in Lanes blue
-/// - Code (rust/ts/js/py/go/rb/c/cpp/etc): `◆` colored by language
-/// - Markdown / text docs: `≡` muted
-/// - Config (json/toml/yaml/ini): `▦` muted
-/// - Image / media: `▣` pink
-/// - Default file: `·` muted gray
+/// Icon palette (all from `lucide-slint`):
+/// - Directory: `Folder` in Lanes blue
+/// - Code (rust/ts/js/py/go/rb/c/cpp/etc): `FileCode` colored by language
+/// - Markdown / text docs: `FileText` muted
+/// - Config (json/toml/yaml/ini): `FileBraces` colored by family
+/// - Lock files: `FileLock` muted
+/// - Shell scripts: `FileTerminal` greenish
+/// - Image: `FileImage` pink
+/// - Audio / video: `FileMusic` / `FileVideoCamera`
+/// - Archive: `FileArchive` brown
+/// - Default file: `File` muted gray
 pub fn pick_file_icon(name: &str, kind: &EntryKind) -> (&'static str, (u8, u8, u8)) {
     if matches!(kind, EntryKind::Directory) {
-        return ("▤", (96, 165, 250)); // kind-feature blue
+        return ("Folder", (96, 165, 250)); // kind-feature blue
     }
     let ext = name
         .rsplit_once('.')
@@ -172,50 +181,57 @@ pub fn pick_file_icon(name: &str, kind: &EntryKind) -> (&'static str, (u8, u8, u
 
     match ext.as_str() {
         // Rust
-        "rs" => ("◆", (206, 66, 43)),
+        "rs" => ("FileCode", (206, 66, 43)),
         // TypeScript / JavaScript
-        "ts" | "tsx" => ("◆", (49, 120, 198)),
-        "js" | "jsx" | "mjs" | "cjs" => ("◆", (240, 219, 79)),
+        "ts" | "tsx" => ("FileCode", (49, 120, 198)),
+        "js" | "jsx" | "mjs" | "cjs" => ("FileCode", (240, 219, 79)),
         // Python
-        "py" | "pyi" => ("◆", (55, 118, 171)),
+        "py" | "pyi" => ("FileCode", (55, 118, 171)),
         // Go
-        "go" => ("◆", (0, 173, 216)),
+        "go" => ("FileCode", (0, 173, 216)),
         // Ruby
-        "rb" | "erb" => ("◆", (204, 52, 45)),
+        "rb" | "erb" => ("FileCode", (204, 52, 45)),
         // C / C++
-        "c" | "h" => ("◆", (85, 85, 85)),
-        "cpp" | "cc" | "cxx" | "hpp" | "hxx" => ("◆", (243, 75, 125)),
+        "c" | "h" => ("FileCode", (85, 85, 85)),
+        "cpp" | "cc" | "cxx" | "hpp" | "hxx" => ("FileCode", (243, 75, 125)),
         // Java / Kotlin / Scala
-        "java" => ("◆", (176, 114, 25)),
-        "kt" | "kts" => ("◆", (160, 116, 206)),
-        "scala" | "sc" => ("◆", (220, 50, 47)),
+        "java" => ("FileCode", (176, 114, 25)),
+        "kt" | "kts" => ("FileCode", (160, 116, 206)),
+        "scala" | "sc" => ("FileCode", (220, 50, 47)),
         // Web markup / styles
-        "html" | "htm" => ("◆", (227, 79, 38)),
-        "css" | "scss" | "sass" | "less" => ("◆", (38, 77, 228)),
+        "html" | "htm" => ("FileCode", (227, 79, 38)),
+        "css" | "scss" | "sass" | "less" => ("FileCode", (38, 77, 228)),
         // Shell
-        "sh" | "bash" | "zsh" | "fish" => ("◆", (137, 224, 81)),
+        "sh" | "bash" | "zsh" | "fish" => ("FileTerminal", (137, 224, 81)),
         // Slint
-        "slint" => ("◆", (43, 161, 199)),
+        "slint" => ("FileCode", (43, 161, 199)),
         // Markdown / docs
-        "md" | "markdown" | "rst" | "txt" => ("≡", (167, 175, 184)),
-        // Config files
-        "json" | "json5" | "jsonc" => ("▦", (133, 161, 199)),
-        "toml" => ("▦", (158, 124, 89)),
-        "yaml" | "yml" => ("▦", (203, 75, 22)),
-        "ini" | "cfg" | "conf" | "env" => ("▦", (153, 153, 153)),
+        "md" | "markdown" | "rst" | "txt" => ("FileText", (167, 175, 184)),
+        // Config files (JSON / TOML / YAML / INI)
+        "json" | "json5" | "jsonc" => ("FileBraces", (133, 161, 199)),
+        "toml" => ("FileBraces", (158, 124, 89)),
+        "yaml" | "yml" => ("FileBraces", (203, 75, 22)),
+        "ini" | "cfg" | "conf" | "env" => ("FileBraces", (153, 153, 153)),
         // Lock files
-        "lock" => ("▦", (108, 113, 124)),
-        // Images / media
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "ico" => ("▣", (245, 138, 130)),
-        "svg" => ("▣", (255, 178, 47)),
-        "pdf" => ("▣", (220, 50, 47)),
-        // Audio / video
-        "mp3" | "wav" | "flac" | "ogg" => ("▣", (147, 112, 219)),
-        "mp4" | "mov" | "mkv" | "webm" | "avi" => ("▣", (147, 112, 219)),
+        "lock" => ("FileLock", (108, 113, 124)),
+        // Images
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "ico" => {
+            ("FileImage", (245, 138, 130))
+        }
+        "svg" => ("FileImage", (255, 178, 47)),
+        "pdf" => ("FileText", (220, 50, 47)),
+        // Audio
+        "mp3" | "wav" | "flac" | "ogg" => ("FileMusic", (147, 112, 219)),
+        // Video
+        "mp4" | "mov" | "mkv" | "webm" | "avi" => {
+            ("FileVideoCamera", (147, 112, 219))
+        }
         // Archives
-        "zip" | "tar" | "gz" | "bz2" | "xz" | "7z" => ("◫", (180, 156, 96)),
+        "zip" | "tar" | "gz" | "bz2" | "xz" | "7z" => {
+            ("FileArchive", (180, 156, 96))
+        }
         // Default
-        _ => ("·", (108, 113, 124)),
+        _ => ("File", (108, 113, 124)),
     }
 }
 
@@ -392,48 +408,52 @@ mod tests {
         assert_eq!(entries[1].kind, EntryKind::File);
     }
 
-    // Polish 40 — pick_file_icon coverage.
+    // Polish 40 + 40b — pick_file_icon coverage (Lucide names).
 
     #[test]
-    fn pick_icon_directory_returns_blue_grid() {
+    fn pick_icon_directory_returns_folder() {
         let (g, c) = pick_file_icon("anything", &EntryKind::Directory);
-        assert_eq!(g, "▤");
+        assert_eq!(g, "Folder");
         assert_eq!(c, (96, 165, 250));
     }
 
     #[test]
     fn pick_icon_known_extensions() {
         let cases = [
-            ("main.rs", "◆", (206, 66, 43)),
-            ("App.tsx", "◆", (49, 120, 198)),
-            ("index.js", "◆", (240, 219, 79)),
-            ("setup.py", "◆", (55, 118, 171)),
-            ("go.go", "◆", (0, 173, 216)),
-            ("README.md", "≡", (167, 175, 184)),
-            ("Cargo.toml", "▦", (158, 124, 89)),
-            ("config.yaml", "▦", (203, 75, 22)),
-            ("logo.svg", "▣", (255, 178, 47)),
-            ("photo.png", "▣", (245, 138, 130)),
-            ("Cargo.lock", "▦", (108, 113, 124)),
+            ("main.rs", "FileCode", (206, 66, 43)),
+            ("App.tsx", "FileCode", (49, 120, 198)),
+            ("index.js", "FileCode", (240, 219, 79)),
+            ("setup.py", "FileCode", (55, 118, 171)),
+            ("go.go", "FileCode", (0, 173, 216)),
+            ("README.md", "FileText", (167, 175, 184)),
+            ("Cargo.toml", "FileBraces", (158, 124, 89)),
+            ("config.yaml", "FileBraces", (203, 75, 22)),
+            ("logo.svg", "FileImage", (255, 178, 47)),
+            ("photo.png", "FileImage", (245, 138, 130)),
+            ("Cargo.lock", "FileLock", (108, 113, 124)),
+            ("script.sh", "FileTerminal", (137, 224, 81)),
+            ("song.mp3", "FileMusic", (147, 112, 219)),
+            ("clip.mp4", "FileVideoCamera", (147, 112, 219)),
+            ("backup.zip", "FileArchive", (180, 156, 96)),
         ];
-        for (name, glyph, color) in cases {
+        for (name, icon, color) in cases {
             let (g, c) = pick_file_icon(name, &EntryKind::File);
-            assert_eq!(g, glyph, "glyph for {name}");
+            assert_eq!(g, icon, "icon for {name}");
             assert_eq!(c, color, "color for {name}");
         }
     }
 
     #[test]
-    fn pick_icon_unknown_extension_falls_back_to_dot() {
+    fn pick_icon_unknown_extension_falls_back_to_file() {
         let (g, c) = pick_file_icon("mystery.xyz", &EntryKind::File);
-        assert_eq!(g, "·");
+        assert_eq!(g, "File");
         assert_eq!(c, (108, 113, 124));
     }
 
     #[test]
-    fn pick_icon_no_extension_falls_back_to_dot() {
+    fn pick_icon_no_extension_falls_back_to_file() {
         let (g, _) = pick_file_icon("Makefile", &EntryKind::File);
-        assert_eq!(g, "·");
+        assert_eq!(g, "File");
     }
 
     #[test]

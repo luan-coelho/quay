@@ -1,0 +1,370 @@
+// Sidebar / nav / chip rows. Most of these are 22-30px tall affordances
+// that pair an icon with a label. Grouped together because they share
+// the same hover/select animation pattern and the same single-callback
+// shape (`clicked()`).
+
+import { IconSet } from "@lucide";
+import { Tokens } from "../tokens.slint";
+import { MenuItemData, ProjectData } from "../data.slint";
+import { LucideIcon } from "atoms.slint";
+
+// Polish 41 — single row in the tab management dropdown menu.
+// Left: action label (full-width). Right: optional shortcut hint.
+// `enabled: bool` greys out + disables the click when the action
+// doesn't apply (e.g. "Close other tabs" with only 1 tab open).
+export component TabMenuRow inherits Rectangle {
+    in property <string> label;
+    in property <string> shortcut;
+    in property <bool> enabled: true;
+    callback clicked();
+
+    height: 26px;
+    border-radius: Tokens.radius-sm;
+    background: enabled && ta.has-hover ? Tokens.accent : transparent;
+    animate background { duration: 100ms; easing: ease-out; }
+
+    ta := TouchArea {
+        clicked => { if root.enabled { root.clicked(); } }
+    }
+
+    HorizontalLayout {
+        padding-left: Tokens.space-3;
+        padding-right: Tokens.space-3;
+        spacing: Tokens.space-2;
+        alignment: start;
+
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: label;
+                color: enabled ? Tokens.foreground : Tokens.muted-foreground;
+                font-size: Tokens.text-sm;
+                font-weight: Tokens.weight-medium;
+                vertical-alignment: center;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: shortcut;
+                color: enabled ? Tokens.muted-foreground : rgba(163, 163, 163, 40%);
+                font-size: Tokens.text-xs;
+                font-family: Tokens.font-mono;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+// Polish 26 — single row in the keyboard shortcuts overlay.
+// Left: chip showing the key combo. Right: human description.
+export component ShortcutRow inherits Rectangle {
+    in property <string> keys;
+    in property <string> label;
+
+    height: 22px;
+    background: transparent;
+
+    HorizontalLayout {
+        spacing: Tokens.space-3;
+        alignment: start;
+
+        Rectangle {
+            width: 80px;
+            height: 18px;
+            border-radius: Tokens.radius-sm;
+            border-width: 1px;
+            border-color: Tokens.border;
+            background: Tokens.secondary;
+            Text {
+                text: keys;
+                color: Tokens.foreground;
+                font-size: Tokens.text-xs;
+                font-family: Tokens.font-mono;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: label;
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-sm;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+export component MenuRow inherits Rectangle {
+    in property <MenuItemData> item;
+    // Polish 24: when the sidebar is collapsed, only the glyph
+    // column survives. Label and shortcut hide entirely.
+    in property <bool> compact: false;
+    callback clicked();
+
+    // Polish 20 — when the shortcut slot carries the `submenu` sentinel
+    // (set in `src/main.rs`), the row is acting as a submenu indicator
+    // (e.g. Quick Action) and the slot renders a Lucide chevron instead
+    // of a `⌘N`-style hint.
+    property <bool> is-submenu: item.shortcut == "submenu";
+
+    height: 26px;
+    border-radius: Tokens.radius-md;
+    background: hover.has-hover ? Tokens.sidebar-accent : transparent;
+    // Polish 30 — smooth menu row hover.
+    animate background { duration: 120ms; easing: ease-out; }
+
+    hover := TouchArea { clicked => { root.clicked(); } }
+
+    HorizontalLayout {
+        padding-left: compact ? 0px : Tokens.space-3;
+        padding-right: compact ? 0px : Tokens.space-3;
+        spacing: Tokens.space-3;
+        alignment: compact ? center : start;
+
+        VerticalLayout {
+            alignment: center;
+            // Lucide icon picked from `item.id`. The `glyph` field on
+            // `MenuItemData` is no longer rendered — kept only as a
+            // hint for accessibility / future tooling.
+            if item.id == "new-task":     LucideIcon { icon: IconSet.MessageSquarePlus; size: 15px; }
+            if item.id == "new-terminal": LucideIcon { icon: IconSet.SquareTerminal;    size: 15px; }
+            if item.id == "quick-action": LucideIcon { icon: IconSet.Zap;               size: 15px; }
+            if item.id == "configure":    LucideIcon { icon: IconSet.Settings;          size: 15px; }
+            if item.id == "sessions":     LucideIcon { icon: IconSet.List;              size: 15px; }
+            if item.id == "worktrees":    LucideIcon { icon: IconSet.GitBranch;         size: 15px; }
+        }
+        if !compact: VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: item.label;
+                color: hover.has-hover ? Tokens.sidebar-accent-foreground : Tokens.muted-foreground;
+                font-size: Tokens.text-sm;
+                font-weight: Tokens.weight-medium;
+                vertical-alignment: center;
+            }
+        }
+        if !compact: VerticalLayout {
+            alignment: center;
+            // Submenu indicator → Lucide chevron. Plain shortcut hint
+            // (e.g. ⌘N) → text. Empty shortcut → nothing.
+            if is-submenu: LucideIcon {
+                icon: IconSet.ChevronRight;
+                size: 13px;
+                stroke: Tokens.muted-foreground;
+            }
+            if !is-submenu: Text {
+                text: item.shortcut;
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-xs;
+                font-family: Tokens.font-mono;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+export component ProjectRow inherits Rectangle {
+    in property <ProjectData> project;
+    in property <bool> selected;
+    // Polish 24: compact mode for collapsed sidebar — name hides,
+    // only the chevron remains (re-purposed as a folder dot icon).
+    in property <bool> compact: false;
+    callback clicked();
+
+    height: 26px;
+    border-radius: Tokens.radius-md;
+    background: selected ? Tokens.sidebar-accent
+              : ta.has-hover ? Tokens.sidebar-accent
+              : transparent;
+    // Polish 30 — smooth project row hover/select.
+    animate background { duration: 120ms; easing: ease-out; }
+
+    ta := TouchArea { clicked => { root.clicked(); } }
+
+    HorizontalLayout {
+        padding-left: compact ? 0px : Tokens.space-3;
+        padding-right: compact ? 0px : Tokens.space-3;
+        spacing: Tokens.space-3;
+        alignment: compact ? center : start;
+        VerticalLayout {
+            alignment: center;
+            // In compact (collapsed sidebar) mode the row degenerates to
+            // a folder glyph; in expanded mode it's a chevron that flips
+            // when the project is selected.
+            if compact: LucideIcon {
+                icon: IconSet.Folder;
+                size: 14px;
+                stroke: root.selected ? Tokens.kind-feature : Tokens.muted-foreground;
+            }
+            if !compact: LucideIcon {
+                icon: root.selected ? IconSet.ChevronDown : IconSet.ChevronRight;
+                size: 12px;
+                stroke: root.selected ? Tokens.kind-feature : Tokens.muted-foreground;
+            }
+        }
+        if !compact: VerticalLayout {
+            alignment: center;
+            Text {
+                text: project.name;
+                color: root.selected ? Tokens.foreground : Tokens.muted-foreground;
+                font-size: Tokens.text-sm;
+                font-weight: root.selected ? Tokens.weight-semibold : Tokens.weight-medium;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
+export component FilterChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> selected;
+    callback clicked();
+
+    height: 24px;
+    width: chip-row.preferred-width + 16px;
+    border-radius: Tokens.radius-sm;
+    border-width: 1px;
+    border-color: selected ? Tokens.ring : Tokens.border;
+    background: selected ? Tokens.secondary : transparent;
+    // Polish 30 — smooth filter chip toggle.
+    animate background { duration: 120ms; easing: ease-out; }
+    animate border-color { duration: 120ms; easing: ease-out; }
+
+    TouchArea { clicked => { root.clicked(); } }
+
+    chip-row := HorizontalLayout {
+        padding-left: Tokens.space-2;
+        padding-right: Tokens.space-2;
+        spacing: Tokens.space-2 - 2px;
+        alignment: center;
+        // Polish 23: kind glyph on the left of the label, matching
+        // the Lanes reference. Color is muted because filter chips
+        // aren't kinded.
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "◆";
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-xs;
+                vertical-alignment: center;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: selected ? Tokens.foreground : Tokens.muted-foreground;
+                font-size: Tokens.text-sm;
+                font-weight: selected ? Tokens.weight-semibold : Tokens.weight-medium;
+                vertical-alignment: center;
+            }
+        }
+        // Polish 23: × only renders when the chip is the active
+        // filter, removing visual noise from the inactive ones.
+        if root.selected: VerticalLayout {
+            alignment: center;
+            LucideIcon {
+                icon: IconSet.X;
+                size: 11px;
+                stroke: Tokens.muted-foreground;
+            }
+        }
+    }
+}
+
+export component SectionHeader inherits Rectangle {
+    in property <string> label;
+    in property <int> count;
+    height: 28px;
+    background: Tokens.card;
+
+    HorizontalLayout {
+        padding-left: Tokens.space-3;
+        padding-right: Tokens.space-3;
+        spacing: Tokens.space-2;
+        alignment: start;
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-sm;
+                font-weight: Tokens.weight-semibold;
+                vertical-alignment: center;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: count-text.preferred-width + 10px;
+                height: 14px;
+                border-radius: Tokens.radius-sm;
+                background: Tokens.muted;
+                count-text := Text {
+                    text: root.count;
+                    color: Tokens.muted-foreground;
+                    font-size: Tokens.text-xs;
+                    font-weight: Tokens.weight-medium;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+export component RightTab inherits Rectangle {
+    in property <string> label;
+    // `tab-kind` is a discriminator string (e.g. "terminal", "description")
+    // that selects the Lucide icon below. Stored as a string instead of an
+    // enum because Slint doesn't expose Rust enums for property typing.
+    in property <string> tab-kind;
+    in property <bool> selected;
+    callback clicked();
+
+    height: 26px;
+    width: row.preferred-width + 18px;
+    border-radius: Tokens.radius-md;
+    border-width: 1px;
+    border-color: selected ? Tokens.ring : Tokens.border;
+    background: selected ? Tokens.secondary : (ta.has-hover ? Tokens.accent : transparent);
+    animate background { duration: 120ms; easing: ease-out; }
+    animate border-color { duration: 120ms; easing: ease-out; }
+
+    ta := TouchArea { clicked => { root.clicked(); } }
+
+    row := HorizontalLayout {
+        padding-left: Tokens.space-2;
+        padding-right: Tokens.space-2;
+        spacing: Tokens.space-2 - 2px;
+        alignment: center;
+
+        VerticalLayout {
+            alignment: center;
+            if tab-kind == "terminal":   LucideIcon { icon: IconSet.Terminal;  size: 13px; stroke: selected ? Tokens.foreground : Tokens.muted-foreground; }
+            if tab-kind == "description":LucideIcon { icon: IconSet.FileText;  size: 13px; stroke: selected ? Tokens.foreground : Tokens.muted-foreground; }
+            if tab-kind == "git":        LucideIcon { icon: IconSet.GitBranch; size: 13px; stroke: selected ? Tokens.foreground : Tokens.muted-foreground; }
+            if tab-kind == "files":      LucideIcon { icon: IconSet.Folder;    size: 13px; stroke: selected ? Tokens.foreground : Tokens.muted-foreground; }
+            if tab-kind == "history":    LucideIcon { icon: IconSet.History;   size: 13px; stroke: selected ? Tokens.foreground : Tokens.muted-foreground; }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: selected ? Tokens.foreground : Tokens.muted-foreground;
+                font-size: Tokens.text-sm;
+                font-weight: selected ? Tokens.weight-semibold : Tokens.weight-medium;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

@@ -1,0 +1,648 @@
+// Atomic UI primitives — small, single-responsibility components used as
+// building blocks throughout the app. Each one consumes only design
+// tokens and a handful of inline properties; no data structs, no state
+// beyond what the parent passes in.
+
+import { IconDisplay, IconSet } from "@lucide";
+import { Tokens } from "../tokens.slint";
+
+// Lucide icon wrapper. All Lucide icons in the app go through this so the
+// default size + stroke colour stay coherent with the design tokens. Override
+// `size`, `stroke`, `stroke-width` (or `stroke-fill` for filled variants)
+// per call site as needed. The `IconDisplay` machinery comes from the
+// `lucide-slint` build dep — see `build.rs`. Named `LucideIcon` (not `Icon`)
+// because `Icon` is the name of the struct that holds the path data inside
+// `lucide-slint`'s `IconSet`, and Slint doesn't let component and struct
+// names collide.
+export component LucideIcon inherits IconDisplay {
+    size: 14px;
+    stroke: Tokens.muted-foreground;
+    stroke-width: 2;
+}
+
+export component KindDiamond inherits Rectangle {
+    in property <string> kind;
+    width: 12px;
+    height: 12px;
+    background: transparent;
+
+    Text {
+        text: "◆";
+        color: kind == "enhancement" ? Tokens.kind-enhancement
+              : kind == "feature" ? Tokens.kind-feature
+              : kind == "bug" ? Tokens.kind-bug
+              : Tokens.muted-foreground;
+        font-size: Tokens.text-sm;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
+// Polish 22 — busy spinner. Slint 1.15 has no native widget and no
+// rotation-angle on Rectangle/Image, so we drive a single-character
+// braille glyph from a window-wide `spinner-glyph` property cycled
+// in the existing `poll_timer` (~96 ms cadence). All instances
+// share the same global phase — exactly how every CLI spinner
+// (cargo, npm, rustup, git, …) works in practice. Reference Lanes
+// uses an SVG arc; this is the closest pure-text equivalent we
+// can render without adding deps.
+//
+// `font-family: Tokens.font-mono` ("Geist Mono") is critical:
+// without it some of the 8 braille glyphs fall back to a sans font
+// with different advance widths and the spinner visually "jitters".
+export component Spinner inherits Rectangle {
+    in property <string> glyph: "⣾";
+    // Property name avoids the deprecated `color` alias on Rectangle.
+    in property <color> glyph-color: Tokens.kind-feature;
+    in property <length> size: 12px;
+
+    width: size;
+    height: size;
+    background: transparent;
+
+    Text {
+        text: glyph;
+        color: glyph-color;
+        font-size: Tokens.text-sm;
+        font-family: Tokens.font-mono;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
+export component KindChip inherits Rectangle {
+    in property <string> kind;
+    height: 16px;
+    width: chip-content.preferred-width + 14px;
+    border-radius: Tokens.radius-md;
+    border-width: 1px;
+    border-color: Tokens.border;
+    background: transparent;
+
+    chip-content := HorizontalLayout {
+        padding-left: 6px;
+        padding-right: 6px;
+        spacing: 5px;
+        alignment: center;
+
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 6px;
+                height: 6px;
+                border-radius: 3px;
+                background: kind == "enhancement" ? Tokens.kind-enhancement
+                           : kind == "feature" ? Tokens.kind-feature
+                           : kind == "bug" ? Tokens.kind-bug
+                           : Tokens.muted-foreground;
+            }
+        }
+        Text {
+            text: kind == "enhancement" ? "Enhancement"
+                 : kind == "feature" ? "Feature"
+                 : kind == "bug" ? "Bug"
+                 : kind;
+            color: Tokens.muted-foreground;
+            font-size: Tokens.text-xs;
+            font-weight: Tokens.weight-medium;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// Polish 20 — small circular avatar shown in the title bar (and
+// reusable for any future "user" / "agent" identity slot). The
+// initial defaults to "L" because Quay has no user system yet —
+// the slot exists purely as a visual anchor matching the Lanes
+// reference screenshot.
+export component Avatar inherits Rectangle {
+    in property <length> size: 22px;
+    in property <string> initial: "L";
+    in property <color> bg: Tokens.accent-pink-coral;
+
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    background: bg;
+
+    Text {
+        text: initial;
+        color: #1a0a0a;
+        font-size: Tokens.text-sm;
+        font-weight: Tokens.weight-bold;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
+// Polish 19 — reusable × close button for modal headers and inline
+// clear actions. Matches the existing open-coded blocks (rounded
+// circle, red-tinted hover, kind-bug glyph color on hover) so all
+// modal close affordances stay visually consistent.
+//
+// Keyboard focus ring: when the CloseButton is keyboard-focused
+// a `ring`-coloured outline replaces the transparent border,
+// matching the shadcn focus semantics on the generic Button atom.
+export component CloseButton inherits Rectangle {
+    in property <length> size: 22px;
+    callback clicked();
+
+    property <bool> has-focus: fs.has-focus;
+
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    border-width: has-focus ? 2px : 0px;
+    border-color: Tokens.ring;
+    background: ta.has-hover ? rgba(229, 73, 62, 18%) : transparent;
+    // Polish 30 — smooth close-button hover.
+    animate background { duration: 120ms; easing: ease-out; }
+
+    fs := FocusScope {
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" {
+                root.clicked();
+                accept
+            } else {
+                reject
+            }
+        }
+    }
+
+    ta := TouchArea {
+        clicked => {
+            fs.focus();
+            root.clicked();
+        }
+    }
+    LucideIcon {
+        icon: IconSet.X;
+        size: 12px;
+        stroke: ta.has-hover ? Tokens.destructive : Tokens.muted-foreground;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// shadcn primitives — Button, Input, Badge, Card.
+//
+// These are the four base elements that power every form, modal,
+// and picker in the app. Each one exposes the same API as its
+// shadcn/ui React counterpart (variant, size, disabled, etc.) so
+// a designer familiar with shadcn can read the callsites without
+// reading Slint internals.
+// ─────────────────────────────────────────────────────────────
+
+// shadcn/ui Button. Variants map directly to the semantic tokens:
+// - `default`:     primary filled (bg: primary, fg: primary-foreground)
+// - `secondary`:   secondary surface filled
+// - `outline`:     transparent with Tokens.border
+// - `ghost`:       fully transparent, hover-only
+// - `destructive`: destructive filled
+// - `success`:     kind-enhancement tint (12% bg + colored border + colored text)
+//                  — preserves the Polish 39 "Implement" CTA styling.
+//
+// Sizes:
+// - `sm`:  height 28px, text-xs, padding-h 10px
+// - `md`:  height 32px, text-sm, padding-h 14px  (default)
+// - `lg`:  height 38px, text-base, padding-h 18px
+export component Button inherits Rectangle {
+    in property <string> text;
+    in property <string> variant: "default";
+    in property <string> size: "md";
+    in property <bool> disabled: false;
+    callback clicked();
+
+    // Derived metrics.
+    property <length> h:
+        size == "sm" ? 28px : size == "lg" ? 38px : 32px;
+    property <length> pad-h:
+        size == "sm" ? 10px : size == "lg" ? 18px : 14px;
+    property <length> fs:
+        size == "sm" ? Tokens.text-xs
+      : size == "lg" ? Tokens.text-base
+                     : Tokens.text-sm;
+
+    // Derived colours. `variant == "default"` is the shadcn primary.
+    // `success` uses a tinted-fill pattern (rgba over kind-enhancement)
+    // instead of a flat bg so the green CTA reads as a "Go" accent
+    // without overpowering the surface — matches the original Implement
+    // button from Polish 39.
+    property <color> base-bg:
+        variant == "secondary"   ? Tokens.secondary
+      : variant == "outline"     ? #00000000
+      : variant == "ghost"       ? #00000000
+      : variant == "destructive" ? Tokens.destructive
+      : variant == "success"     ? rgba(16, 185, 129, 12%)
+                                 : Tokens.primary;
+    property <color> hover-bg:
+        variant == "secondary"   ? Tokens.accent
+      : variant == "outline"     ? Tokens.accent
+      : variant == "ghost"       ? Tokens.accent
+      : variant == "destructive" ? Tokens.destructive
+      : variant == "success"     ? rgba(16, 185, 129, 24%)
+                                 : Tokens.primary;
+    property <color> fg:
+        variant == "secondary"   ? Tokens.secondary-foreground
+      : variant == "outline"     ? Tokens.foreground
+      : variant == "ghost"       ? Tokens.foreground
+      : variant == "destructive" ? Tokens.destructive-foreground
+      : variant == "success"     ? Tokens.kind-enhancement
+                                 : Tokens.primary-foreground;
+    // Border is used by outline + success. Success hover brightens
+    // the border from 40% → 70% alpha to echo the old Polish 39 state.
+    property <color> border-base:
+        variant == "outline" ? Tokens.border
+      : variant == "success" ? rgba(16, 185, 129, 40%)
+                             : #00000000;
+    property <color> border-hover:
+        variant == "outline" ? Tokens.border
+      : variant == "success" ? rgba(16, 185, 129, 70%)
+                             : #00000000;
+
+    // Focus ring — when the Button is keyboard-focused, the border
+    // is replaced by a 2px `ring`-colored outline. A FocusScope
+    // sibling provides keyboard focus + Space/Enter activation;
+    // the TouchArea still handles mouse clicks and nudges focus.
+    property <bool> has-focus: fs.has-focus;
+
+    height: h;
+    width: body.preferred-width + pad-h * 2;
+    border-radius: Tokens.radius-md;
+    border-width: has-focus ? 2px
+               : (variant == "outline" || variant == "success") ? 1px
+                                                                 : 0px;
+    border-color: has-focus ? Tokens.ring
+               : ta.has-hover ? border-hover
+                              : border-base;
+    background: disabled ? Tokens.muted
+              : ta.has-hover ? hover-bg
+                             : base-bg;
+    opacity: disabled ? 0.55 : 1.0;
+    animate background { duration: 120ms; easing: ease-out; }
+    animate border-color { duration: 120ms; easing: ease-out; }
+
+    fs := FocusScope {
+        key-pressed(event) => {
+            if (event.text == " " || event.text == "\n") && !root.disabled {
+                root.clicked();
+                accept
+            } else {
+                reject
+            }
+        }
+    }
+
+    ta := TouchArea {
+        clicked => {
+            if !root.disabled {
+                fs.focus();
+                root.clicked();
+            }
+        }
+    }
+
+    body := HorizontalLayout {
+        alignment: center;
+        Text {
+            text: root.text;
+            color: root.fg;
+            font-size: root.fs;
+            font-weight: Tokens.weight-semibold;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// shadcn/ui Input. Single-line text entry backed by a Slint
+// TextInput. Focus state bumps the border to Tokens.ring (shadcn
+// focus ring). Placeholder is rendered as a sibling Text element
+// that hides when the input has content.
+//
+// NOTE: this is a minimal wrapper — multi-line editing continues
+// to use TextEdit from std-widgets. This is aimed at single-line
+// form fields in modals (title, path, query, etc.).
+export component Input inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <bool> disabled: false;
+    in property <length> input-height: 32px;
+    // When `error-state` is true the border renders in `destructive`
+    // red (unconditionally — even when the field is unfocused) so a
+    // surrounding `FormField` can signal a validation failure without
+    // additional markup. The caller is responsible for toggling this
+    // back off when the underlying error is resolved.
+    in property <bool> error-state: false;
+    callback edited(string);
+    callback accepted(string);
+
+    height: input-height;
+    background: disabled ? Tokens.muted : Tokens.input;
+    border-radius: Tokens.radius-md;
+    border-width: 1px;
+    border-color: error-state ? Tokens.destructive
+                : ti.has-focus ? Tokens.ring
+                               : Tokens.border;
+    animate border-color { duration: 120ms; easing: ease-out; }
+
+    HorizontalLayout {
+        padding-left: Tokens.space-3;
+        padding-right: Tokens.space-3;
+        padding-top: Tokens.space-2 - 2px;
+        padding-bottom: Tokens.space-2 - 2px;
+
+        Rectangle {
+            background: transparent;
+            horizontal-stretch: 1;
+
+            if ti.text == "" && root.placeholder != "": Text {
+                text: root.placeholder;
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-base;
+                vertical-alignment: center;
+                horizontal-alignment: left;
+                width: parent.width;
+                height: parent.height;
+            }
+
+            ti := TextInput {
+                text: root.text;
+                color: Tokens.foreground;
+                font-size: Tokens.text-base;
+                single-line: true;
+                read-only: root.disabled;
+                selection-background-color: Tokens.secondary;
+                selection-foreground-color: Tokens.foreground;
+                vertical-alignment: center;
+                horizontal-alignment: left;
+                width: parent.width;
+                height: parent.height;
+                edited => {
+                    root.text = self.text;
+                    root.edited(self.text);
+                }
+                accepted => { root.accepted(self.text); }
+            }
+        }
+    }
+}
+
+// shadcn/ui Form primitive. Combines FormLabel + FormControl +
+// FormMessage into a single callsite so form callers don't have to
+// re-emit the same label/Input/error triad in every modal. Matches
+// the shadcn/react-hook-form ergonomic: pass an `error` string, and
+// if it's non-empty the Input border turns red and a message renders
+// below the control in the destructive color.
+//
+// Callers typically clear the error by writing `""` to the bound
+// MainWindow property from inside the `edited` callback — no
+// Rust round-trip is needed for the clear path.
+export component FormField inherits Rectangle {
+    in property <string> label;
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <string> error;
+    in property <bool> disabled: false;
+    in property <length> input-height: 32px;
+    callback edited(string);
+    callback accepted(string);
+
+    property <bool> has-error: error != "";
+
+    VerticalLayout {
+        spacing: Tokens.space-1;
+
+        // Label row (hidden if `label` is empty — some callsites want
+        // a bare Input with an error message but no uppercase label).
+        if root.label != "": Text {
+            text: root.label;
+            color: Tokens.muted-foreground;
+            font-size: Tokens.text-xs;
+            font-weight: Tokens.weight-bold;
+        }
+
+        Input {
+            text <=> root.text;
+            placeholder: root.placeholder;
+            disabled: root.disabled;
+            input-height: root.input-height;
+            error-state: root.has-error;
+            edited(t) => { root.edited(t); }
+            accepted(t) => { root.accepted(t); }
+        }
+
+        // Error message below the Input. Only rendered when non-empty
+        // so the FormField's preferred-height shrinks back to the
+        // baseline when the field becomes valid again.
+        if root.has-error: Text {
+            text: root.error;
+            color: Tokens.destructive;
+            font-size: Tokens.text-xs;
+            font-weight: Tokens.weight-medium;
+        }
+    }
+}
+
+// shadcn/ui Badge. Variants:
+// - `default`: primary tinted
+// - `secondary`: secondary surface
+// - `outline`: transparent + Tokens.border
+// - `destructive`: destructive tinted
+//
+// `custom-bg` / `custom-fg` override the derived colours for the
+// kanban label pills (which use per-label RGB values from SQLite).
+export component Badge inherits Rectangle {
+    in property <string> text;
+    in property <string> variant: "default";
+    in property <color> custom-bg: #00000000;  // transparent sentinel
+    in property <color> custom-fg: #00000000;
+    in property <length> badge-height: 18px;
+
+    property <bool> has-custom: custom-bg != #00000000;
+
+    property <color> derived-bg:
+        variant == "secondary"   ? Tokens.secondary
+      : variant == "outline"     ? #00000000
+      : variant == "destructive" ? Tokens.destructive
+                                 : Tokens.primary;
+    property <color> derived-fg:
+        variant == "secondary"   ? Tokens.secondary-foreground
+      : variant == "outline"     ? Tokens.foreground
+      : variant == "destructive" ? Tokens.destructive-foreground
+                                 : Tokens.primary-foreground;
+
+    height: badge-height;
+    width: label.preferred-width + 12px;
+    border-radius: Tokens.radius-sm;
+    border-width: variant == "outline" ? 1px : 0px;
+    border-color: Tokens.border;
+    background: has-custom ? custom-bg : derived-bg;
+
+    label := Text {
+        text: root.text;
+        color: has-custom ? custom-fg : derived-fg;
+        font-size: Tokens.text-xs;
+        font-weight: Tokens.weight-semibold;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        width: parent.width;
+        height: parent.height;
+    }
+}
+
+// shadcn/ui Card. A surface container with the standard
+// `card` bg + 1px `border` + `radius-lg`. The caller is
+// responsible for laying out children (Card is a pure surface
+// primitive, NOT a layout). This mirrors how shadcn/ui's React
+// `<Card>` behaves — it only styles, children-arrangement is
+// the caller's job via `<div>` or flex wrappers.
+export component Card inherits Rectangle {
+    background: Tokens.card;
+    border-radius: Tokens.radius-lg;
+    border-width: 1px;
+    border-color: Tokens.border;
+
+    @children
+}
+
+// StatsChip — the small 18px tall labelled value chip used across
+// the description_panel to render live agent stats (tokens/cost/
+// runtime/msg-count). Extracted from a 4-way copy-pasted Rectangle
+// + Text pattern.
+//
+// `accent-fg` drives the text colour. `tint-bg` drives the
+// background tint (caller passes an rgba value directly — Slint
+// 1.15 doesn't expose color component arithmetic, so we keep the
+// tint explicit instead of deriving it from a single accent).
+// Both default to transparent, producing a muted chip.
+//
+// `mono` (default true) toggles between Geist Mono and the window
+// default font — stats are usually numeric so mono is the sensible
+// default, but the property exists for non-numeric extensions.
+export component StatsChip inherits Rectangle {
+    in property <string> text;
+    in property <color> accent-fg: #00000000;  // transparent sentinel = use muted-fg
+    in property <color> tint-bg: #00000000;    // transparent = no tint
+    in property <bool> mono: true;
+
+    property <color> derived-fg:
+        accent-fg == #00000000 ? Tokens.muted-foreground : accent-fg;
+
+    height: 18px;
+    width: chip-text.preferred-width + 16px;
+    border-radius: Tokens.radius-md;
+    border-width: 1px;
+    border-color: Tokens.border;
+    background: tint-bg;
+
+    chip-text := Text {
+        x: 8px;
+        y: 0;
+        width: parent.width - 16px;
+        height: parent.height;
+        text: root.text;
+        color: root.derived-fg;
+        font-size: Tokens.text-xs;
+        font-family: root.mono ? Tokens.font-mono : Tokens.font-sans;
+        font-weight: Tokens.weight-medium;
+        vertical-alignment: center;
+        horizontal-alignment: center;
+    }
+}
+
+// ModalFrame — centered popover container with scrim, slide-in
+// animation, header (title + CloseButton), divider, and a content
+// slot for @children. Consolidates the repeating modal chrome
+// pattern that lived copy-pasted across new_task_modal,
+// new_project_modal, and settings_modal.
+//
+// Usage:
+//
+//     ModalFrame {
+//         open <=> root.show-settings;
+//         title: "Settings";
+//         card-width: 640px;
+//         card-height: 560px;
+//         closed => { root.show-settings = false; }
+//
+//         // children become layout items in the modal content
+//         // area, stacked vertically below the divider.
+//         Text { text: "Body"; }
+//         Button { text: "Save"; }
+//     }
+//
+// Note: task_search_modal does NOT use this — its layout anchors
+// near the top and has a different shape (search input + scroll
+// results). Keeping task_search_modal's custom container.
+export component ModalFrame inherits Rectangle {
+    in-out property <bool> open;
+    in property <string> title;
+    in property <length> card-width: 480px;
+    in property <length> card-height: 340px;
+    callback closed();
+
+    visible: open;
+    background: rgba(0, 0, 0, 60%);
+    opacity: open ? 1.0 : 0.0;
+    animate opacity { duration: 160ms; easing: ease-out; }
+
+    // Scrim click closes the modal.
+    TouchArea {
+        clicked => { root.closed(); }
+    }
+
+    Card {
+        x: (parent.width - self.width) / 2;
+        // Slide-down + fade on open (Polish 33).
+        y: (parent.height - self.height) / 2 + (root.open ? 0px : -12px);
+        opacity: root.open ? 1.0 : 0.0;
+        animate y { duration: 200ms; easing: ease-out; }
+        animate opacity { duration: 180ms; easing: ease-out; }
+        width: root.card-width;
+        height: root.card-height;
+        clip: true;
+
+        // Swallow clicks so they don't reach the scrim.
+        TouchArea { }
+
+        VerticalLayout {
+            padding: Tokens.space-5;
+            spacing: Tokens.space-3;
+
+            // Header row: title + close button. No `alignment: start`
+            // here — default stretch is what lets the `horizontal-stretch: 1`
+            // spacer Rectangle expand and push the CloseButton to the
+            // right edge of the modal, matching the shadcn DialogHeader
+            // visual.
+            HorizontalLayout {
+                spacing: Tokens.space-2;
+                Text {
+                    text: root.title;
+                    color: Tokens.foreground;
+                    font-size: Tokens.text-lg;
+                    font-weight: Tokens.weight-bold;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                CloseButton {
+                    clicked => { root.closed(); }
+                }
+            }
+
+            // Divider.
+            Rectangle { height: 1px; background: Tokens.border; }
+
+            // Content slot — children of ModalFrame become layout
+            // items here, stacked vertically with the parent spacing.
+            @children
+        }
+    }
+}

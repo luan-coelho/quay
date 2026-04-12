@@ -1,0 +1,132 @@
+// Quay data structures — bridge types between Rust and Slint.
+//
+// Each `struct` here mirrors a Rust struct in `src/main.rs` (or one of
+// its helpers). They're declared in a separate file so components in
+// `ui/components/*.slint` can `import` them without depending on the
+// monolithic main.slint. Adding a new bridge type means adding a
+// declaration here AND a matching Rust struct on the bin side.
+
+export struct LabelPillData {
+    id: string,
+    name: string,
+    // RGB components 0-255. Slint's `string` → `brush` conversion is not
+    // supported, so we pass the colour as separate ints and build the
+    // brush with `rgb(r, g, b)` at the call site.
+    color-r: int,
+    color-g: int,
+    color-b: int,
+}
+
+export struct QuickActionRowData {
+    id: string,
+    name: string,
+    kind: string,        // "claude" | "shell"
+    body: string,
+    shortcut: string,    // "⌘⌥1" .. "⌘⌥9" (only first 9 have shortcuts)
+}
+
+export struct ProcessRowData {
+    pid: int,
+    name: string,
+    cmdline: string,
+    class: string,       // "tracked" | "external" | "orphan"
+}
+
+export struct FileEntryData {
+    name: string,
+    /// Absolute path — passed back in the click callback so Rust can
+    /// figure out whether to toggle a directory or open a file.
+    path: string,
+    kind: string,        // "directory" | "file"
+    // Polish 17 — depth in the flattened tree, used by the Files tab
+    // to indent each row (10 px + depth × 14 px left padding).
+    depth: int,
+    // Polish 17 — true when `kind == "directory"` and the user has
+    // expanded this row. Drives the chevron glyph (▸/▾).
+    expanded: bool,
+    // Polish 40 — per-extension icon glyph and 24-bit color.
+    // Computed in `file_tree::pick_file_icon` so the Slint side
+    // doesn't have to do string manipulation. Color is split into
+    // r/g/b ints because Slint has no string-to-brush parser.
+    icon: string,
+    icon-r: int,
+    icon-g: int,
+    icon-b: int,
+}
+
+export struct HlSpanData {
+    text: string,
+    color-r: int,
+    color-g: int,
+    color-b: int,
+    bold: bool,
+    italic: bool,
+}
+
+export struct HighlightedLineData {
+    line-no: int,
+    spans: [HlSpanData],
+}
+
+export struct TaskCardData {
+    id: string,           // UUID for callbacks
+    display-id: int,      // sequential numeric ID for display (#1, #2, …)
+    title: string,
+    kind: string,         // "enhancement" | "feature" | "bug"
+    running: bool,
+    // Whether the task's git worktree has uncommitted or untracked changes.
+    // Populated from `git::status::read_status` during refresh_kanban.
+    dirty: bool,
+    // Labels attached to this task, rendered as small pills on the card.
+    labels: [LabelPillData],
+    // Number of unresolved prerequisite tasks. Non-zero → blocked badge.
+    blocked-count: int,
+    // Polish 22: drives the spinner-vs-static-dot decision in CardRow.
+    // One of "idle" | "busy" | "awaiting" | "stopped" | "exited" | "error".
+    session-state: string,
+}
+
+export struct DiffLineData {
+    origin: string,   // "+" | "-" | " " | "H" | "F"
+    text: string,
+}
+
+export struct DiffFileData {
+    path: string,
+    status: string,       // "M" | "A" | "D" | "R" | "?" | "T"
+    additions: int,
+    deletions: int,
+    lines: [DiffLineData],
+}
+
+export struct CommitEntryData {
+    sha-short: string,
+    summary: string,
+    author-name: string,
+    /// Pre-formatted timestamp, e.g. "3 minutes ago".
+    timestamp: string,
+}
+
+export struct MenuItemData {
+    id: string,
+    label: string,
+    glyph: string,        // 1-char unicode icon
+    shortcut: string,
+}
+
+export struct ProjectData {
+    id: string,
+    name: string,
+}
+
+// Polish 16 — one entry in the right-pane "open task tabs" strip.
+// A separate struct (rather than reusing TaskCardData) because the tab
+// strip only needs a compact subset + an `is-active` bit.
+export struct OpenTaskTabData {
+    id: string,           // UUID — used by open/close callbacks
+    display-id: int,      // "#12" prefix
+    title: string,
+    kind: string,         // drives the diamond glyph colour
+    is-active: bool,      // currently focused tab
+    session-state: string,// "busy" / "idle" / … — drives the dot
+}

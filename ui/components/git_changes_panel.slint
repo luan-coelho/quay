@@ -1,0 +1,231 @@
+// Git Changes tab — live diff + commit log for the active task's
+// worktree. The Rust side rebuilds `diff-files` and `commit-log` ~1×/s
+// while the tab is open via the refresh in `wiring::main_callbacks`.
+
+import { ScrollView } from "std-widgets.slint";
+import { Tokens } from "../tokens.slint";
+import { DiffFileData, CommitEntryData } from "../data.slint";
+
+export component GitChangesPanel inherits Rectangle {
+    in property <string> active-task-id;
+    in property <[DiffFileData]> diff-files;
+    in property <[CommitEntryData]> commit-log;
+
+    background: Tokens.card;
+    border-radius: Tokens.radius-md;
+    border-width: 1px;
+    border-color: Tokens.border;
+    clip: true;
+
+    if root.active-task-id == "" || (root.diff-files.length == 0 && root.commit-log.length == 0): Rectangle {
+        VerticalLayout {
+            alignment: center;
+            spacing: Tokens.space-1 + 2px;
+            Text {
+                text: "Git Changes";
+                color: Tokens.foreground;
+                font-size: Tokens.text-base;
+                font-weight: Tokens.weight-semibold;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: root.active-task-id == "" ? "Select a task with a git worktree to see changes." : "No changes yet.";
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-sm;
+                horizontal-alignment: center;
+            }
+        }
+    }
+
+    if root.active-task-id != "" && (root.diff-files.length > 0 || root.commit-log.length > 0): VerticalLayout {
+        padding: Tokens.space-3;
+        spacing: Tokens.space-2 + 2px;
+
+        // Changed files header.
+        HorizontalLayout {
+            spacing: Tokens.space-1 + 2px;
+            Text {
+                text: "CHANGED FILES";
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-xs;
+                font-weight: Tokens.weight-bold;
+            }
+            Rectangle { horizontal-stretch: 1; height: 1px; }
+            Text {
+                text: root.diff-files.length;
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-xs;
+                font-family: Tokens.font-mono;
+            }
+        }
+
+        // Files list + patches — scrolls together.
+        ScrollView {
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: Tokens.space-2;
+
+                for f in root.diff-files: Rectangle {
+                    background: Tokens.secondary;
+                    border-radius: Tokens.radius-sm;
+                    border-width: 1px;
+                    border-color: Tokens.border;
+
+                    VerticalLayout {
+                        padding: Tokens.space-2;
+                        spacing: Tokens.space-1;
+
+                        HorizontalLayout {
+                            spacing: Tokens.space-2;
+                            alignment: start;
+                            Rectangle {
+                                width: 20px;
+                                height: 14px;
+                                border-radius: Tokens.radius-sm - 2px;
+                                background: f.status == "A" ? rgba(16, 185, 129, 20%)
+                                           : f.status == "M" ? rgba(245, 181, 78, 20%)
+                                           : f.status == "D" ? rgba(229, 73, 62, 20%)
+                                                             : rgba(163, 163, 163, 15%);
+                                Text {
+                                    text: f.status;
+                                    color: f.status == "A" ? Tokens.kind-enhancement
+                                         : f.status == "M" ? #f5b54e
+                                         : f.status == "D" ? Tokens.destructive
+                                                            : Tokens.muted-foreground;
+                                    font-size: Tokens.text-xs;
+                                    font-weight: Tokens.weight-bold;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                            Text {
+                                text: f.path;
+                                color: Tokens.foreground;
+                                font-size: Tokens.text-sm;
+                                font-family: Tokens.font-mono;
+                                vertical-alignment: center;
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                            Text {
+                                text: "+" + f.additions;
+                                color: Tokens.kind-enhancement;
+                                font-size: Tokens.text-xs;
+                                font-family: Tokens.font-mono;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: "-" + f.deletions;
+                                color: Tokens.destructive;
+                                font-size: Tokens.text-xs;
+                                font-family: Tokens.font-mono;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        // Per-line diff rendering (Polish 14): each
+                        // physical line is one Text element coloured
+                        // by its origin char — green for +, red for -,
+                        // muted grey for context.
+                        for dl in f.lines: HorizontalLayout {
+                            spacing: 0px;
+                            Rectangle {
+                                width: 10px;
+                                Text {
+                                    text: dl.origin;
+                                    color: dl.origin == "+" ? Tokens.kind-enhancement
+                                         : dl.origin == "-" ? Tokens.destructive
+                                                            : Tokens.muted-foreground;
+                                    font-size: Tokens.text-xs;
+                                    font-family: Tokens.font-mono;
+                                    font-weight: Tokens.weight-bold;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: parent.width;
+                                    height: parent.height;
+                                }
+                            }
+                            Text {
+                                text: dl.text;
+                                color: dl.origin == "+" ? Tokens.kind-enhancement
+                                     : dl.origin == "-" ? Tokens.destructive
+                                     : dl.origin == "H" ? Tokens.kind-feature
+                                     : dl.origin == "F" ? Tokens.foreground
+                                                        : Tokens.muted-foreground;
+                                font-size: Tokens.text-xs;
+                                font-family: Tokens.font-mono;
+                                wrap: no-wrap;
+                            }
+                        }
+                    }
+                }
+
+                // Commit log section.
+                if root.commit-log.length > 0: Rectangle {
+                    height: 1px;
+                    background: Tokens.border;
+                }
+
+                if root.commit-log.length > 0: HorizontalLayout {
+                    spacing: Tokens.space-1 + 2px;
+                    Text {
+                        text: "COMMITS ON THIS BRANCH";
+                        color: Tokens.muted-foreground;
+                        font-size: Tokens.text-xs;
+                        font-weight: Tokens.weight-bold;
+                    }
+                    Rectangle { horizontal-stretch: 1; height: 1px; }
+                    Text {
+                        text: root.commit-log.length;
+                        color: Tokens.muted-foreground;
+                        font-size: Tokens.text-xs;
+                        font-family: Tokens.font-mono;
+                    }
+                }
+
+                for c in root.commit-log: Rectangle {
+                    background: Tokens.secondary;
+                    border-radius: Tokens.radius-sm;
+                    border-width: 1px;
+                    border-color: Tokens.border;
+                    VerticalLayout {
+                        padding: Tokens.space-1 + 2px;
+                        padding-left: Tokens.space-3;
+                        spacing: 2px;
+                        HorizontalLayout {
+                            spacing: Tokens.space-2;
+                            Text {
+                                text: c.sha-short;
+                                color: Tokens.kind-feature;
+                                font-size: Tokens.text-xs;
+                                font-family: Tokens.font-mono;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: c.summary;
+                                color: Tokens.foreground;
+                                font-size: Tokens.text-sm;
+                                vertical-alignment: center;
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                            Text {
+                                text: c.timestamp;
+                                color: Tokens.muted-foreground;
+                                font-size: Tokens.text-xs;
+                                vertical-alignment: center;
+                            }
+                        }
+                        Text {
+                            text: c.author-name;
+                            color: Tokens.muted-foreground;
+                            font-size: Tokens.text-xs;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

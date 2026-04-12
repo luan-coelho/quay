@@ -1,0 +1,342 @@
+// Card-shaped components — kanban task rows and the right-pane open-task
+// tabs. Both display a kind glyph + title + status indicators and emit
+// `clicked()` callbacks. Grouped together because they share the same
+// "left accent / centered content / status dot" anatomy and the same
+// data shape (a TaskCardData / OpenTaskTabData passed in as a property).
+
+import { IconSet } from "@lucide";
+import { Tokens } from "../tokens.slint";
+import { TaskCardData } from "../data.slint";
+import { LucideIcon, KindDiamond, KindChip, Spinner, Badge } from "atoms.slint";
+
+export component CardRow inherits Rectangle {
+    in property <TaskCardData> task;
+    in property <bool> selected;
+    // Polish 22: piped down from MainWindow because Slint components
+    // can't reach the window root from inside their body. Each
+    // CardRow instance forwards `root.spinner-glyph` here.
+    in property <string> spinner-glyph;
+    callback clicked();
+    callback move-back();
+    callback move-forward();
+
+    height: 30px;
+    background: selected ? Tokens.secondary
+              : ta.has-hover ? Tokens.accent
+              : transparent;
+    // Polish 30 — smooth fade between hover/select/idle backgrounds.
+    animate background { duration: 120ms; easing: ease-out; }
+
+    Rectangle {
+        // Top divider line.
+        x: 0; y: 0; width: parent.width; height: 1px;
+        background: Tokens.border;
+    }
+
+    // Polish 37 — left accent bar when the card is selected. Gives
+    // a stronger "this is the active task" cue than the background
+    // tint alone. The width grows from 0 → 3px so it slides in.
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: selected ? 3px : 0px;
+        height: parent.height;
+        background:
+            task.kind == "bug"         ? Tokens.kind-bug
+          : task.kind == "enhancement" ? Tokens.kind-enhancement
+                                       : Tokens.kind-feature;
+        animate width { duration: 140ms; easing: ease-out; }
+    }
+
+    ta := TouchArea { clicked => { root.clicked(); } }
+
+    HorizontalLayout {
+        padding-left: Tokens.space-3;
+        padding-right: Tokens.space-2;
+        spacing: Tokens.space-2;
+        alignment: start;
+
+        // Display ID
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "#" + task.display-id;
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-xs;
+                font-family: Tokens.font-mono;
+                vertical-alignment: center;
+            }
+        }
+
+        // Diamond
+        VerticalLayout {
+            alignment: center;
+            KindDiamond { kind: task.kind; }
+        }
+
+        // Title (stretches)
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: task.title;
+                color: selected ? Tokens.foreground : Tokens.muted-foreground;
+                font-size: Tokens.text-sm;
+                font-weight: selected ? Tokens.weight-semibold : Tokens.weight-medium;
+                overflow: elide;
+                vertical-alignment: center;
+            }
+        }
+
+        // Tag chip
+        // Label pills — one small coloured pill per attached label.
+        // Rendered in a horizontal strip before the KindChip; wraps
+        // gracefully if a card has many labels by just truncating
+        // (Slint HorizontalLayout will push later items off-screen,
+        // which is fine for 1-3 labels per card).
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                spacing: 3px;
+                for label in task.labels: Badge {
+                    text: label.name;
+                    custom-bg: rgb(label.color-r, label.color-g, label.color-b);
+                    custom-fg: #0b0d11;
+                    badge-height: 14px;
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            KindChip { kind: task.kind; }
+        }
+
+        // Blocked badge — small lock icon + count if the task has any
+        // unresolved dependencies.
+        VerticalLayout {
+            alignment: center;
+            visible: task.blocked-count > 0;
+            Rectangle {
+                width: blocked-row.preferred-width + 10px;
+                height: 14px;
+                border-radius: Tokens.radius-md;
+                background: rgba(229, 73, 62, 15%);
+                border-width: 1px;
+                border-color: rgba(229, 73, 62, 40%);
+                blocked-row := HorizontalLayout {
+                    padding-left: 4px;
+                    padding-right: 5px;
+                    spacing: 3px;
+                    alignment: center;
+                    VerticalLayout {
+                        alignment: center;
+                        LucideIcon {
+                            icon: IconSet.Lock;
+                            size: 9px;
+                            stroke: Tokens.destructive;
+                            stroke-width: 2.2;
+                        }
+                    }
+                    Text {
+                        text: task.blocked-count;
+                        color: Tokens.destructive;
+                        font-size: Tokens.text-xs;
+                        font-weight: Tokens.weight-semibold;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Dirty dot — small amber circle if the task's worktree has
+        // uncommitted changes. Shown to the left of the running dot so
+        // the two signals read naturally (uncommitted → running).
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 6px;
+                height: 6px;
+                border-radius: 3px;
+                background: task.dirty ? #f5b54e : transparent;
+            }
+        }
+
+        // Polish 22: status indicator. Spinner when busy, otherwise
+        // the existing static dot (green if running, hollow if idle).
+        VerticalLayout {
+            alignment: center;
+            if task.session-state == "busy": Spinner {
+                glyph: root.spinner-glyph;
+                glyph-color: Tokens.kind-feature;
+                size: 10px;
+            }
+            if task.session-state != "busy": Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: task.running ? Tokens.kind-enhancement : transparent;
+                border-width: 1px;
+                border-color: task.running ? Tokens.kind-enhancement : Tokens.border;
+            }
+        }
+
+        // Move arrows — visible only on hover/selected, very subtle.
+        Rectangle {
+            width: 24px;
+            background: transparent;
+            visible: root.selected || ta.has-hover;
+
+            HorizontalLayout {
+                spacing: 0px;
+                alignment: center;
+                TouchArea {
+                    width: 12px;
+                    clicked => { root.move-back(); }
+                    LucideIcon {
+                        icon: IconSet.ChevronLeft;
+                        size: 11px;
+                        stroke: Tokens.muted-foreground;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+                TouchArea {
+                    width: 12px;
+                    clicked => { root.move-forward(); }
+                    LucideIcon {
+                        icon: IconSet.ChevronRight;
+                        size: 11px;
+                        stroke: Tokens.muted-foreground;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Polish 16 — one pinned-task chip in the right-pane tab strip.
+// Kind glyph, "#N Title", session dot, × close button. Active tab gets
+// a filled background + brighter text. Clicking the body fires
+// `clicked()`; clicking × fires `close-clicked()`.
+export component OpenTaskTab inherits Rectangle {
+    in property <string> display-label;   // "#12 Dark mode"
+    in property <string> kind;             // "feature" / "bug" / "enhancement"
+    in property <string> session-state;    // "busy" / "idle" / …
+    in property <bool> active;
+    // Polish 22: piped from MainWindow.spinner-glyph by the open-tabs
+    // strip's `for tab in ...:` loop. Drives the busy spinner.
+    in property <string> spinner-glyph;
+    callback clicked();
+    callback close-clicked();
+    // Polish 41b — right-click context menu. Carries the cursor's
+    // absolute window coordinates (computed by adding the
+    // TouchArea's `absolute-position` to its local mouse coords) so
+    // the parent can anchor the dropdown menu at the cursor.
+    callback right-clicked(length, length);
+
+    height: 26px;
+    width: body.preferred-width + 14px;
+    border-radius: Tokens.radius-md;
+    border-width: 1px;
+    border-color: active ? Tokens.ring : Tokens.border;
+    background: active ? Tokens.secondary : (ta.has-hover ? Tokens.accent : transparent);
+    // Polish 30 — smooth tab background transition.
+    animate background { duration: 120ms; easing: ease-out; }
+    animate border-color { duration: 120ms; easing: ease-out; }
+
+    ta := TouchArea {
+        // Polish 41b — accept right clicks too so pointer-event
+        // fires for them. Without this list, only left clicks
+        // would be reported.
+        mouse-cursor: default;
+        clicked => { root.clicked(); }
+        pointer-event(event) => {
+            if (event.button == PointerEventButton.right
+                && event.kind == PointerEventKind.down) {
+                root.right-clicked(
+                    self.absolute-position.x + self.mouse-x,
+                    self.absolute-position.y + self.mouse-y
+                );
+            }
+        }
+    }
+
+    body := HorizontalLayout {
+        padding-left: 7px;
+        padding-right: 4px;
+        spacing: Tokens.space-2 - 2px;
+        alignment: center;
+
+        // Kind diamond — same palette used on CardRow.
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "◆";
+                font-size: Tokens.text-xs;
+                color:
+                    root.kind == "bug"         ? Tokens.kind-bug
+                  : root.kind == "enhancement" ? Tokens.kind-enhancement
+                                               : Tokens.kind-feature;
+                vertical-alignment: center;
+            }
+        }
+
+        // Display id + title.
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.display-label;
+                color: active ? Tokens.foreground : Tokens.muted-foreground;
+                font-size: Tokens.text-sm;
+                font-weight: active ? Tokens.weight-semibold : Tokens.weight-medium;
+                vertical-alignment: center;
+            }
+        }
+
+        // Polish 22: spinner when busy, colored dot for awaiting/error,
+        // hidden otherwise. The braille spinner glyph is window-wide,
+        // piped through `spinner-glyph`.
+        if root.session-state == "busy": VerticalLayout {
+            alignment: center;
+            Spinner {
+                glyph: root.spinner-glyph;
+                glyph-color: Tokens.kind-feature;
+                size: 8px;
+            }
+        }
+        if root.session-state == "awaiting" || root.session-state == "error": VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 6px;
+                height: 6px;
+                border-radius: 3px;
+                background:
+                    root.session-state == "awaiting" ? #f5b54e
+                  : root.session-state == "error"    ? Tokens.destructive
+                                                     : Tokens.muted-foreground;
+            }
+        }
+
+        // × close button.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 14px;
+                height: 14px;
+                border-radius: 7px;
+                background: close-ta.has-hover ? rgba(229, 73, 62, 20%) : transparent;
+                close-ta := TouchArea { clicked => { root.close-clicked(); } }
+                LucideIcon {
+                    icon: IconSet.X;
+                    size: 10px;
+                    stroke: close-ta.has-hover ? Tokens.destructive : Tokens.muted-foreground;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+        }
+    }
+}

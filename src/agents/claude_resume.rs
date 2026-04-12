@@ -188,4 +188,43 @@ mod tests {
         let result = find_latest_session(dir, spawn_time).unwrap();
         assert!(result.is_none());
     }
+
+    #[test]
+    fn find_latest_session_skips_files_older_than_spawn() {
+        // A directory full of stale .jsonl files (all older than the
+        // spawn time) must return None — we never want to "resume"
+        // a session that pre-dates the spawn we're tracking.
+        let tmp = tempdir().unwrap();
+        let dir = tmp.path();
+        let stale_a = dir.join("stale-a.jsonl");
+        let stale_b = dir.join("stale-b.jsonl");
+        File::create(&stale_a).unwrap().write_all(b"{}").unwrap();
+        File::create(&stale_b).unwrap().write_all(b"{}").unwrap();
+
+        std::thread::sleep(Duration::from_millis(20));
+        let spawn_time = SystemTime::now();
+
+        let result = find_latest_session(dir, spawn_time).unwrap();
+        assert!(
+            result.is_none(),
+            "stale files must not be returned as a fresh session id"
+        );
+    }
+
+    #[test]
+    fn encode_cwd_handles_spaces_and_unicode() {
+        // Project paths with spaces or non-ASCII chars must round-trip
+        // safely — Claude Code accepts them in its directory layout.
+        let p = Path::new("/home/usuário/My Projects/quay");
+        let encoded = encode_cwd(p);
+        assert_eq!(encoded, "-home-usuário-My Projects-quay");
+    }
+
+    #[test]
+    fn encode_cwd_handles_root_only() {
+        // Root path is "/" — encoding leaves a single hyphen.
+        let p = Path::new("/");
+        let encoded = encode_cwd(p);
+        assert_eq!(encoded, "-");
+    }
 }

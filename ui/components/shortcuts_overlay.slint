@@ -1,0 +1,133 @@
+// Polish 26 + 32 — keyboard shortcuts overlay. Toggled by Cmd+? from
+// the dispatcher in `src/main.rs`. Esc closes (handled in the existing
+// modal escape branch). The list is hard-coded — keep it in sync with
+// the actual hotkey table in `src/hotkeys.rs::classify_hotkey`.
+
+import { Tokens } from "../tokens.slint";
+import { CloseButton } from "atoms.slint";
+import { ShortcutRow } from "menu.slint";
+
+export component ShortcutsOverlay inherits Rectangle {
+    in-out property <bool> open;
+
+    visible: open;
+    background: rgba(0, 0, 0, 60%);
+    opacity: open ? 1.0 : 0.0;
+    animate opacity { duration: 160ms; easing: ease-out; }
+
+    TouchArea {
+        clicked => { root.open = false; }
+    }
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        // Polish 33 — slide-down + fade.
+        y: (parent.height - self.height) / 2 + (root.open ? 0px : -12px);
+        opacity: root.open ? 1.0 : 0.0;
+        animate y { duration: 200ms; easing: ease-out; }
+        animate opacity { duration: 180ms; easing: ease-out; }
+        width: 540px;
+        height: 460px;
+        background: Tokens.popover;
+        border-radius: Tokens.radius-lg;
+        border-width: 1px;
+        border-color: Tokens.border;
+        clip: true;
+
+        // Block click-through.
+        TouchArea { }
+
+        VerticalLayout {
+            padding: Tokens.space-6;
+            spacing: Tokens.space-4 - 2px;
+
+            HorizontalLayout {
+                spacing: Tokens.space-2;
+                Text {
+                    text: "Keyboard Shortcuts";
+                    color: Tokens.foreground;
+                    font-size: Tokens.text-xl - 2px;
+                    font-weight: Tokens.weight-bold;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                CloseButton {
+                    size: 24px;
+                    clicked => { root.open = false; }
+                }
+            }
+
+            Rectangle { height: 1px; background: Tokens.border; }
+
+            VerticalLayout {
+                spacing: Tokens.space-4;
+
+                // Tasks group
+                VerticalLayout {
+                    spacing: Tokens.space-1;
+                    Text {
+                        text: "TASKS";
+                        color: Tokens.muted-foreground;
+                        font-size: Tokens.text-xs;
+                        font-weight: Tokens.weight-bold;
+                    }
+                    ShortcutRow { keys: "⌘N"; label: "Create new task in Backlog"; }
+                    ShortcutRow { keys: "⌘D"; label: "Move active task forward"; }
+                    ShortcutRow { keys: "⌘⌫"; label: "Delete active task"; }
+                    ShortcutRow { keys: "Enter"; label: "(in Instructions field) Start Implement"; }
+                }
+
+                // Tabs group
+                VerticalLayout {
+                    spacing: Tokens.space-1;
+                    Text {
+                        text: "OPEN TABS";
+                        color: Tokens.muted-foreground;
+                        font-size: Tokens.text-xs;
+                        font-weight: Tokens.weight-bold;
+                    }
+                    ShortcutRow { keys: "⌘W"; label: "Close active tab"; }
+                    ShortcutRow { keys: "⌘⇧W"; label: "Close all OTHER tabs"; }
+                    ShortcutRow { keys: "⌘⌥W"; label: "Close ALL tabs"; }
+                    ShortcutRow { keys: "⌘⇧]"; label: "Cycle to next tab"; }
+                    ShortcutRow { keys: "⌘⇧["; label: "Cycle to previous tab"; }
+                }
+
+                // Quick Actions group
+                VerticalLayout {
+                    spacing: Tokens.space-1;
+                    Text {
+                        text: "QUICK ACTIONS";
+                        color: Tokens.muted-foreground;
+                        font-size: Tokens.text-xs;
+                        font-weight: Tokens.weight-bold;
+                    }
+                    ShortcutRow { keys: "⌘⌥1..9"; label: "Run quick action by index"; }
+                }
+
+                // System group
+                VerticalLayout {
+                    spacing: Tokens.space-1;
+                    Text {
+                        text: "SYSTEM";
+                        color: Tokens.muted-foreground;
+                        font-size: Tokens.text-xs;
+                        font-weight: Tokens.weight-bold;
+                    }
+                    ShortcutRow { keys: "⌘P"; label: "Quick task switcher"; }
+                    ShortcutRow { keys: "⌘,"; label: "Open Settings"; }
+                    ShortcutRow { keys: "⌘?"; label: "Show this overlay"; }
+                    ShortcutRow { keys: "Esc"; label: "Close any open modal"; }
+                }
+            }
+
+            Rectangle { vertical-stretch: 1; }
+
+            Text {
+                text: "Tip: ⌘ on macOS, Ctrl elsewhere. Esc closes this overlay.";
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-xs;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}

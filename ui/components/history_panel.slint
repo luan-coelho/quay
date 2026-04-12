@@ -1,0 +1,30 @@
+// History tab placeholder — Phase 6 will replace this with the real
+// session transcript browser. For now it's a centered explanatory
+// stub so the tab strip doesn't have a dead button.
+
+import { Tokens } from "../tokens.slint";
+
+export component HistoryPanel inherits Rectangle {
+    background: Tokens.card;
+    border-radius: Tokens.radius-md;
+    border-width: 1px;
+    border-color: Tokens.border;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: Tokens.space-2;
+        Text {
+            text: "History";
+            color: Tokens.foreground;
+            font-size: Tokens.text-base;
+            font-weight: Tokens.weight-semibold;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: "Session transcript browser — coming in Phase 6.";
+            color: Tokens.muted-foreground;
+            font-size: Tokens.text-sm;
+            horizontal-alignment: center;
+        }
+    }
+}

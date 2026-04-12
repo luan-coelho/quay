@@ -1,0 +1,89 @@
+// Polish 25 — transient notification toast. Floats above the
+// status bar at the bottom of the window. Shows for ~3 s then
+// fades out via the `visible-toast: bool` property (driven by a
+// Slint Timer in main.rs). Color stripe on the left edge keys
+// the message kind.
+//
+// Polish 31 — `opacity` and `y` are animated so the chip slides
+// up from below and fades in on show, then reverses on hide.
+// The container stays mounted (always `visible: true`) so the
+// animation can run on the way out — `opacity == 0` makes it
+// invisible without removing it from the layout.
+
+import { IconSet } from "@lucide";
+import { Tokens } from "../tokens.slint";
+import { LucideIcon } from "atoms.slint";
+
+export component Toast inherits Rectangle {
+    in property <string> message;
+    in property <string> kind;  // "success" | "error" | "info"
+    in property <bool> visible-toast: false;
+
+    opacity: visible-toast ? 1.0 : 0.0;
+    animate opacity { duration: 200ms; easing: ease-out; }
+
+    height: 32px;
+    border-radius: Tokens.radius-lg;
+    border-width: 1px;
+    border-color: kind == "error" ? Tokens.destructive
+                : kind == "success" ? Tokens.kind-enhancement
+                                     : Tokens.kind-feature;
+    background: Tokens.popover;
+
+    HorizontalLayout {
+        padding-left: Tokens.space-3;
+        padding-right: Tokens.space-4 - 2px;
+        spacing: Tokens.space-2 + 2px;
+        alignment: start;
+
+        // Polish 38 — kind glyph instead of a bare dot. Lucide
+        // CheckCircle2 / XCircle / Info read much better at small
+        // sizes than the unicode equivalents and scale vectorially
+        // on any DPI. Pad with the same tinted disc background so
+        // the toast still has the colored "halo" of the original.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 18px;
+                height: 18px;
+                border-radius: 9px;
+                background: kind == "error" ? rgba(229, 73, 62, 22%)
+                          : kind == "success" ? rgba(16, 185, 129, 22%)
+                                              : rgba(96, 165, 250, 22%);
+                if kind == "error": LucideIcon {
+                    icon: IconSet.CircleX;
+                    size: 12px;
+                    stroke: Tokens.destructive;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+                if kind == "success": LucideIcon {
+                    icon: IconSet.CircleCheck;
+                    size: 12px;
+                    stroke: Tokens.kind-enhancement;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+                if kind != "error" && kind != "success": LucideIcon {
+                    icon: IconSet.Info;
+                    size: 12px;
+                    stroke: Tokens.kind-feature;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: message;
+                color: Tokens.foreground;
+                font-size: Tokens.text-sm;
+                font-weight: Tokens.weight-medium;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+}

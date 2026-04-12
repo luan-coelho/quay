@@ -1,0 +1,104 @@
+// Left sidebar — menu items (New Task / Quick Actions / Configure /
+// Sessions / Worktrees) followed by a Projects section. Polish 24
+// added a compact mode that hides labels and the Projects header
+// when `collapsed` is true.
+
+import { Tokens } from "../tokens.slint";
+import { MenuItemData, ProjectData } from "../data.slint";
+import { MenuRow, ProjectRow } from "menu.slint";
+
+export component Sidebar inherits Rectangle {
+    in property <[MenuItemData]> menu-items;
+    in property <[ProjectData]> projects;
+    in property <string> active-project-id;
+    in-out property <bool> collapsed;
+    callback menu-item-clicked(string);
+    callback open-new-project();
+    callback project-clicked(string);
+
+    background: Tokens.sidebar;
+
+    // Right divider.
+    Rectangle {
+        x: parent.width - 1px;
+        y: 0;
+        width: 1px;
+        height: parent.height;
+        background: Tokens.sidebar-border;
+    }
+
+    VerticalLayout {
+        padding: Tokens.space-2;
+        padding-top: Tokens.space-3;
+        spacing: Tokens.space-4;
+
+        // Menu items.
+        VerticalLayout {
+            spacing: 2px;
+            for item in root.menu-items: MenuRow {
+                item: item;
+                compact: root.collapsed;
+                clicked => { root.menu-item-clicked(item.id); }
+            }
+        }
+
+        // Polish 20 — hairline divider before Projects section.
+        Rectangle {
+            height: 1px;
+            background: Tokens.sidebar-border;
+        }
+
+        // Projects section.
+        VerticalLayout {
+            spacing: Tokens.space-1;
+
+            // Polish 24: hide the "Projects" header + `+` row when the
+            // sidebar is collapsed (compact mode shows only icons under it).
+            if !root.collapsed: HorizontalLayout {
+                padding-left: Tokens.space-3;
+                padding-right: Tokens.space-3;
+                height: 22px;
+                spacing: 0px;
+                alignment: start;
+
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: "Projects";
+                        color: Tokens.muted-foreground;
+                        font-size: Tokens.text-sm;
+                        font-weight: Tokens.weight-semibold;
+                        vertical-alignment: center;
+                    }
+                }
+                TouchArea {
+                    width: 18px;
+                    height: 18px;
+                    clicked => { root.open-new-project(); }
+                    Rectangle {
+                        background: parent.has-hover ? Tokens.sidebar-accent : transparent;
+                        border-radius: Tokens.radius-sm;
+                        animate background { duration: 120ms; easing: ease-out; }
+                        Text {
+                            text: "+";
+                            color: Tokens.muted-foreground;
+                            font-size: Tokens.text-base;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+                }
+            }
+
+            for project in root.projects: ProjectRow {
+                project: project;
+                selected: root.active-project-id == project.id;
+                compact: root.collapsed;
+                clicked => { root.project-clicked(project.id); }
+            }
+        }
+    }
+}

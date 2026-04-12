@@ -1,0 +1,525 @@
+// Description tab — the editable surface for the active task. Shows
+// the display id, session-state chip, optional Plan/Implement live
+// stats row, editable title, instructions, Plan + Implement buttons,
+// labels section, dependencies section, and the description editor.
+//
+// This file is one of the bigger components because the Description
+// tab is conceptually one screen — splitting it further would require
+// a TaskMetadataHeader / TaskInstructions / TaskLabelsBlock /
+// TaskDependenciesBlock subdivision that would mostly be plumbing.
+
+import { LineEdit, TextEdit, ScrollView } from "std-widgets.slint";
+import { IconSet } from "@lucide";
+import { Tokens } from "../tokens.slint";
+import { LabelPillData, TaskCardData } from "../data.slint";
+import { LucideIcon, CloseButton, Button, StatsChip, Card, FormField, Input } from "atoms.slint";
+
+export component DescriptionPanel inherits Card {
+    in property <string> active-task-id;
+    in property <string> active-task-display;
+    in property <string> active-task-session-state;
+    in-out property <string> active-task-title;
+    in-out property <string> active-task-title-error;
+    in-out property <string> active-task-description;
+    in-out property <string> active-task-instructions;
+
+    // Polish 15 — live agent stats.
+    in property <string> active-task-tokens-text;
+    in property <string> active-task-cost-text;
+    in property <string> active-task-runtime-text;
+    in property <int> active-task-message-count;
+
+    // Phase 4: labels.
+    in property <[LabelPillData]> active-task-labels;
+    in property <[LabelPillData]> active-task-available-labels;
+    in-out property <bool> label-picker-open;
+
+    // Phase 4: dependencies.
+    in property <[TaskCardData]> active-task-dependencies;
+    in property <[TaskCardData]> active-task-available-deps;
+    in-out property <bool> dep-picker-open;
+
+    callback delete-task(string);
+    callback title-changed(string);
+    callback description-changed(string);
+    callback instructions-changed(string);
+    callback start-plan(string);
+    callback start-implement(string);
+    callback attach-label(string);
+    callback detach-label(string);
+    callback add-dependency(string);
+    callback remove-dependency(string);
+
+    // Visual chrome (bg, border, radius) inherited from the `Card`
+    // shadcn primitive so this surface stays in lockstep with the
+    // other Card-based surfaces across the app. Only `clip` needs
+    // to be set locally since `Card` doesn't clip by default.
+    clip: true;
+
+    if root.active-task-id == "": Rectangle {
+        VerticalLayout {
+            alignment: center;
+            spacing: Tokens.space-1 + 2px;
+            Text {
+                text: "Description";
+                color: Tokens.foreground;
+                font-size: Tokens.text-base;
+                font-weight: Tokens.weight-semibold;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "Select a task to read or edit its description.";
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-sm;
+                horizontal-alignment: center;
+            }
+        }
+    }
+
+    if root.active-task-id != "": VerticalLayout {
+        padding: Tokens.space-4 - 2px;
+        spacing: Tokens.space-3;
+
+        // Display ID + session state chip + delete in a single row.
+        HorizontalLayout {
+            spacing: Tokens.space-2;
+            alignment: start;
+
+            Text {
+                text: root.active-task-display;
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-xs;
+                font-family: Tokens.font-mono;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+
+            // Delete button — small, unobtrusive, red.
+            Button {
+                text: "delete";
+                variant: "destructive";
+                size: "sm";
+                clicked => { root.delete-task(root.active-task-id); }
+            }
+
+            // Session state badge — small coloured dot + label.
+            Rectangle {
+                width: state-chip.preferred-width + 16px;
+                height: 18px;
+                border-radius: Tokens.radius-md;
+                border-width: 1px;
+                border-color: Tokens.border;
+                background: transparent;
+
+                state-chip := HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 8px;
+                    spacing: 5px;
+                    alignment: center;
+
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 6px;
+                            height: 6px;
+                            border-radius: 3px;
+                            background:
+                                root.active-task-session-state == "busy"     ? Tokens.kind-enhancement
+                              : root.active-task-session-state == "awaiting" ? #f5b54e
+                              : root.active-task-session-state == "error"    ? Tokens.destructive
+                                                                             : Tokens.muted-foreground;
+                        }
+                    }
+                    Text {
+                        text: root.active-task-session-state;
+                        color: Tokens.muted-foreground;
+                        font-size: Tokens.text-xs;
+                        font-weight: Tokens.weight-medium;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Polish 15 — live agent stats row: tokens, cost, runtime,
+        // message count. Only rendered when there's something to show
+        // (message_count > 0). The refresh_active_stats timer in
+        // main.rs pushes new values every 2s while the task has a
+        // captured claude_session_id.
+        if root.active-task-message-count > 0: HorizontalLayout {
+            spacing: Tokens.space-2;
+            alignment: start;
+
+            StatsChip {
+                text: root.active-task-tokens-text;
+                accent-fg: #9bbcf2;
+                tint-bg: rgba(96, 165, 250, 8%);
+            }
+            StatsChip {
+                text: root.active-task-cost-text;
+                accent-fg: Tokens.kind-enhancement;
+                tint-bg: rgba(16, 185, 129, 8%);
+            }
+            StatsChip {
+                text: root.active-task-runtime-text;
+            }
+            StatsChip {
+                text: root.active-task-message-count + " msgs";
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+        }
+
+        // Editable title — FormField so an empty title renders an
+        // inline error below (instead of silently dropping the write
+        // like the pre-validator behavior).
+        FormField {
+            text: root.active-task-title;
+            placeholder: "Task title";
+            input-height: 40px;
+            error: root.active-task-title-error;
+            edited(new-text) => {
+                root.title-changed(new-text);
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Tokens.border;
+        }
+
+        // Instructions — the initial prompt sent to the agent.
+        Text {
+            text: "INSTRUCTIONS (SENT TO THE AGENT ON START)";
+            color: Tokens.muted-foreground;
+            font-size: Tokens.text-xs;
+            font-weight: Tokens.weight-bold;
+        }
+        Input {
+            text: root.active-task-instructions;
+            placeholder: "e.g. Add dark mode with a toggle in settings — press Enter to Implement";
+            edited(new-text) => {
+                root.instructions-changed(new-text);
+            }
+            // Polish 12: pressing Enter inside the Instructions field
+            // fires start-implement — the most common gesture is
+            // "type a quick prompt, hit Enter".
+            accepted(new-text) => {
+                root.instructions-changed(new-text);
+                root.start-implement(root.active-task-id);
+            }
+        }
+
+        // Plan / Implement action row (Polish 39 — Implement uses the
+        // Button `success` variant which preserves the tinted green fill
+        // + colored border from the original hand-rolled version).
+        HorizontalLayout {
+            spacing: Tokens.space-2;
+
+            Button {
+                text: "✦ Plan";
+                variant: "secondary";
+                clicked => { root.start-plan(root.active-task-id); }
+            }
+
+            Button {
+                text: "⚡ Implement";
+                variant: "success";
+                clicked => { root.start-implement(root.active-task-id); }
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Tokens.border;
+        }
+
+        // ── Labels section ─────────────────────────────────
+        HorizontalLayout {
+            spacing: Tokens.space-1 + 2px;
+            alignment: start;
+            Text {
+                text: "LABELS";
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-xs;
+                font-weight: Tokens.weight-bold;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            TouchArea {
+                width: 20px;
+                height: 18px;
+                clicked => { root.label-picker-open = !root.label-picker-open; }
+                Rectangle {
+                    background: parent.has-hover ? Tokens.accent : transparent;
+                    border-radius: Tokens.radius-sm;
+                    border-width: 1px;
+                    border-color: Tokens.border;
+                    animate background { duration: 120ms; easing: ease-out; }
+                    Text {
+                        text: "+";
+                        color: Tokens.muted-foreground;
+                        font-size: Tokens.text-sm;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+        }
+
+        // Attached labels row — click × to detach.
+        HorizontalLayout {
+            spacing: Tokens.space-1;
+            alignment: start;
+            if root.active-task-labels.length == 0 && !root.label-picker-open: Text {
+                text: "No labels — click + to add one.";
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-xs;
+                vertical-alignment: center;
+            }
+            for label in root.active-task-labels: TouchArea {
+                width: detach-chip.preferred-width + 14px;
+                height: 18px;
+                clicked => { root.detach-label(label.id); }
+                Rectangle {
+                    background: rgb(label.color-r, label.color-g, label.color-b);
+                    border-radius: Tokens.radius-sm;
+                    detach-chip := HorizontalLayout {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        spacing: 4px;
+                        alignment: center;
+                        Text {
+                            text: label.name;
+                            color: #0b0d11;
+                            font-size: Tokens.text-xs;
+                            font-weight: Tokens.weight-bold;
+                            vertical-alignment: center;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            LucideIcon {
+                                icon: IconSet.X;
+                                size: 9px;
+                                stroke: #0b0d11;
+                                stroke-width: 2.5;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Label picker — visible only when label-picker-open.
+        if root.label-picker-open: Rectangle {
+            height: 54px;
+            background: Tokens.secondary;
+            border-radius: Tokens.radius-md;
+            border-width: 1px;
+            border-color: Tokens.border;
+
+            VerticalLayout {
+                padding: Tokens.space-1 + 2px;
+                spacing: Tokens.space-1;
+                Text {
+                    text: "Pick a label to attach";
+                    color: Tokens.muted-foreground;
+                    font-size: Tokens.text-xs;
+                }
+                HorizontalLayout {
+                    spacing: Tokens.space-1;
+                    alignment: start;
+                    for available in root.active-task-available-labels: TouchArea {
+                        width: pick-chip.preferred-width + 12px;
+                        height: 16px;
+                        clicked => {
+                            root.attach-label(available.id);
+                            root.label-picker-open = false;
+                        }
+                        Rectangle {
+                            background: rgb(available.color-r, available.color-g, available.color-b);
+                            border-radius: Tokens.radius-sm;
+                            pick-chip := Text {
+                                text: available.name;
+                                color: #0b0d11;
+                                font-size: Tokens.text-xs;
+                                font-weight: Tokens.weight-bold;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Dependencies section ───────────────────────────
+        HorizontalLayout {
+            spacing: Tokens.space-1 + 2px;
+            alignment: start;
+            Text {
+                text: "BLOCKED BY";
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-xs;
+                font-weight: Tokens.weight-bold;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: root.active-task-dependencies.length;
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-xs;
+                font-family: Tokens.font-mono;
+                vertical-alignment: center;
+            }
+            TouchArea {
+                width: 20px;
+                height: 18px;
+                clicked => { root.dep-picker-open = !root.dep-picker-open; }
+                Rectangle {
+                    background: parent.has-hover ? Tokens.accent : transparent;
+                    border-radius: Tokens.radius-sm;
+                    border-width: 1px;
+                    border-color: Tokens.border;
+                    animate background { duration: 120ms; easing: ease-out; }
+                    Text {
+                        text: "+";
+                        color: Tokens.muted-foreground;
+                        font-size: Tokens.text-sm;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        width: parent.width;
+                        height: parent.height;
+                    }
+                }
+            }
+        }
+        if root.active-task-dependencies.length == 0 && !root.dep-picker-open: Text {
+            text: "No dependencies — click + to add one.";
+            color: Tokens.muted-foreground;
+            font-size: Tokens.text-xs;
+        }
+
+        // Dep picker drawer
+        if root.dep-picker-open: Rectangle {
+            height: 90px;
+            background: Tokens.secondary;
+            border-radius: Tokens.radius-md;
+            border-width: 1px;
+            border-color: Tokens.border;
+
+            VerticalLayout {
+                padding: Tokens.space-1 + 2px;
+                spacing: Tokens.space-1;
+                Text {
+                    text: "Pick a task to depend on";
+                    color: Tokens.muted-foreground;
+                    font-size: Tokens.text-xs;
+                }
+                ScrollView {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        spacing: 2px;
+                        if root.active-task-available-deps.length == 0: Text {
+                            text: "No candidate tasks.";
+                            color: Tokens.muted-foreground;
+                            font-size: Tokens.text-xs;
+                        }
+                        for candidate in root.active-task-available-deps: TouchArea {
+                            height: 20px;
+                            clicked => {
+                                root.add-dependency(candidate.id);
+                                root.dep-picker-open = false;
+                            }
+                            Rectangle {
+                                background: parent.has-hover ? Tokens.accent : transparent;
+                                border-radius: Tokens.radius-sm;
+                                animate background { duration: 120ms; easing: ease-out; }
+                                HorizontalLayout {
+                                    padding-left: Tokens.space-2;
+                                    padding-right: Tokens.space-2;
+                                    spacing: Tokens.space-1 + 2px;
+                                    alignment: start;
+                                    Text {
+                                        text: "#" + candidate.display-id;
+                                        color: Tokens.muted-foreground;
+                                        font-size: Tokens.text-xs;
+                                        font-family: Tokens.font-mono;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: candidate.title;
+                                        color: Tokens.foreground;
+                                        font-size: Tokens.text-sm;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for dep in root.active-task-dependencies: Rectangle {
+            height: 24px;
+            background: Tokens.secondary;
+            border-radius: Tokens.radius-sm;
+            border-width: 1px;
+            border-color: Tokens.border;
+            HorizontalLayout {
+                padding-left: Tokens.space-2;
+                padding-right: Tokens.space-1;
+                spacing: Tokens.space-1 + 2px;
+                alignment: start;
+                Text {
+                    text: "#" + dep.display-id;
+                    color: Tokens.muted-foreground;
+                    font-size: Tokens.text-xs;
+                    font-family: Tokens.font-mono;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: dep.title;
+                    color: Tokens.foreground;
+                    font-size: Tokens.text-sm;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                CloseButton {
+                    size: 16px;
+                    clicked => { root.remove-dependency(dep.id); }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Tokens.border;
+        }
+
+        Text {
+            text: "DESCRIPTION";
+            color: Tokens.muted-foreground;
+            font-size: Tokens.text-xs;
+            font-weight: Tokens.weight-bold;
+        }
+
+        TextEdit {
+            text: root.active-task-description;
+            placeholder-text: "Add a description, notes for the agent, acceptance criteria…";
+            wrap: word-wrap;
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+            edited => {
+                root.description-changed(self.text);
+            }
+        }
+    }
+}

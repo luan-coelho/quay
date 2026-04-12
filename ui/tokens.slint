@@ -1,0 +1,85 @@
+// Quay design tokens — full shadcn/ui zinc-dark port.
+//
+// This global centralises colours, radius, typography, and spacing so
+// every component reads its values from a single source of truth. The
+// vocabulary matches shadcn/ui conventions (background/foreground,
+// primary/secondary/muted/accent, border/input/ring, radius-sm..xl,
+// text-xs..xl, space-1..10) so a designer familiar with shadcn can
+// navigate quay's UI without reading Slint.
+//
+// The palette is the exact shadcn `zinc` dark theme, with OKLCH values
+// converted to hex since Slint 1.15 doesn't support `oklch()`.
+//
+// The only domain-specific extensions over vanilla shadcn are the
+// kanban `kind-*` colours (feature/bug/enhancement/done) and the two
+// decorative `accent-*` slots used by the title bar avatar.
+
+export global Tokens {
+    // === Core semantic colours (shadcn zinc-dark) ===
+    out property <color> background: #0a0a0a;
+    out property <color> foreground: #fafafa;
+    out property <color> card: #171717;
+    out property <color> card-foreground: #fafafa;
+    out property <color> popover: #171717;
+    out property <color> popover-foreground: #fafafa;
+    out property <color> primary: #e5e5e5;
+    out property <color> primary-foreground: #171717;
+    out property <color> secondary: #262626;
+    out property <color> secondary-foreground: #fafafa;
+    out property <color> muted: #262626;
+    out property <color> muted-foreground: #a3a3a3;
+    out property <color> accent: #262626;
+    out property <color> accent-foreground: #fafafa;
+    out property <color> destructive: #e5493e;
+    out property <color> destructive-foreground: #fafafa;
+    out property <color> border: rgba(255, 255, 255, 10%);
+    out property <color> input: rgba(255, 255, 255, 15%);
+    out property <color> ring: #787878;
+
+    // Sidebar tokens (shadcn has dedicated sidebar-* variables).
+    out property <color> sidebar: #171717;
+    out property <color> sidebar-foreground: #fafafa;
+    out property <color> sidebar-accent: #262626;
+    out property <color> sidebar-accent-foreground: #fafafa;
+    out property <color> sidebar-border: rgba(255, 255, 255, 10%);
+
+    // === Radius scale (shadcn: --radius 0.625rem = 10px) ===
+    out property <length> radius-sm: 6px;  // calc(radius * 0.6)
+    out property <length> radius-md: 8px;  // calc(radius * 0.8)
+    out property <length> radius-lg: 10px; // radius base
+    out property <length> radius-xl: 14px; // calc(radius * 1.4)
+    out property <length> radius-2xl: 18px;
+
+    // === Typography scale ===
+    out property <string> font-sans: "Geist";
+    out property <string> font-mono: "Geist Mono";
+    out property <length> text-xs: 10px;
+    out property <length> text-sm: 11px;
+    out property <length> text-base: 13px;
+    out property <length> text-lg: 15px;
+    out property <length> text-xl: 18px;
+    out property <int> weight-regular: 400;
+    out property <int> weight-medium: 500;
+    out property <int> weight-semibold: 600;
+    out property <int> weight-bold: 700;
+
+    // === Spacing scale (Tailwind-like) ===
+    out property <length> space-1: 4px;
+    out property <length> space-2: 8px;
+    out property <length> space-3: 12px;
+    out property <length> space-4: 16px;
+    out property <length> space-5: 20px;
+    out property <length> space-6: 24px;
+    out property <length> space-8: 32px;
+    out property <length> space-10: 40px;
+
+    // === Domain colours (kanban kinds — preserved) ===
+    out property <color> kind-enhancement: #10b981;
+    out property <color> kind-feature: #60a5fa;
+    out property <color> kind-bug: #e5493e;
+    out property <color> kind-done: #34d399;
+
+    // === Decorative accents (title bar avatar) ===
+    out property <color> accent-warm: #c87533;
+    out property <color> accent-pink-coral: #f58a82;
+}

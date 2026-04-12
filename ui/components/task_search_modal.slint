@@ -1,0 +1,120 @@
+// Polish 35 — Cmd+P task quick switcher. Modal overlay with a search
+// input and a filtered task list. The Rust side rebuilds `results`
+// on every keystroke via the `query-changed` callback. Selecting a
+// task fires `task-selected(id)` and closes the modal.
+
+import { ScrollView } from "std-widgets.slint";
+import { Tokens } from "../tokens.slint";
+import { TaskCardData } from "../data.slint";
+import { KindDiamond, Card, Input } from "atoms.slint";
+
+export component TaskSearchModal inherits Rectangle {
+    in-out property <bool> open;
+    in-out property <string> query;
+    in property <[TaskCardData]> results;
+    callback query-changed(string);
+    callback task-selected(string);
+
+    visible: open;
+    background: rgba(0, 0, 0, 60%);
+    opacity: open ? 1.0 : 0.0;
+    animate opacity { duration: 160ms; easing: ease-out; }
+
+    TouchArea {
+        clicked => { root.open = false; }
+    }
+
+    Card {
+        x: (parent.width - self.width) / 2;
+        // Anchor near the top — search modals feel right at ~18% of viewport.
+        y: parent.height * 0.16 + (root.open ? 0px : -12px);
+        opacity: root.open ? 1.0 : 0.0;
+        animate y { duration: 200ms; easing: ease-out; }
+        animate opacity { duration: 180ms; easing: ease-out; }
+        width: 540px;
+        height: 380px;
+        clip: true;
+
+        TouchArea { }   // swallow clicks so the backdrop close doesn't fire
+
+        VerticalLayout {
+            padding: Tokens.space-4;
+            spacing: Tokens.space-2 + 2px;
+
+            // Search input.
+            Input {
+                text: root.query;
+                placeholder: "Type to search tasks…";
+                edited(new-text) => {
+                    root.query = new-text;
+                    root.query-changed(new-text);
+                }
+            }
+
+            Rectangle { height: 1px; background: Tokens.border; }
+
+            // Results list.
+            ScrollView {
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+                VerticalLayout {
+                    spacing: 1px;
+
+                    if root.results.length == 0: VerticalLayout {
+                        padding-top: 40px;
+                        spacing: Tokens.space-1 + 2px;
+                        alignment: start;
+                        Text {
+                            text: "No matches";
+                            color: Tokens.muted-foreground;
+                            font-size: Tokens.text-base;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    for task in root.results: TouchArea {
+                        height: 30px;
+                        clicked => {
+                            root.task-selected(task.id);
+                            root.open = false;
+                        }
+                        Rectangle {
+                            background: parent.has-hover ? Tokens.accent : transparent;
+                            border-radius: Tokens.radius-sm;
+                            animate background { duration: 100ms; easing: ease-out; }
+                            HorizontalLayout {
+                                padding-left: Tokens.space-3;
+                                padding-right: Tokens.space-3;
+                                spacing: Tokens.space-2 + 2px;
+                                alignment: start;
+                                Text {
+                                    text: "#" + task.display-id;
+                                    color: Tokens.muted-foreground;
+                                    font-size: Tokens.text-xs;
+                                    font-family: Tokens.font-mono;
+                                    vertical-alignment: center;
+                                }
+                                KindDiamond { kind: task.kind; }
+                                Text {
+                                    text: task.title;
+                                    color: Tokens.foreground;
+                                    font-size: Tokens.text-sm;
+                                    font-weight: Tokens.weight-medium;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Text {
+                text: "Esc to dismiss · click a result to open";
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-xs;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}

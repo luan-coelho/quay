@@ -108,7 +108,26 @@ mod tests {
 
     #[test]
     fn name_matches_agent_kind() {
+        // Use the kanban-side enum as the source of truth so a rename
+        // there breaks this test loudly instead of silently desyncing
+        // the strategy lookup.
+        use crate::kanban::AgentKind;
         let p = stub();
-        assert_eq!(p.name(), "opencode");
+        assert_eq!(p.name(), AgentKind::Opencode.as_str());
+    }
+
+    #[test]
+    fn env_is_empty_by_default() {
+        let p = stub();
+        assert!(p.env().is_empty());
+    }
+
+    #[test]
+    fn empty_instructions_treated_as_none() {
+        // Mirrors the claude_code edge case: empty string should not
+        // append a stray empty positional argument to argv.
+        let p = stub();
+        let argv = p.argv(StartMode::Plan, Some(""), None);
+        assert_eq!(argv, vec!["/usr/local/bin/opencode".to_string()]);
     }
 }

@@ -162,7 +162,35 @@ mod tests {
 
     #[test]
     fn name_matches_agent_kind() {
+        // Use the kanban-side enum as the source of truth so a rename
+        // there breaks this test loudly instead of silently desyncing
+        // the strategy lookup.
+        use crate::kanban::AgentKind;
         let p = stub();
-        assert_eq!(p.name(), "claude");
+        assert_eq!(p.name(), AgentKind::Claude.as_str());
+    }
+
+    #[test]
+    fn env_is_empty_by_default() {
+        // Claude Code uses no extra environment variables — the default
+        // empty `env()` keeps Quay from accidentally injecting something
+        // into the child process.
+        let p = stub();
+        assert!(p.env().is_empty());
+    }
+
+    #[test]
+    fn resume_with_no_instructions() {
+        // Resume + Plan with no prompt — argv is `claude --resume <id>`.
+        let p = stub();
+        let argv = p.argv(StartMode::Plan, None, Some("sess-only-resume"));
+        assert_eq!(
+            argv,
+            vec![
+                "/usr/local/bin/claude".to_string(),
+                "--resume".to_string(),
+                "sess-only-resume".to_string(),
+            ]
+        );
     }
 }

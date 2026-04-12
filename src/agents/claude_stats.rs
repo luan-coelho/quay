@@ -250,4 +250,85 @@ mod tests {
         };
         assert_eq!(stats.total_tokens(), 650);
     }
+
+    #[test]
+    fn cost_includes_all_four_token_categories() {
+        // Pricing per 1M tokens (Sonnet 4.x):
+        //   input          $3.00 → 300 cents/M
+        //   output         $15.00 → 1500 cents/M
+        //   cache read     $0.30 → 30 cents/M
+        //   cache creation $3.75 → 375 cents/M
+        //
+        // 1M of each → 300 + 1500 + 30 + 375 = 2205 cents.
+        let stats = SessionStats {
+            input_tokens: 1_000_000,
+            output_tokens: 1_000_000,
+            cache_read_tokens: 1_000_000,
+            cache_creation_tokens: 1_000_000,
+            ..SessionStats::default()
+        };
+        assert_eq!(compute_cost_cents(&stats), 2205);
+    }
+
+    #[test]
+    fn cost_is_zero_for_empty_session() {
+        let stats = SessionStats::default();
+        assert_eq!(compute_cost_cents(&stats), 0);
+    }
+
+    #[test]
+    fn nested_usage_object_is_walked() {
+        // The parser walks the tree recursively. A `usage` block
+        // nested several layers deep should still be picked up.
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("deep.jsonl");
+        let mut f = File::create(&path).unwrap();
+        writeln!(
+            f,
+            r#"{{"a":{{"b":{{"c":{{"input_tokens":42,"output_tokens":7}}}}}}}}"#
+        )
+        .unwrap();
+
+        let stats = read_session_stats(&path).unwrap();
+        assert_eq!(stats.input_tokens, 42);
+        assert_eq!(stats.output_tokens, 7);
+    }
+
+    #[test]
+    fn empty_lines_do_not_count_as_messages() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("blanks.jsonl");
+        let mut f = File::create(&path).unwrap();
+        writeln!(f).unwrap();
+        writeln!(f, "   ").unwrap();
+        writeln!(
+            f,
+            r#"{{"message":{{"usage":{{"input_tokens":1,"output_tokens":2}}}}}}"#
+        )
+        .unwrap();
+        writeln!(f).unwrap();
+
+        let stats = read_session_stats(&path).unwrap();
+        assert_eq!(stats.message_count, 1);
+        assert_eq!(stats.input_tokens, 1);
+        assert_eq!(stats.output_tokens, 2);
+    }
+
+    #[test]
+    fn resolve_session_path_uses_encoded_cwd() {
+        // resolve_session_path is the inverse of capture_session_id —
+        // it must build the same `<encoded-cwd>/<id>.jsonl` shape so
+        // the stats reader and the resume capture agree on layout.
+        let cwd = Path::new("/tmp/quay-test-project");
+        let result = resolve_session_path(cwd, "abc123");
+        // Home directory is environment-dependent — we just check the
+        // suffix shape rather than the absolute path.
+        if let Some(path) = result {
+            let s = path.to_string_lossy();
+            assert!(
+                s.ends_with("-tmp-quay-test-project/abc123.jsonl"),
+                "unexpected resolved path: {s}"
+            );
+        }
+    }
 }

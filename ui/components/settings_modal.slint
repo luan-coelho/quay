@@ -1,0 +1,349 @@
+// Settings modal — Polish 32 fade. Three sections:
+//   - General (default base branch)
+//   - Quick Actions CRUD
+//   - Process Manager (Polish 1)
+//
+// Quick Action edit callbacks bubble up to the parent so the Rust
+// side can persist them via QuickActionStore.
+
+import { LineEdit, ScrollView } from "std-widgets.slint";
+import { IconSet } from "@lucide";
+import { Tokens } from "../tokens.slint";
+import { QuickActionRowData, ProcessRowData } from "../data.slint";
+import { LucideIcon, CloseButton, Button, Card, Input, ModalFrame } from "atoms.slint";
+
+export component SettingsModal inherits Rectangle {
+    in-out property <bool> open;
+    in-out property <string> default-base-branch;
+    in property <[QuickActionRowData]> quick-actions;
+    in property <[ProcessRowData]> processes;
+
+    callback base-branch-changed(string);
+    callback add-quick-action();
+    callback delete-quick-action(string);
+    callback update-quick-action(string, string, string, string);
+    callback refresh-processes();
+    callback process-kill(int);
+    callback process-force-kill(int);
+
+    ModalFrame {
+        open <=> root.open;
+        title: "Settings";
+        card-width: 640px;
+        card-height: 560px;
+        closed => { root.open = false; }
+
+        // ── General section ───────────────────────────────────
+        Text {
+                text: "GENERAL";
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-xs;
+                font-weight: Tokens.weight-bold;
+            }
+
+            VerticalLayout {
+                spacing: Tokens.space-1 + 2px;
+                Text {
+                    text: "Default base branch";
+                    color: Tokens.foreground;
+                    font-size: Tokens.text-sm;
+                    font-weight: Tokens.weight-medium;
+                }
+                Input {
+                    text: root.default-base-branch;
+                    placeholder: "main";
+                    edited(new-text) => {
+                        root.base-branch-changed(new-text);
+                    }
+                }
+            }
+
+            // ── Quick Actions section ─────────────────────────────
+            Rectangle { height: 1px; background: Tokens.border; }
+            HorizontalLayout {
+                spacing: Tokens.space-1 + 2px;
+                Text {
+                    text: "QUICK ACTIONS";
+                    color: Tokens.muted-foreground;
+                    font-size: Tokens.text-xs;
+                    font-weight: Tokens.weight-bold;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; height: 1px; }
+                Text {
+                    text: root.quick-actions.length;
+                    color: Tokens.muted-foreground;
+                    font-size: Tokens.text-xs;
+                    font-family: Tokens.font-mono;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    width: 20px;
+                    height: 18px;
+                    clicked => { root.add-quick-action(); }
+                    Rectangle {
+                        background: parent.has-hover ? Tokens.accent : transparent;
+                        border-radius: Tokens.radius-sm;
+                        border-width: 1px;
+                        border-color: Tokens.border;
+                        animate background { duration: 120ms; easing: ease-out; }
+                        Text {
+                            text: "+";
+                            color: Tokens.muted-foreground;
+                            font-size: Tokens.text-sm;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            width: parent.width;
+                            height: parent.height;
+                        }
+                    }
+                }
+            }
+
+            ScrollView {
+                height: 180px;
+                VerticalLayout {
+                    spacing: Tokens.space-1;
+                    for qa in root.quick-actions: Rectangle {
+                        height: 50px;
+                        background: Tokens.secondary;
+                        border-radius: Tokens.radius-md;
+                        border-width: 1px;
+                        border-color: Tokens.border;
+
+                        VerticalLayout {
+                            padding: Tokens.space-1 + 2px;
+                            padding-left: Tokens.space-3;
+                            padding-right: Tokens.space-3;
+                            spacing: 2px;
+
+                            // Top row: shortcut + name input + kind toggle + delete.
+                            HorizontalLayout {
+                                spacing: Tokens.space-2;
+                                alignment: start;
+                                VerticalLayout {
+                                    alignment: center;
+                                    width: 34px;
+                                    Text {
+                                        text: qa.shortcut == "" ? "—" : qa.shortcut;
+                                        color: Tokens.muted-foreground;
+                                        font-size: Tokens.text-xs;
+                                        font-family: Tokens.font-mono;
+                                    }
+                                }
+                                qa-name := LineEdit {
+                                    horizontal-stretch: 1;
+                                    text: qa.name;
+                                    font-size: Tokens.text-sm;
+                                    placeholder-text: "name";
+                                    edited(t) => {
+                                        root.update-quick-action(qa.id, t, qa.kind, qa-body.text);
+                                    }
+                                }
+
+                                // Kind toggle: click to flip claude ↔ shell.
+                                TouchArea {
+                                    width: 58px;
+                                    height: 22px;
+                                    clicked => {
+                                        root.update-quick-action(
+                                            qa.id,
+                                            qa-name.text,
+                                            qa.kind == "claude" ? "shell" : "claude",
+                                            qa-body.text,
+                                        );
+                                    }
+                                    Rectangle {
+                                        background: parent.has-hover ? Tokens.accent : transparent;
+                                        border-radius: Tokens.radius-sm;
+                                        border-width: 1px;
+                                        border-color: Tokens.border;
+                                        animate background { duration: 120ms; easing: ease-out; }
+                                        Text {
+                                            text: qa.kind;
+                                            color: qa.kind == "claude" ? Tokens.kind-feature : Tokens.kind-enhancement;
+                                            font-size: Tokens.text-xs;
+                                            font-weight: Tokens.weight-medium;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            width: parent.width;
+                                            height: parent.height;
+                                        }
+                                    }
+                                }
+
+                                // Delete button.
+                                CloseButton {
+                                    size: 20px;
+                                    clicked => { root.delete-quick-action(qa.id); }
+                                }
+                            }
+
+                            // Bottom row: body input (prompt or shell command).
+                            qa-body := LineEdit {
+                                text: qa.body;
+                                font-size: Tokens.text-xs;
+                                placeholder-text: qa.kind == "claude" ? "prompt text…" : "shell command…";
+                                edited(t) => {
+                                    root.update-quick-action(qa.id, qa-name.text, qa.kind, t);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Process Manager section ───────────────────────────
+            Rectangle { height: 1px; background: Tokens.border; }
+            HorizontalLayout {
+                spacing: Tokens.space-1 + 2px;
+                Text {
+                    text: "PROCESSES";
+                    color: Tokens.muted-foreground;
+                    font-size: Tokens.text-xs;
+                    font-weight: Tokens.weight-bold;
+                }
+                Rectangle { horizontal-stretch: 1; height: 1px; }
+                TouchArea {
+                    width: 60px;
+                    height: 18px;
+                    clicked => { root.refresh-processes(); }
+                    Rectangle {
+                        background: parent.has-hover ? Tokens.accent : transparent;
+                        border-radius: Tokens.radius-sm;
+                        border-width: 1px;
+                        border-color: Tokens.border;
+                        animate background { duration: 120ms; easing: ease-out; }
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: Tokens.space-1;
+                            padding-left: Tokens.space-1;
+                            padding-right: Tokens.space-1;
+                            VerticalLayout {
+                                alignment: center;
+                                LucideIcon {
+                                    icon: IconSet.RotateCw;
+                                    size: 9px;
+                                    stroke: Tokens.muted-foreground;
+                                    stroke-width: 2.2;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "refresh";
+                                    color: Tokens.muted-foreground;
+                                    font-size: Tokens.text-xs;
+                                    font-weight: Tokens.weight-medium;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+                Text {
+                    text: root.processes.length;
+                    color: Tokens.muted-foreground;
+                    font-size: Tokens.text-xs;
+                    font-family: Tokens.font-mono;
+                    vertical-alignment: center;
+                }
+            }
+
+            ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    spacing: Tokens.space-1;
+                    if root.processes.length == 0: Text {
+                        text: "No agent processes detected.";
+                        color: Tokens.muted-foreground;
+                        font-size: Tokens.text-sm;
+                    }
+                    for p in root.processes: Rectangle {
+                        height: 34px;
+                        background: Tokens.secondary;
+                        border-radius: Tokens.radius-md;
+                        border-width: 1px;
+                        border-color: Tokens.border;
+                        HorizontalLayout {
+                            padding-left: Tokens.space-3;
+                            padding-right: Tokens.space-1 + 2px;
+                            spacing: Tokens.space-2;
+                            alignment: start;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 8px;
+                                    height: 8px;
+                                    border-radius: 4px;
+                                    background: p.class == "tracked" ? Tokens.kind-enhancement
+                                              : p.class == "orphan" ? Tokens.destructive
+                                                                     : #f5b54e;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: p.name + "  " + p.pid;
+                                    color: Tokens.foreground;
+                                    font-size: Tokens.text-sm;
+                                    font-family: Tokens.font-mono;
+                                }
+                                Text {
+                                    text: p.class;
+                                    color: Tokens.muted-foreground;
+                                    font-size: Tokens.text-xs;
+                                }
+                            }
+                            TouchArea {
+                                width: 54px;
+                                height: 24px;
+                                clicked => { root.process-kill(p.pid); }
+                                Rectangle {
+                                    background: parent.has-hover ? rgba(245, 181, 78, 15%) : transparent;
+                                    border-radius: Tokens.radius-sm;
+                                    border-width: 1px;
+                                    border-color: rgba(245, 181, 78, 40%);
+                                    animate background { duration: 120ms; easing: ease-out; }
+                                    Text {
+                                        text: "stop";
+                                        color: #f5b54e;
+                                        font-size: Tokens.text-xs;
+                                        font-weight: Tokens.weight-semibold;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+                            }
+                            TouchArea {
+                                width: 54px;
+                                height: 24px;
+                                clicked => { root.process-force-kill(p.pid); }
+                                Rectangle {
+                                    background: parent.has-hover ? rgba(229, 73, 62, 15%) : transparent;
+                                    border-radius: Tokens.radius-sm;
+                                    border-width: 1px;
+                                    border-color: rgba(229, 73, 62, 40%);
+                                    animate background { duration: 120ms; easing: ease-out; }
+                                    Text {
+                                        text: "kill";
+                                        color: Tokens.destructive;
+                                        font-size: Tokens.text-xs;
+                                        font-weight: Tokens.weight-semibold;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+

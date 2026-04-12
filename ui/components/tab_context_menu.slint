@@ -1,0 +1,99 @@
+// Polish 41 + 41b — right-click tab context menu. Triggered by
+// right-clicking any open task tab. The menu floats at the cursor
+// position via `anchor-x` / `anchor-y` and operates on `target-id`
+// (the tab that was clicked, NOT necessarily the active task).
+// Click outside or Esc dismisses. Items match the standard desktop
+// tab menu: Close current / Close others / Close to the right / Close all.
+
+import { Tokens } from "../tokens.slint";
+import { TabMenuRow } from "menu.slint";
+
+export component TabContextMenu inherits Rectangle {
+    in-out property <bool> open;
+    in-out property <string> target-id;
+    in-out property <length> anchor-x;
+    in-out property <length> anchor-y;
+    in property <int> open-tabs-count;
+    callback close-this(string);
+    callback close-others(string);
+    callback close-right-of(string);
+    callback close-all();
+
+    visible: open;
+    background: transparent;
+
+    // Click anywhere outside the menu card dismisses.
+    TouchArea {
+        clicked => { root.open = false; }
+    }
+
+    Rectangle {
+        // Anchor at the cursor with two clamps to keep the popup
+        // on-screen: never overflow the right edge or the bottom edge.
+        x: min(root.anchor-x, parent.width - self.width - 8px);
+        y: min(root.anchor-y, parent.height - self.height - 8px);
+        width: 220px;
+        height: menu-stack.preferred-height + 12px;
+        background: Tokens.popover;
+        border-radius: Tokens.radius-lg;
+        border-width: 1px;
+        border-color: Tokens.border;
+        opacity: root.open ? 1.0 : 0.0;
+        animate opacity { duration: 140ms; easing: ease-out; }
+
+        // Block click-through.
+        TouchArea {}
+
+        menu-stack := VerticalLayout {
+            padding: Tokens.space-1 + 2px;
+            spacing: 2px;
+
+            TabMenuRow {
+                label: "Close this tab";
+                shortcut: "⌘W";
+                enabled: root.target-id != "";
+                clicked => {
+                    if root.target-id != "" {
+                        root.close-this(root.target-id);
+                    }
+                    root.open = false;
+                }
+            }
+            TabMenuRow {
+                label: "Close other tabs";
+                shortcut: "⌘⇧W";
+                enabled: root.open-tabs-count >= 2 && root.target-id != "";
+                clicked => {
+                    if root.target-id != "" {
+                        root.close-others(root.target-id);
+                    }
+                    root.open = false;
+                }
+            }
+            TabMenuRow {
+                label: "Close tabs to the right";
+                shortcut: "";
+                enabled: root.open-tabs-count >= 2 && root.target-id != "";
+                clicked => {
+                    if root.target-id != "" {
+                        root.close-right-of(root.target-id);
+                    }
+                    root.open = false;
+                }
+            }
+            Rectangle {
+                height: 1px;
+                background: Tokens.border;
+            }
+            TabMenuRow {
+                label: "Close all tabs";
+                shortcut: "⌘⌥W";
+                enabled: root.open-tabs-count >= 1;
+                clicked => {
+                    root.close-all();
+                    root.open = false;
+                }
+            }
+        }
+    }
+}

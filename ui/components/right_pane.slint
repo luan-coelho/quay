@@ -1,0 +1,294 @@
+// Right pane container — owns the open-tabs strip, the inner
+// Terminal/Description/Git/Files/History tab bar, and switches
+// between the corresponding sub-panels based on `active-right-tab`.
+//
+// Each sub-panel lives in its own file under `ui/components/`. This
+// container exists purely to provide layout + tab dispatch — no
+// per-panel logic lives here.
+
+import { Tokens } from "../tokens.slint";
+import {
+    LabelPillData, TaskCardData, OpenTaskTabData, FileEntryData,
+    HighlightedLineData, DiffFileData, CommitEntryData,
+} from "../data.slint";
+import { OpenTaskTab } from "cards.slint";
+import { RightTab } from "menu.slint";
+import { TerminalView } from "terminal_view.slint";
+import { DescriptionPanel } from "description_panel.slint";
+import { GitChangesPanel } from "git_changes_panel.slint";
+import { FilesPanel } from "files_panel.slint";
+import { HistoryPanel } from "history_panel.slint";
+
+export component RightPane inherits Rectangle {
+    // Layout / shared.
+    in property <length> tab-strip-h: 32px;
+    in property <length> open-tabs-strip-h: 0px;
+    in property <length> right-pad-h: 18px;
+    in property <length> right-pad-v: 14px;
+    in property <length> term-w;
+    in property <length> term-h;
+    in property <string> spinner-glyph;
+
+    // Open tabs strip.
+    in property <[OpenTaskTabData]> open-task-tabs;
+    in-out property <bool> tab-menu-open;
+    in-out property <string> tab-menu-target-id;
+    in-out property <length> tab-menu-x;
+    in-out property <length> tab-menu-y;
+    callback open-tab(string);
+    callback close-tab(string);
+
+    // Tab strip.
+    in-out property <string> active-right-tab;
+
+    // Terminal.
+    in property <image> frame;
+    callback terminal-key-pressed(string, bool, bool, bool, bool);
+    public function focus-terminal() { terminal.focus-input(); }
+
+    // Description tab.
+    in property <string> active-task-id;
+    in property <string> active-task-display;
+    in property <string> active-task-session-state;
+    in-out property <string> active-task-title;
+    in-out property <string> active-task-title-error;
+    in-out property <string> active-task-description;
+    in-out property <string> active-task-instructions;
+    in property <string> active-task-tokens-text;
+    in property <string> active-task-cost-text;
+    in property <string> active-task-runtime-text;
+    in property <int> active-task-message-count;
+    in property <[LabelPillData]> active-task-labels;
+    in property <[LabelPillData]> active-task-available-labels;
+    in-out property <bool> label-picker-open;
+    in property <[TaskCardData]> active-task-dependencies;
+    in property <[TaskCardData]> active-task-available-deps;
+    in-out property <bool> dep-picker-open;
+    callback delete-task(string);
+    callback title-changed(string);
+    callback description-changed(string);
+    callback instructions-changed(string);
+    callback start-plan(string);
+    callback start-implement(string);
+    callback attach-label(string);
+    callback detach-label(string);
+    callback add-dependency(string);
+    callback remove-dependency(string);
+
+    // Git.
+    in property <[DiffFileData]> git-diff-files;
+    in property <[CommitEntryData]> git-commit-log;
+
+    // Files.
+    in property <[FileEntryData]> file-entries;
+    in-out property <string> file-current-dir;
+    in-out property <bool> editor-open;
+    in-out property <string> editor-file-path;
+    in-out property <string> editor-file-content;
+    in property <string> editor-syntax-name;
+    in property <bool> editor-file-dirty;
+    in property <[HighlightedLineData]> editor-highlighted-lines;
+    in property <int> editor-line-count;
+    callback file-entry-clicked(string, string);
+    callback editor-content-changed(string);
+    callback editor-save();
+    callback editor-close();
+
+    background: Tokens.background;
+
+    // Polish 16 — open-task tabs strip. Only visible when ≥2 tabs are
+    // pinned; a single-task workflow skips this row entirely so the
+    // usual Terminal/Description/Git/Files/History strip stays at the
+    // top. The strip scrolls horizontally when many tabs are open so
+    // we never truncate the tab text.
+    if root.open-task-tabs.length >= 2: Rectangle {
+        x: 0; y: 0;
+        width: parent.width;
+        height: open-tabs-strip-h;
+        background: Tokens.background;
+
+        // Bottom separator — visual continuation of the tab strip below.
+        Rectangle {
+            x: 0; y: parent.height - 1px;
+            width: parent.width; height: 1px;
+            background: Tokens.border;
+        }
+
+        Flickable {
+            x: 8px;
+            y: 4px;
+            width: parent.width - 16px;
+            height: parent.height - 8px;
+            viewport-height: parent.height - 8px;
+            viewport-width: tab-row.preferred-width;
+
+            tab-row := HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+
+                for tab in root.open-task-tabs: OpenTaskTab {
+                    display-label: "#" + tab.display-id + "  " + tab.title;
+                    kind: tab.kind;
+                    session-state: tab.session-state;
+                    active: tab.is-active;
+                    spinner-glyph: root.spinner-glyph;
+                    clicked => { root.open-tab(tab.id); }
+                    close-clicked => { root.close-tab(tab.id); }
+                    // Polish 41b — right-click opens the context menu
+                    // anchored at the cursor position, with the
+                    // right-clicked tab as the target.
+                    right-clicked(abs-x, abs-y) => {
+                        root.tab-menu-target-id = tab.id;
+                        root.tab-menu-x = abs-x;
+                        root.tab-menu-y = abs-y;
+                        root.tab-menu-open = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Tab strip.
+    Rectangle {
+        x: 0; y: open-tabs-strip-h;
+        width: parent.width;
+        height: tab-strip-h;
+        background: Tokens.background;
+
+        Rectangle {
+            x: 0; y: parent.height - 1px;
+            width: parent.width; height: 1px;
+            background: Tokens.border;
+        }
+
+        HorizontalLayout {
+            padding-left: Tokens.space-2;
+            padding-right: Tokens.space-2;
+            spacing: Tokens.space-1;
+            alignment: start;
+
+            VerticalLayout { alignment: end;
+                RightTab { label: "Terminal"; tab-kind: "terminal"; selected: root.active-right-tab == "terminal"; clicked => { root.active-right-tab = "terminal"; } }
+            }
+            VerticalLayout { alignment: end;
+                RightTab { label: "Description"; tab-kind: "description"; selected: root.active-right-tab == "description"; clicked => { root.active-right-tab = "description"; } }
+            }
+            VerticalLayout { alignment: end;
+                RightTab { label: "Git Changes"; tab-kind: "git"; selected: root.active-right-tab == "git"; clicked => { root.active-right-tab = "git"; } }
+            }
+            VerticalLayout { alignment: end;
+                RightTab { label: "Files"; tab-kind: "files"; selected: root.active-right-tab == "files"; clicked => { root.active-right-tab = "files"; } }
+            }
+            VerticalLayout { alignment: end;
+                RightTab { label: "History"; tab-kind: "history"; selected: root.active-right-tab == "history"; clicked => { root.active-right-tab = "history"; } }
+            }
+        }
+    }
+
+    // Terminal area (only visible when active-right-tab == "terminal")
+    terminal := TerminalView {
+        x: right-pad-h;
+        y: tab-strip-h + open-tabs-strip-h + right-pad-v;
+        width: term-w;
+        height: term-h;
+        frame: root.frame;
+        active-task-id: root.active-task-id;
+        key-pressed(text, ctrl, alt, shift, meta) => {
+            root.terminal-key-pressed(text, ctrl, alt, shift, meta);
+        }
+    }
+
+    // Footer status line.
+    Text {
+        x: right-pad-h + Tokens.space-1;
+        y: parent.height - 22px;
+        text: "‖ Quay terminal · esc to interrupt the active session";
+        color: Tokens.kind-enhancement;
+        font-size: Tokens.text-xs;
+        font-family: Tokens.font-mono;
+    }
+
+    // Description tab.
+    DescriptionPanel {
+        visible: root.active-right-tab == "description";
+        x: right-pad-h;
+        y: tab-strip-h + open-tabs-strip-h + right-pad-v;
+        width: parent.width - right-pad-h * 2;
+        height: parent.height - tab-strip-h - open-tabs-strip-h - right-pad-v * 2 - 22px;
+
+        active-task-id: root.active-task-id;
+        active-task-display: root.active-task-display;
+        active-task-session-state: root.active-task-session-state;
+        active-task-title <=> root.active-task-title;
+        active-task-title-error <=> root.active-task-title-error;
+        active-task-description <=> root.active-task-description;
+        active-task-instructions <=> root.active-task-instructions;
+        active-task-tokens-text: root.active-task-tokens-text;
+        active-task-cost-text: root.active-task-cost-text;
+        active-task-runtime-text: root.active-task-runtime-text;
+        active-task-message-count: root.active-task-message-count;
+        active-task-labels: root.active-task-labels;
+        active-task-available-labels: root.active-task-available-labels;
+        label-picker-open <=> root.label-picker-open;
+        active-task-dependencies: root.active-task-dependencies;
+        active-task-available-deps: root.active-task-available-deps;
+        dep-picker-open <=> root.dep-picker-open;
+
+        delete-task(id) => { root.delete-task(id); }
+        title-changed(t) => { root.title-changed(t); }
+        description-changed(t) => { root.description-changed(t); }
+        instructions-changed(t) => { root.instructions-changed(t); }
+        start-plan(id) => { root.start-plan(id); }
+        start-implement(id) => { root.start-implement(id); }
+        attach-label(id) => { root.attach-label(id); }
+        detach-label(id) => { root.detach-label(id); }
+        add-dependency(id) => { root.add-dependency(id); }
+        remove-dependency(id) => { root.remove-dependency(id); }
+    }
+
+    // Git Changes tab.
+    GitChangesPanel {
+        visible: root.active-right-tab == "git";
+        x: right-pad-h;
+        y: tab-strip-h + open-tabs-strip-h + right-pad-v;
+        width: parent.width - right-pad-h * 2;
+        height: parent.height - tab-strip-h - open-tabs-strip-h - right-pad-v * 2 - 22px;
+
+        active-task-id: root.active-task-id;
+        diff-files: root.git-diff-files;
+        commit-log: root.git-commit-log;
+    }
+
+    // Files tab.
+    FilesPanel {
+        visible: root.active-right-tab == "files";
+        x: right-pad-h;
+        y: tab-strip-h + open-tabs-strip-h + right-pad-v;
+        width: parent.width - right-pad-h * 2;
+        height: parent.height - tab-strip-h - open-tabs-strip-h - right-pad-v * 2 - 22px;
+
+        file-entries: root.file-entries;
+        file-current-dir <=> root.file-current-dir;
+        editor-open <=> root.editor-open;
+        editor-file-path <=> root.editor-file-path;
+        editor-file-content <=> root.editor-file-content;
+        editor-syntax-name: root.editor-syntax-name;
+        editor-file-dirty: root.editor-file-dirty;
+        editor-highlighted-lines: root.editor-highlighted-lines;
+        editor-line-count: root.editor-line-count;
+
+        entry-clicked(path, kind) => { root.file-entry-clicked(path, kind); }
+        content-changed(t) => { root.editor-content-changed(t); }
+        save => { root.editor-save(); }
+        close => { root.editor-close(); }
+    }
+
+    // History tab.
+    HistoryPanel {
+        visible: root.active-right-tab == "history";
+        x: right-pad-h;
+        y: tab-strip-h + open-tabs-strip-h + right-pad-v;
+        width: parent.width - right-pad-h * 2;
+        height: parent.height - tab-strip-h - open-tabs-strip-h - right-pad-v * 2 - 22px;
+    }
+}

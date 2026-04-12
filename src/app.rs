@@ -22,8 +22,8 @@ use uuid::Uuid;
 use crate::agents;
 use crate::git;
 use crate::kanban::{
-    AgentKind, SessionRecord, SessionState, SessionStore, StartMode, Task, TaskState, TaskStore,
-    WorktreeStrategy, unix_millis_now,
+    AgentKind, DependencyStore, LabelStore, ProjectStore, SessionRecord, SessionState,
+    SessionStore, StartMode, Task, TaskState, TaskStore, WorktreeStrategy, unix_millis_now,
 };
 use crate::persistence::{Database, QuayDirs};
 use crate::terminal::{Framebuffer, GlyphAtlas, PtySession};
@@ -114,6 +114,36 @@ impl AppState {
             open_tabs: RefCell::new(open_tabs),
             expanded_dirs: RefCell::new(HashSet::new()),
         })
+    }
+
+    // ─── Store factory methods ───────────────────────────────────────────────
+    //
+    // Each method returns a fresh store that borrows `&self.db.conn`. The
+    // returned `Store<'_>` lifetime is elided to `&self`, so the borrow
+    // checker keeps the store from outliving the AppState. These exist purely
+    // to eliminate the `crate::kanban::TaskStore::new(&state.db.conn)` boilerplate
+    // that used to litter every callback in `main.rs` — there is no SQL or
+    // domain logic here on purpose. Stores remain the single source of SQL.
+
+    pub fn task_store(&self) -> TaskStore<'_> {
+        TaskStore::new(&self.db.conn)
+    }
+
+    pub fn label_store(&self) -> LabelStore<'_> {
+        LabelStore::new(&self.db.conn)
+    }
+
+    pub fn dependency_store(&self) -> DependencyStore<'_> {
+        DependencyStore::new(&self.db.conn)
+    }
+
+    pub fn project_store(&self) -> ProjectStore<'_> {
+        ProjectStore::new(&self.db.conn)
+    }
+
+    #[allow(dead_code)]
+    pub fn session_store(&self) -> SessionStore<'_> {
+        SessionStore::new(&self.db.conn)
     }
 
     /// Polish 34: write the current `open_tabs` to the settings KV
@@ -229,17 +259,43 @@ impl AppState {
 
     /// Read every task from the DB, ordered for kanban display.
     pub fn list_tasks(&self) -> Result<Vec<Task>> {
-        TaskStore::new(&self.db.conn).list_all()
+        self.task_store().list_all()
     }
 
     /// Append a brand-new task to the Backlog with an auto-generated title.
     pub fn create_task(&self, title: String) -> Result<Task> {
         let mut task = Task::new(title, self.default_cwd.clone(), self.default_agent.clone());
         // Place at the bottom of the Backlog column.
-        let existing = TaskStore::new(&self.db.conn).list_by_state(TaskState::Backlog)?;
+        let store = self.task_store();
+        let existing = store.list_by_state(TaskState::Backlog)?;
         task.position = existing.iter().map(|t| t.position).max().unwrap_or(-1) + 1;
-        TaskStore::new(&self.db.conn).insert(&task)?;
+        store.insert(&task)?;
         Ok(task)
+    }
+
+    /// Apply a mutation to the currently active task and persist.
+    ///
+    /// Returns `Ok(true)` if a task was found and updated, `Ok(false)` if
+    /// there's no active task selected. Errors propagate so callers can
+    /// surface them via toast.
+    ///
+    /// `updated_at` is bumped automatically — callers only need to mutate
+    /// the field they care about.
+    pub fn update_active_task<F>(&self, f: F) -> Result<bool>
+    where
+        F: FnOnce(&mut Task),
+    {
+        let Some(id) = *self.active_task.borrow() else {
+            return Ok(false);
+        };
+        let store = self.task_store();
+        let Some(mut task) = store.get(id)? else {
+            return Ok(false);
+        };
+        f(&mut task);
+        task.updated_at = unix_millis_now();
+        store.update(&task)?;
+        Ok(true)
     }
 
     /// Move a task one column forward along the primary workflow
@@ -251,11 +307,9 @@ impl AppState {
     /// unresolved dependencies — the user must either complete the
     /// prerequisites first or manually remove the dependency edges.
     pub fn move_forward(&self, id: Uuid) -> Result<()> {
-        let deps = crate::kanban::DependencyStore::new(&self.db.conn);
+        let deps = self.dependency_store();
         if deps.is_blocked(id)? {
-            let current = crate::kanban::TaskStore::new(&self.db.conn)
-                .get(id)?
-                .map(|t| t.state);
+            let current = self.task_store().get(id)?.map(|t| t.state);
             if matches!(current, Some(TaskState::Planning) | Some(TaskState::Backlog)) {
                 // Allow Backlog → Planning (user can still plan while
                 // blocked), but stop there.
@@ -277,7 +331,7 @@ impl AppState {
         id: Uuid,
         next: impl FnOnce(TaskState) -> Option<TaskState>,
     ) -> Result<()> {
-        let store = TaskStore::new(&self.db.conn);
+        let store = self.task_store();
         let mut task = store
             .get(id)?
             .with_context(|| format!("task {id} not found"))?;
@@ -390,7 +444,7 @@ impl AppState {
     /// will surface and kill these). The byte log file is shared, so old
     /// scrollback remains visible above the new agent's output.
     pub fn start_session(&self, id: Uuid, mode: StartMode) -> Result<()> {
-        let store = TaskStore::new(&self.db.conn);
+        let store = self.task_store();
         let mut task = store
             .get(id)?
             .with_context(|| format!("task {id} not found"))?;
@@ -575,7 +629,7 @@ impl AppState {
             cwd,
             argv,
         );
-        SessionStore::new(&self.db.conn).insert(&record)?;
+        self.session_store().insert(&record)?;
 
         // ── 6. Register the live session + mark active ──────────────────
         // An existing session for the same id gets dropped here; its log
@@ -698,7 +752,7 @@ impl AppState {
         if !self.list_tasks()?.is_empty() {
             return Ok(());
         }
-        let store = TaskStore::new(&self.db.conn);
+        let store = self.task_store();
         let titles_and_states = [
             ("Add dark mode", TaskState::Backlog, 0),
             ("Fix server crash on corrupted db.json", TaskState::Backlog, 1),

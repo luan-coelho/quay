@@ -1,0 +1,107 @@
+// Top window title bar — traffic-light decoration, sidebar toggle,
+// centered app name, current task display + Avatar. Matches Lanes
+// reference visually.
+
+import { IconSet } from "@lucide";
+import { Tokens } from "../tokens.slint";
+import { LucideIcon, Avatar } from "atoms.slint";
+
+export component TitleBar inherits Rectangle {
+    in property <string> active-task-display;
+    in property <string> active-task-title;
+    in-out property <bool> sidebar-collapsed;
+    in property <length> sidebar-w;
+    callback toggle-sidebar();
+
+    background: Tokens.background;
+
+    Rectangle {
+        x: 0; y: parent.height - 1px;
+        width: parent.width; height: 1px;
+        background: Tokens.border;
+    }
+
+    // Traffic-light styled trio (decorative — purely visual).
+    // Colours are the canonical macOS hex values; these are
+    // intentionally hardcoded (not tokenised) so macOS users
+    // read them instantly.
+    HorizontalLayout {
+        x: Tokens.space-3;
+        y: (parent.height - self.preferred-height) / 2;
+        spacing: Tokens.space-2 - 2px;
+        Rectangle { width: 11px; height: 11px; border-radius: 5.5px; background: #ff5f57; }
+        Rectangle { width: 11px; height: 11px; border-radius: 5.5px; background: #febc2e; }
+        Rectangle { width: 11px; height: 11px; border-radius: 5.5px; background: #28c840; }
+    }
+
+    // Polish 24 — sidebar toggle (hamburger). Now actually collapses
+    // the sidebar to a 56 px icon-only strip via the `sidebar-collapsed`
+    // property. Pure Slint, no Rust round-trip.
+    TouchArea {
+        x: root.sidebar-w + Tokens.space-2;
+        y: (parent.height - self.height) / 2;
+        width: 22px;
+        height: 22px;
+        clicked => {
+            root.sidebar-collapsed = !root.sidebar-collapsed;
+            root.toggle-sidebar();
+        }
+        LucideIcon {
+            icon: IconSet.Menu;
+            size: 14px;
+            stroke: Tokens.muted-foreground;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+        }
+    }
+
+    // Centered app name.
+    Text {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        text: "Quay";
+        color: Tokens.muted-foreground;
+        font-size: Tokens.text-sm;
+        font-weight: Tokens.weight-semibold;
+    }
+
+    // Polish 27 — active task display id + truncated title. Was just
+    // the display id ("#7"); now shows "#7 Add dark mode" so the user
+    // has context even when the open-tabs strip is empty (only 1 tab
+    // open). The title elides if too long.
+    Rectangle {
+        x: parent.width - self.width - 44px;
+        y: (parent.height - self.height) / 2;
+        width: title-info.preferred-width + 4px;
+        height: title-info.preferred-height;
+        background: transparent;
+
+        title-info := HorizontalLayout {
+            spacing: Tokens.space-2;
+            alignment: end;
+
+            Text {
+                text: root.active-task-display;
+                color: Tokens.muted-foreground;
+                font-size: Tokens.text-sm;
+                font-family: Tokens.font-mono;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.active-task-title;
+                color: Tokens.foreground;
+                font-size: Tokens.text-sm;
+                font-weight: Tokens.weight-medium;
+                vertical-alignment: center;
+                overflow: elide;
+                max-width: 240px;
+            }
+        }
+    }
+
+    // Polish 20 — user avatar circle (visual stub, no user system).
+    Avatar {
+        x: parent.width - self.width - 14px;
+        y: (parent.height - self.height) / 2;
+    }
+}
