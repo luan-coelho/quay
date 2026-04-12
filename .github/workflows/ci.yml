@@ -9,6 +9,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  # Incremental compilation in CI is almost always a cache miss and only wastes
+  # IO. The per-crate incremental metadata also inflates the cached `target/`.
+  CARGO_INCREMENTAL: 0
 
 jobs:
   check:
@@ -41,7 +44,8 @@ jobs:
             libxcb-shape0-dev \
             libxcb-xfixes0-dev \
             libssl-dev \
-            pkg-config
+            pkg-config \
+            mold
 
       # Slint's renderer-skia feature needs a C++ toolchain to build skia-safe.
       # ubuntu-latest, macos-latest and windows-latest all ship with a working
@@ -49,16 +53,10 @@ jobs:
       # no extra install step is needed — we only document the dependency here.
 
       - name: Cache cargo registry and target
-        uses: actions/cache@v4
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ matrix.action }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-${{ matrix.action }}-
-            ${{ runner.os }}-cargo-
+          shared-key: ${{ matrix.action }}
+          cache-on-failure: true
 
       - name: cargo check
         if: matrix.action == 'check'
@@ -88,14 +86,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libfontconfig1-dev libxkbcommon-dev libwayland-dev \
             libx11-xcb-dev libxcb-randr0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
-            libssl-dev pkg-config
-      - uses: actions/cache@v4
+            libssl-dev pkg-config mold
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ubuntu-latest-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          shared-key: release
+          cache-on-failure: true
       - name: cargo build --release
         run: cargo build --release
       - name: Upload binary artefact

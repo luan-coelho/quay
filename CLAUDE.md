@@ -10,10 +10,16 @@
   alacritty_terminal + git2 + rusqlite + syntect/ropey (editor).
 - **Comunicação com o usuário**: **português brasileiro**. Termos
   técnicos e identificadores ficam em inglês.
-- **Build**: `cargo build --release`. **Toma 8–12 minutos** por causa
-  de `lto = "thin" + codegen-units = 1` no profile release.
-- **Testes**: `cargo test --release` — 101 testes, todos verdes.
-  Mesmo problema de tempo de compilação.
+- **Build**: `cargo build --release`. **Cold build leva 8–12 min** —
+  o gargalo é compilação de C++ (Skia via skia-bindings, ~200 MB de
+  fonte) + libgit2 + SQLite, não o LTO do Rust propriamente dito.
+- **Testes**: `cargo nextest run --all-targets` (preferido, paraleliza)
+  ou `cargo test --all-targets`. Rebuild incremental em ~12s após a
+  primeira build; cache hit total em <1s. Rodar em `--release` só
+  se precisar medir performance de runtime — não é necessário pra
+  validar correção.
+- **Linker rápido no Linux**: o projeto usa `mold` via
+  `.cargo/config.toml`. Instalação: `sudo apt install mold`.
 - **Smoke launch**: `timeout 3 ./target/release/quay 2>&1 | tail -5`
   — verifica que a janela abre e o glyph atlas é construído.
 - **Cargo.lock está commitado** (é um binário, não uma lib).
@@ -158,18 +164,36 @@ componente. Se aparece 1 vez, não.
 ## Build / test workflow
 
 ```bash
-# Build (lento — 8 a 12 min em release)
+# Build de produção (lento — 8-12 min na primeira vez, depois cacheado)
 cargo build --release
 
-# Tests (101 verdes — 8-12 min na primeira vez, ~30s subsequente)
-cargo test --release
+# Testes — forma preferida (nextest paraleliza, 2-3x mais rápido que
+# cargo test quando a suite cresce). Instalação: `cargo install
+# cargo-nextest --locked`. Fallback: `cargo test --all-targets`.
+cargo nextest run --all-targets
 
 # Smoke launch (verifica que a janela abre)
 timeout 3 ./target/release/quay 2>&1 | tail -5
 
 # Lints
-cargo clippy --release -- -D warnings
+cargo clippy --all-targets -- -D warnings
 ```
+
+### Performance do build
+
+O `Cargo.toml` usa `[profile.dev.package."*"] opt-level = 3` (e o
+equivalente para `test`) para compilar **as dependências** em -O3 mesmo
+em dev builds, mantendo o user code em `opt-level = 0` (fast recompile).
+Isso significa que os testes que batem em SQLite/libgit2/syntect rodam
+em runtime próximo ao release, sem penalizar o ciclo de iteração de
+src/*.rs. Primeira build após `cargo clean` é ~5-10 min mais lenta por
+esse one-time cost.
+
+O `.cargo/config.toml` aciona `mold` como linker no Linux. Ganho local
+é modesto (~8% em rebuild incremental) porque o gargalo real é o rustc
+compilando a crate `quay` monolítica, não o link step — mas é zero
+downside e ajuda bastante em `cargo build --release` (link de 2.4 GB
+de artifacts).
 
 ## Convenções de código
 

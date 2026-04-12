@@ -57,6 +57,7 @@ ropey = "1"
 
 [build-dependencies]
 slint-build = "1.15"
+lucide-slint = "1.8"
 
 [dev-dependencies]
 tempfile = "3"
@@ -65,6 +66,25 @@ tempfile = "3"
 lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
+
+# Optimize all dependencies (Skia, libgit2, SQLite, syntect, etc.) at -O3 even
+# in dev/test builds. User code stays at opt-level=0 so it's cheap to recompile,
+# but hot paths in the deps (SQLite queries, regex in syntect, libgit2 walks)
+# run at release speed during `cargo test`. First build after this change is
+# slower (+5–10 min, one-time cost); subsequent rebuilds don't pay it again.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.test.package."*"]
+opt-level = 3
+
+# Build scripts and proc-macros (slint-macros is the heaviest) also benefit —
+# slint DSL compilation noticeably speeds up with optimized build-override.
+[profile.dev.build-override]
+opt-level = 3
+
+[profile.test.build-override]
+opt-level = 3
 
 [[example]]
 name = "spike_a_blit"

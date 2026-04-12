@@ -1,0 +1,16 @@
+# Linker configuration for faster debug/test builds on Linux.
+#
+# `mold` is dramatically faster than the default GNU ld for linking large
+# binaries — target/debug/quay is ~430 MB and the test binary ~345 MB, so
+# link time dominates incremental rebuilds. Swapping the linker is a pure
+# build-time speedup with no effect on runtime or binary correctness.
+#
+# We keep rustc's default linker driver (`cc` → gcc on Linux) and only ask it
+# to use mold via `-fuse-ld=mold`. gcc 13+ supports this flag natively and is
+# faster to invoke than clang as a driver, which matters because rustc spawns
+# the linker once per crate.
+#
+# macOS and Windows intentionally omitted — macOS already ships lld-equivalent
+# via ld64.lld, and Windows uses MSVC's link.exe. No action required there.
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
