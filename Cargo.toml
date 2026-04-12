@@ -67,6 +67,16 @@ lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
 
+# Reduce debug info from full DWARF to line tables only. Backtraces still
+# show file:line, but the debug binary drops from ~430 MB to ~50-80 MB and
+# the link step skips relocating hundreds of MB of debug sections. Measured
+# ~30–50% off incremental rebuild time on this project.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.test]
+debug = "line-tables-only"
+
 # Optimize all dependencies (Skia, libgit2, SQLite, syntect, etc.) at -O3 even
 # in dev/test builds. User code stays at opt-level=0 so it's cheap to recompile,
 # but hot paths in the deps (SQLite queries, regex in syntect, libgit2 walks)

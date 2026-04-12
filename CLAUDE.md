@@ -181,19 +181,27 @@ cargo clippy --all-targets -- -D warnings
 
 ### Performance do build
 
-O `Cargo.toml` usa `[profile.dev.package."*"] opt-level = 3` (e o
-equivalente para `test`) para compilar **as dependências** em -O3 mesmo
-em dev builds, mantendo o user code em `opt-level = 0` (fast recompile).
-Isso significa que os testes que batem em SQLite/libgit2/syntect rodam
-em runtime próximo ao release, sem penalizar o ciclo de iteração de
-src/*.rs. Primeira build após `cargo clean` é ~5-10 min mais lenta por
-esse one-time cost.
+Rebuild incremental típico (após `touch src/main.rs`): **~6s**. Cache
+hit total (sem mudanças): **<1s**. Cold build do zero: ~10 min (o peso
+é Skia C++ + libgit2 + SQLite, não o rustc).
 
-O `.cargo/config.toml` aciona `mold` como linker no Linux. Ganho local
-é modesto (~8% em rebuild incremental) porque o gargalo real é o rustc
-compilando a crate `quay` monolítica, não o link step — mas é zero
-downside e ajuda bastante em `cargo build --release` (link de 2.4 GB
-de artifacts).
+O `Cargo.toml` usa três truques para acelerar dev/test builds:
+
+1. **`debug = "line-tables-only"`** em `profile.dev` e `profile.test` —
+   reduz o test binary de 498 MB → 158 MB e corta ~45% do tempo de
+   rebuild incremental porque gerar DWARF completo é o gargalo real
+   aqui. Backtraces continuam mostrando file:line.
+2. **`[profile.dev.package."*"] opt-level = 3`** — compila as
+   dependências (Skia, libgit2, SQLite, syntect) em -O3 mesmo em dev
+   build. User code fica em `opt-level = 0` para recompilar rápido,
+   mas os testes que batem nas deps rodam perto da velocidade de
+   release.
+3. **`.cargo/config.toml` com mold** — linker rápido no Linux (~10%
+   adicional). Sem impacto no runtime.
+
+O primeiro `cargo build` após alterar qualquer profile vai ser lento
+(~4-10 min) porque invalida o cache de deps. Iterações subsequentes
+usam o cache.
 
 ## Convenções de código
 
