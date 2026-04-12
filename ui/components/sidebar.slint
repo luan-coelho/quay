@@ -3,8 +3,10 @@
 // added a compact mode that hides labels and the Projects header
 // when `collapsed` is true.
 
+import { IconSet } from "@lucide";
 import { Tokens } from "../tokens.slint";
 import { MenuItemData, ProjectData } from "../data.slint";
+import { LucideIcon } from "atoms.slint";
 import { MenuRow, ProjectRow } from "menu.slint";
 
 export component Sidebar inherits Rectangle {
@@ -80,14 +82,12 @@ export component Sidebar inherits Rectangle {
                         background: parent.has-hover ? Tokens.sidebar-accent : transparent;
                         border-radius: Tokens.radius-sm;
                         animate background { duration: 120ms; easing: ease-out; }
-                        Text {
-                            text: "+";
-                            color: Tokens.muted-foreground;
-                            font-size: Tokens.text-base;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            width: parent.width;
-                            height: parent.height;
+                        LucideIcon {
+                            icon: IconSet.Plus;
+                            size: 12px;
+                            stroke: Tokens.muted-foreground;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
                         }
                     }
                 }
