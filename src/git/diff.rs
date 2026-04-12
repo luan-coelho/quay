@@ -230,6 +230,8 @@ mod tests {
         run(&["config", "user.name", "Quay Test"]);
         // Prevent Windows CRLF conversion from corrupting diffs.
         run(&["config", "core.autocrlf", "false"]);
+        // Disable commit signing so tests work on machines with global gpgsign.
+        run(&["config", "commit.gpgsign", "false"]);
 
         fs::write(repo.join("README.md"), "hello\n").unwrap();
         run(&["add", "README.md"]);

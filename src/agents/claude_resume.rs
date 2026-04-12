@@ -74,7 +74,7 @@ fn claude_projects_dir() -> Option<PathBuf> {
 /// example, `/home/luan/repos/quay` → `-home-luan-repos-quay`.
 fn encode_cwd(cwd: &Path) -> String {
     let s = cwd.to_string_lossy();
-    s.replace(std::path::MAIN_SEPARATOR, "-")
+    s.replace(['/', '\\'], "-")
 }
 
 /// Scan a `.claude/projects/<cwd>/` directory for `.jsonl` files whose

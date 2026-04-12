@@ -164,7 +164,7 @@ pub fn resolve_session_path(cwd: &Path, session_id: &str) -> Option<std::path::P
         .join(".claude/projects");
     let encoded = cwd
         .to_string_lossy()
-        .replace(std::path::MAIN_SEPARATOR, "-");
+        .replace(['/', '\\'], "-");
     Some(home.join(encoded).join(format!("{session_id}.jsonl")))
 }
 

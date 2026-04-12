@@ -225,11 +225,14 @@ mod tests {
         assert!(init.status.success(), "git init failed: {}",
             String::from_utf8_lossy(&init.stderr));
 
-        // Local identity for commits + disable CRLF for Windows.
+        // Local identity for commits + disable CRLF for Windows + disable
+        // commit signing so the fixture works on machines with global
+        // gpg.commit.gpgsign=true.
         for kv in [
             ("user.email", "test@quay.local"),
             ("user.name", "Quay Test"),
             ("core.autocrlf", "false"),
+            ("commit.gpgsign", "false"),
         ] {
             let out = Command::new("git")
                 .arg("-C")
