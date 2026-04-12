@@ -35,7 +35,7 @@ import {
     LabelPillData, QuickActionRowData, ProcessRowData, FileEntryData,
     HlSpanData, HighlightedLineData, TaskCardData, DiffLineData,
     DiffFileData, CommitEntryData, MenuItemData, ProjectData,
-    OpenTaskTabData,
+    OpenTaskTabData, SessionDotData, WorktreeEntryData, SessionEntryData,
 } from "data.slint";
 import {
     LucideIcon, KindDiamond, Spinner, KindChip, Avatar, CloseButton,
@@ -161,6 +161,9 @@ export component MainWindow inherits Window {
 
     in property <[MenuItemData]> menu-items;
     in property <[ProjectData]> projects;
+    // Phase D — worktree entries for the sidebar Worktrees section.
+    in property <[WorktreeEntryData]> worktree-entries;
+    callback worktree-clicked(string);
 
     // All labels available in the system, rendered as filter chips at
     // the top of the task list. Clicking one sets `filter-label-id`;
@@ -210,6 +213,12 @@ export component MainWindow inherits Window {
     in property <int> stats-misc: 0;
     in property <int> stats-sessions: 0;
     in property <int> stats-total: 0;
+    // Phase D — per-session dots for the status bar.
+    in property <[SessionDotData]> session-dots;
+    callback session-dot-clicked(string);
+
+    // Phase D — session history for the History tab.
+    in property <[SessionEntryData]> session-history;
 
     // File browser state for the Files tab (Phase 6).
     in property <[FileEntryData]> file-entries;
@@ -372,6 +381,7 @@ export component MainWindow inherits Window {
         menu-items: root.menu-items;
         projects: root.projects;
         active-project-id: root.active-project-id;
+        worktree-entries: root.worktree-entries;
         collapsed <=> root.sidebar-collapsed;
 
         menu-item-clicked(id) => {
@@ -381,6 +391,7 @@ export component MainWindow inherits Window {
         }
         open-new-project => { root.new-project-open = true; }
         project-clicked(id) => { root.project-clicked(id); }
+        worktree-clicked(task-id) => { root.worktree-clicked(task-id); }
         toggle-collapsed => { root.toggle-sidebar(); }
     }
 
@@ -494,6 +505,9 @@ export component MainWindow inherits Window {
         editor-content-changed(t) => { root.editor-content-changed(t); }
         editor-save => { root.editor-save(); }
         editor-close => { root.editor-close(); }
+
+        // History tab.
+        session-history: root.session-history;
     }
 
     // Polish 25 + 31 — notification toast. Anchored bottom-right.
@@ -522,6 +536,8 @@ export component MainWindow inherits Window {
         stats-misc: root.stats-misc;
         stats-sessions: root.stats-sessions;
         stats-total: root.stats-total;
+        session-dots: root.session-dots;
+        session-dot-clicked(id) => { root.session-dot-clicked(id); }
     }
 
     // ── New Task modal overlay (Polish 10 / 32) ─────────────────────────

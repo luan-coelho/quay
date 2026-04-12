@@ -1,30 +1,136 @@
-// History tab placeholder — Phase 6 will replace this with the real
-// session transcript browser. For now it's a centered explanatory
-// stub so the tab strip doesn't have a dead button.
+// Phase D — session history tab. Shows a scrollable list of past (and
+// current) PTY sessions for the active task, populated from
+// `SessionStore::list_for_task()`.
 
 import { Tokens } from "../tokens.slint";
+import { SessionEntryData } from "../data.slint";
 
 export component HistoryPanel inherits Rectangle {
+    in property <[SessionEntryData]> session-history;
+    in property <string> active-task-id;
+
     background: Tokens.card;
     border-radius: Tokens.radius-md;
     border-width: 1px;
     border-color: Tokens.border;
 
     VerticalLayout {
-        alignment: center;
+        padding: Tokens.space-3;
         spacing: Tokens.space-2;
+
+        // Header row.
         Text {
-            text: "History";
+            text: "Session History";
             color: Tokens.foreground;
             font-size: Tokens.text-base;
             font-weight: Tokens.weight-semibold;
-            horizontal-alignment: center;
         }
-        Text {
-            text: "Session transcript browser — coming in Phase 6.";
+
+        // Empty state.
+        if root.session-history.length == 0 && root.active-task-id != "": Text {
+            text: "No sessions recorded for this task yet.";
             color: Tokens.muted-foreground;
             font-size: Tokens.text-sm;
             horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        if root.active-task-id == "": Text {
+            text: "Select a task to view its session history.";
+            color: Tokens.muted-foreground;
+            font-size: Tokens.text-sm;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        // Scrollable session list.
+        if root.session-history.length > 0: Flickable {
+            viewport-height: session-list.preferred-height;
+
+            session-list := VerticalLayout {
+                spacing: Tokens.space-1;
+
+                for entry in root.session-history: Rectangle {
+                    height: 48px;
+                    background: Tokens.secondary;
+                    border-radius: Tokens.radius-sm;
+
+                    HorizontalLayout {
+                        padding-left: Tokens.space-3;
+                        padding-right: Tokens.space-3;
+                        spacing: Tokens.space-3;
+                        alignment: start;
+
+                        // Status indicator dot.
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 8px;
+                                height: 8px;
+                                border-radius: 4px;
+                                background: entry.exit-status == -1 ? Tokens.kind-enhancement
+                                          : entry.exit-status == 0  ? Tokens.kind-done
+                                          : Tokens.destructive;
+                            }
+                        }
+
+                        // Agent kind badge.
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: entry.agent-kind == "claude" ? "Claude"
+                                    : entry.agent-kind == "opencode" ? "OpenCode"
+                                    : "Terminal";
+                                color: Tokens.muted-foreground;
+                                font-size: Tokens.text-xs;
+                                font-family: Tokens.font-mono;
+                                width: 64px;
+                            }
+                        }
+
+                        // Started-at timestamp.
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: entry.started-at;
+                                color: Tokens.foreground;
+                                font-size: Tokens.text-sm;
+                                overflow: elide;
+                            }
+                        }
+
+                        // Duration.
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: entry.duration;
+                                color: entry.exit-status == -1 ? Tokens.kind-enhancement
+                                     : Tokens.muted-foreground;
+                                font-size: Tokens.text-xs;
+                                font-family: Tokens.font-mono;
+                            }
+                        }
+
+                        // Exit status.
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: entry.exit-status == -1 ? "running"
+                                    : entry.exit-status == 0  ? "ok"
+                                    : "exit " + entry.exit-status;
+                                color: entry.exit-status == -1 ? Tokens.kind-enhancement
+                                     : entry.exit-status == 0  ? Tokens.kind-done
+                                     : Tokens.destructive;
+                                font-size: Tokens.text-xs;
+                                font-family: Tokens.font-mono;
+                                width: 52px;
+                                horizontal-alignment: right;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

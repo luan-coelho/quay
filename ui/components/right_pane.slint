@@ -10,7 +10,7 @@ import { IconSet } from "@lucide";
 import { Tokens } from "../tokens.slint";
 import {
     LabelPillData, TaskCardData, OpenTaskTabData, FileEntryData,
-    HighlightedLineData, DiffFileData, CommitEntryData,
+    HighlightedLineData, DiffFileData, CommitEntryData, SessionEntryData,
 } from "../data.slint";
 import { LucideIcon } from "atoms.slint";
 import { OpenTaskTab } from "cards.slint";
@@ -98,6 +98,9 @@ export component RightPane inherits Rectangle {
     callback editor-content-changed(string);
     callback editor-save();
     callback editor-close();
+
+    // History tab.
+    in property <[SessionEntryData]> session-history;
 
     background: Tokens.background;
 
@@ -314,5 +317,8 @@ export component RightPane inherits Rectangle {
         y: tab-strip-h + open-tabs-strip-h + right-pad-v;
         width: parent.width - right-pad-h * 2;
         height: parent.height - tab-strip-h - open-tabs-strip-h - right-pad-v * 2 - 22px;
+
+        active-task-id: root.active-task-id;
+        session-history: root.session-history;
     }
 }

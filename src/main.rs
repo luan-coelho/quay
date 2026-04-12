@@ -220,6 +220,18 @@ fn main() -> Result<()> {
     let open_tabs_model = Rc::new(VecModel::<OpenTaskTabData>::default());
     window.set_open_task_tabs(ModelRc::from(open_tabs_model.clone()));
 
+    // Phase D: per-session status dots for the status bar.
+    let session_dots_model = Rc::new(VecModel::<SessionDotData>::default());
+    window.set_session_dots(ModelRc::from(session_dots_model.clone()));
+
+    // Phase D: session history model for the History tab.
+    let session_history_model = Rc::new(VecModel::<SessionEntryData>::default());
+    window.set_session_history(ModelRc::from(session_history_model.clone()));
+
+    // Phase D: worktree entries for the sidebar.
+    let worktree_entries_model = Rc::new(VecModel::<WorktreeEntryData>::default());
+    window.set_worktree_entries(ModelRc::from(worktree_entries_model.clone()));
+
     // Polish 35: Cmd+P task quick switcher results model.
     let task_search_model = Rc::new(VecModel::<TaskCardData>::default());
     window.set_task_search_results(ModelRc::from(task_search_model.clone()));
@@ -316,15 +328,18 @@ fn main() -> Result<()> {
         done: done_model.clone(),
         misc: misc_model.clone(),
         open_tabs: open_tabs_model.clone(),
+        session_dots: session_dots_model.clone(),
     });
     let refresh_kanban: Rc<dyn Fn()> = {
         let state = state.clone();
         let weak = window.as_weak();
         let models = kanban_models.clone();
+        let wt_model = worktree_entries_model.clone();
         Rc::new(move || {
             if let Some(window) = weak.upgrade() {
                 crate::wiring::kanban_refresh::rebuild(&state, &window, &models);
             }
+            crate::wiring::refreshes::rebuild_worktrees(&state, &wt_model);
         })
     };
     refresh_kanban();
@@ -338,6 +353,7 @@ fn main() -> Result<()> {
         available_labels: active_task_available_labels_model.clone(),
         deps: active_task_deps_model.clone(),
         available_deps: active_task_available_deps_model.clone(),
+        session_history: session_history_model.clone(),
     });
     let refresh_active_panels: Rc<dyn Fn()> = {
         let state = state.clone();
@@ -442,6 +458,26 @@ fn main() -> Result<()> {
     // Polish 35: clicking a result fires open-task-tab via the
     // existing pinned-tabs callback so the selected task pops into
     // the right pane the same way clicking a kanban card would.
+    // Phase D — clicking a session dot in the status bar switches to that task.
+    {
+        let weak = window.as_weak();
+        window.on_session_dot_clicked(move |task_id| {
+            if let Some(w) = weak.upgrade() {
+                w.invoke_open_task_tab(task_id);
+            }
+        });
+    }
+    // Phase D — clicking a worktree entry in the sidebar switches to
+    // the associated task (same pattern as session dot clicks).
+    {
+        let weak = window.as_weak();
+        window.on_worktree_clicked(move |task_id| {
+            if let Some(w) = weak.upgrade() {
+                w.invoke_open_task_tab(task_id);
+            }
+        });
+    }
+
     // PTY poll timer — drains bytes from all live sessions and blits the
     // active one. Fires ~60 Hz.
     //

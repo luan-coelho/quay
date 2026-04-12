@@ -24,7 +24,7 @@ use uuid::Uuid;
 use crate::app::AppState;
 use crate::kanban::{Task, TaskKind, TaskState};
 use crate::wiring::helpers::{kind_to_str, label_to_pill, replace_model, task_to_card};
-use crate::{LabelPillData, MainWindow, OpenTaskTabData, TaskCardData};
+use crate::{LabelPillData, MainWindow, OpenTaskTabData, SessionDotData, TaskCardData};
 
 /// The seven `VecModel`s that the kanban view binds to. Bundled into a
 /// single struct so the rebuild function only takes one positional
@@ -38,6 +38,7 @@ pub struct KanbanModels {
     pub done: Rc<VecModel<TaskCardData>>,
     pub misc: Rc<VecModel<TaskCardData>>,
     pub open_tabs: Rc<VecModel<OpenTaskTabData>>,
+    pub session_dots: Rc<VecModel<SessionDotData>>,
 }
 
 /// Re-query the DB and rebuild every kanban column + open-tabs model.
@@ -238,4 +239,23 @@ pub fn rebuild(state: &AppState, window: &MainWindow, models: &KanbanModels) {
         }
     }
 
+    // Phase D — per-session dots for the status bar.
+    {
+        let sessions = state.sessions.borrow();
+        let mut dots = Vec::with_capacity(sessions.len());
+        for id in sessions.keys() {
+            let display_id = display_ids.get(id).copied().unwrap_or(0);
+            let (title, sess_state) = tasks_by_id
+                .get(id)
+                .map(|t| (t.title.clone(), t.session_state.as_str().to_string()))
+                .unwrap_or_else(|| (String::new(), "idle".to_string()));
+            dots.push(SessionDotData {
+                task_id: id.to_string().into(),
+                display_id,
+                title: title.into(),
+                session_state: SharedString::from(sess_state),
+            });
+        }
+        replace_model(&models.session_dots, dots);
+    }
 }
