@@ -82,14 +82,25 @@ export component FilesPanel inherits Rectangle {
                             padding-right: Tokens.space-2;
                             spacing: Tokens.space-1 + 2px;
                             alignment: start;
-                            Text {
-                                text: entry.kind == "directory"
-                                       ? (entry.expanded ? "▾" : "▸")
-                                       : " ";
-                                color: Tokens.muted-foreground;
-                                font-size: Tokens.text-xs;
-                                vertical-alignment: center;
+                            // Directory chevron (▸/▾ replaced by Lucide
+                            // ChevronRight/ChevronDown for vector
+                            // rendering consistency with the rest of
+                            // the UI). Files get a blank placeholder
+                            // of the same width so the name column
+                            // stays aligned.
+                            VerticalLayout {
+                                alignment: center;
                                 width: 10px;
+                                if entry.kind == "directory" && entry.expanded: LucideIcon {
+                                    icon: IconSet.ChevronDown;
+                                    size: 11px;
+                                    stroke: Tokens.muted-foreground;
+                                }
+                                if entry.kind == "directory" && !entry.expanded: LucideIcon {
+                                    icon: IconSet.ChevronRight;
+                                    size: 11px;
+                                    stroke: Tokens.muted-foreground;
+                                }
                             }
                             // Polish 40 + 40b — real Lucide icon picked
                             // from `entry.icon`. The Rust
