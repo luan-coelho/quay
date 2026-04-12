@@ -321,14 +321,14 @@ mod tests {
         // the stats reader and the resume capture agree on layout.
         let cwd = Path::new("/tmp/quay-test-project");
         let result = resolve_session_path(cwd, "abc123");
-        // Home directory is environment-dependent — we just check the
-        // suffix shape rather than the absolute path.
+        // Home directory is environment-dependent — check the suffix
+        // via path components instead of string matching so the test
+        // works on both Unix (/) and Windows (\) separators.
         if let Some(path) = result {
-            let s = path.to_string_lossy();
-            assert!(
-                s.ends_with("-tmp-quay-test-project/abc123.jsonl"),
-                "unexpected resolved path: {s}"
-            );
+            let file_name = path.file_name().unwrap().to_string_lossy();
+            assert_eq!(file_name, "abc123.jsonl");
+            let parent_name = path.parent().unwrap().file_name().unwrap().to_string_lossy();
+            assert_eq!(parent_name, "-tmp-quay-test-project");
         }
     }
 }

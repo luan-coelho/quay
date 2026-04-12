@@ -112,7 +112,7 @@ mod tests {
     fn new_project_empty_name_fails() {
         let form = NewProjectForm {
             name: String::new(),
-            repo_path: "/tmp".into(),
+            repo_path: std::env::temp_dir().to_string_lossy().into_owned(),
         };
         let errs = form.validate().expect_err("empty name must fail");
         let map = first_errors(&errs);
@@ -135,9 +135,13 @@ mod tests {
 
     #[test]
     fn new_project_nonexistent_absolute_path_fails() {
+        // Build a nonexistent absolute path that is absolute on every
+        // platform (Unix uses `/…`, Windows needs a drive prefix).
+        let nonexistent = std::env::temp_dir()
+            .join("nonexistent_quay_test_dir_abc123xyz");
         let form = NewProjectForm {
             name: "demo".into(),
-            repo_path: "/nonexistent/path/that/should/not/exist/abc123xyz".into(),
+            repo_path: nonexistent.to_string_lossy().into_owned(),
         };
         let errs = form.validate().expect_err("nonexistent path must fail");
         let map = first_errors(&errs);
@@ -149,9 +153,10 @@ mod tests {
 
     #[test]
     fn new_project_valid_passes() {
+        // temp_dir() is absolute and exists on every platform.
         let form = NewProjectForm {
             name: "demo".into(),
-            repo_path: "/tmp".into(), // /tmp exists on all Unix test targets
+            repo_path: std::env::temp_dir().to_string_lossy().into_owned(),
         };
         assert!(form.validate().is_ok());
     }
