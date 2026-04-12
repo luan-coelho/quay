@@ -1,5 +1,6 @@
 //! Terminal widget: PTY + alacritty_terminal + Slint Image blitting.
 
+pub mod detect;
 pub mod font;
 pub mod input;
 pub mod render;

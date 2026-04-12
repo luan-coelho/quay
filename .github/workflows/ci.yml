@@ -9,6 +9,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
+  RUST_BACKTRACE: 1
   # Incremental compilation in CI is almost always a cache miss and only wastes
   # IO. The per-crate incremental metadata also inflates the cached `target/`.
   CARGO_INCREMENTAL: 0
@@ -25,6 +26,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # Git identity + settings needed by tests that shell out to git.
+      # Without this, `git commit` may fail on runners that lack a
+      # global user.name/user.email (macOS, Windows).
+      - name: Configure git for tests
+        run: |
+          git config --global user.email "ci@quay.dev"
+          git config --global user.name "Quay CI"
+          git config --global init.defaultBranch main
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -64,7 +74,15 @@ jobs:
 
       - name: cargo test
         if: matrix.action == 'test'
-        run: cargo test --all-targets
+        run: cargo test --all-targets 2>&1 | tee test-output.txt
+        shell: bash
+
+      - name: Upload test output on failure
+        if: matrix.action == 'test' && failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output-${{ matrix.os }}
+          path: test-output.txt
 
       - name: cargo clippy
         if: matrix.action == 'clippy'

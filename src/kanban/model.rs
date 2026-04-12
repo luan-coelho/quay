@@ -149,9 +149,10 @@ impl TaskKind {
 /// `Bare` means "no agent, just run the user's `$SHELL`" and bypasses the
 /// [`crate::agents::AgentProvider`] Strategy trait entirely (see
 /// [`crate::app::AppState::start_session`]).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AgentKind {
+    #[default]
     Claude,
     Opencode,
     Bare,
@@ -176,11 +177,6 @@ impl AgentKind {
     }
 }
 
-impl Default for AgentKind {
-    fn default() -> Self {
-        Self::Claude
-    }
-}
 
 /// Which "start gesture" the user chose when launching an agent session.
 ///
@@ -217,9 +213,10 @@ impl StartMode {
 /// `<repo>/.worktrees/<slug>/` on first Plan/Implement click.
 /// `None` skips worktree creation and runs in the repo root.
 /// `Select` (Phase 2+) lets the user reuse an existing worktree.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum WorktreeStrategy {
+    #[default]
     Create,
     None,
     Select,
@@ -244,11 +241,6 @@ impl WorktreeStrategy {
     }
 }
 
-impl Default for WorktreeStrategy {
-    fn default() -> Self {
-        Self::Create
-    }
-}
 
 /// Lifecycle state of the PTY session attached to a task.
 ///
@@ -259,9 +251,10 @@ impl Default for WorktreeStrategy {
 ///   Stopped → gray dot (user stopped it manually)
 ///   Exited  → gray dot (child process finished on its own)
 ///   Error   → red dot (spawn or I/O failure)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SessionState {
+    #[default]
     Idle,
     Busy,
     Awaiting,
@@ -295,11 +288,6 @@ impl SessionState {
     }
 }
 
-impl Default for SessionState {
-    fn default() -> Self {
-        Self::Idle
-    }
-}
 
 /// One kanban card. Maps 1:1 to a row in the `tasks` table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

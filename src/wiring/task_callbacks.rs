@@ -27,6 +27,8 @@ pub fn wire(window: &MainWindow, ctx: &WiringContext) {
     wire_move(window, ctx);
     wire_edit_fields(window, ctx);
     wire_start_session(window, ctx);
+    wire_stop_session(window, ctx);
+    wire_agent_changed(window, ctx);
     wire_filter_changed(window, ctx);
     wire_delete_task(window, ctx);
 }
@@ -92,12 +94,13 @@ fn wire_select(window: &MainWindow, ctx: &WiringContext) {
                             task.description.clone().unwrap_or_default(),
                             task.instructions.clone().unwrap_or_default(),
                             task.session_state.as_str().to_string(),
+                            task.cli_selection.as_str().to_string(),
                         ))
                     } else {
                         None
                     };
 
-                    let (display, title, description, instructions, sess_state) =
+                    let (display, title, description, instructions, sess_state, agent) =
                         card_data.unwrap_or_default();
                     window.set_active_task_id(id.clone());
                     window.set_active_task_display(display.into());
@@ -105,6 +108,7 @@ fn wire_select(window: &MainWindow, ctx: &WiringContext) {
                     window.set_active_task_description(description.into());
                     window.set_active_task_instructions(instructions.into());
                     window.set_active_task_session_state(sess_state.into());
+                    window.set_active_task_agent(if agent.is_empty() { "claude".into() } else { agent.into() });
                     // Polish 15: clear old stats immediately so a
                     // stale chip row from the previous task doesn't
                     // flicker until the 2s timer fires.
@@ -136,11 +140,16 @@ fn wire_create_submit(window: &MainWindow, ctx: &WiringContext) {
         let state = ctx.state.clone();
         let refresh = ctx.refresh_kanban.clone();
         let toast = ctx.show_toast.clone();
+        let weak = window.as_weak();
         window.on_create_task(move || {
+            let project_id = weak.upgrade().and_then(|w| {
+                let id_str = w.get_active_project_id().to_string();
+                Uuid::from_str(&id_str).ok()
+            });
             let count = state.list_tasks().map(|t| t.len()).unwrap_or(0) + 1;
             let title = format!("New task {count}");
-            match state.create_task(title.clone()) {
-                Ok(_) => toast("success", format!("Created “{title}”")),
+            match state.create_task(title.clone(), project_id) {
+                Ok(_) => toast("success", format!("Created '{title}'")),
                 Err(err) => {
                     tracing::error!(%err, "create_task failed");
                     toast("error", format!("Create failed: {err}"));
@@ -177,7 +186,12 @@ fn wire_create_submit(window: &MainWindow, ctx: &WiringContext) {
                 return;
             }
 
-            match state.create_task(title) {
+            let project_id = {
+                let id_str = w.get_active_project_id().to_string();
+                Uuid::from_str(&id_str).ok()
+            };
+
+            match state.create_task(title, project_id) {
                 Ok(task) => {
                     if !instructions.is_empty() {
                         let store = state.task_store();
@@ -404,6 +418,46 @@ fn wire_start_session(window: &MainWindow, ctx: &WiringContext) {
     }
 }
 
+/// Stop a running session. Sends SIGTERM to the child process and
+/// updates the card state to "stopped".
+fn wire_stop_session(window: &MainWindow, ctx: &WiringContext) {
+    let state = ctx.state.clone();
+    let refresh = ctx.refresh_kanban.clone();
+    let toast = ctx.show_toast.clone();
+    let weak = window.as_weak();
+    window.on_stop_session(move |id| {
+        let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
+        match state.stop_session(uuid) {
+            Ok(()) => {
+                if let Some(window) = weak.upgrade() {
+                    window.set_active_task_session_state("stopped".into());
+                }
+                toast("info", "Session stopped".to_string());
+            }
+            Err(err) => {
+                tracing::error!(%err, "stop_session failed");
+                toast("error", format!("Stop failed: {err}"));
+            }
+        }
+        refresh();
+    });
+}
+
+/// Agent picker — user changed the agent selection (Claude/OpenCode/Bare)
+/// on the description panel. Persist to `task.cli_selection`.
+fn wire_agent_changed(window: &MainWindow, ctx: &WiringContext) {
+    let state = ctx.state.clone();
+    window.on_agent_changed(move |agent_str| {
+        let kind = crate::kanban::AgentKind::parse(agent_str.as_str())
+            .unwrap_or(crate::kanban::AgentKind::Claude);
+        if let Err(err) = state.update_active_task(|task| {
+            task.cli_selection = kind;
+        }) {
+            tracing::warn!(%err, "agent_changed: update_active_task failed");
+        }
+    });
+}
+
 /// Phase 4 filter chip — user clicked a label filter (or "All").
 /// `refresh_kanban` re-reads the current `filter-label-id` from the
 /// window via its captured weak handle, so we don't need to pass the
@@ -462,9 +516,9 @@ fn wire_delete_task(window: &MainWindow, ctx: &WiringContext) {
             window.set_active_task_description(SharedString::from(""));
             window.set_active_task_instructions(SharedString::from(""));
             window.set_active_task_session_state(SharedString::from("idle"));
+            window.set_active_task_agent(SharedString::from("claude"));
             window.set_active_task_tokens_text(SharedString::from(""));
             window.set_active_task_cost_text(SharedString::from(""));
-            window.set_active_task_runtime_text(SharedString::from(""));
             window.set_active_task_message_count(0);
         }
         refresh_panels();

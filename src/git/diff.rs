@@ -199,39 +199,43 @@ mod tests {
         let tmp = tempdir().unwrap();
         let repo = tmp.path().to_path_buf();
 
-        Command::new("git")
+        let run = |args: &[&str]| {
+            let out = Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(args)
+                .output()
+                .unwrap_or_else(|e| panic!("git {args:?}: {e}"));
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+
+        let init = Command::new("git")
             .arg("init")
             .arg("-b")
             .arg("main")
             .arg(&repo)
             .output()
-            .unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(&repo)
-            .args(["config", "user.email", "test@quay.local"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(&repo)
-            .args(["config", "user.name", "Quay Test"])
-            .output()
-            .unwrap();
+            .expect("git init");
+        assert!(
+            init.status.success(),
+            "git init failed: {}",
+            String::from_utf8_lossy(&init.stderr)
+        );
+
+        run(&["config", "user.email", "test@quay.local"]);
+        run(&["config", "user.name", "Quay Test"]);
+        // Prevent Windows CRLF conversion from corrupting diffs.
+        run(&["config", "core.autocrlf", "false"]);
+        // Disable commit signing so tests work on machines with global gpgsign.
+        run(&["config", "commit.gpgsign", "false"]);
 
         fs::write(repo.join("README.md"), "hello\n").unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(&repo)
-            .args(["add", "README.md"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(&repo)
-            .args(["commit", "-m", "initial"])
-            .output()
-            .unwrap();
+        run(&["add", "README.md"]);
+        run(&["commit", "-m", "initial"]);
 
         (tmp, repo)
     }
@@ -284,25 +288,23 @@ mod tests {
     #[test]
     fn read_commit_log_excludes_base_commits() {
         let (_tmp, repo) = fixture_repo();
-        Command::new("git")
-            .arg("-C")
-            .arg(&repo)
-            .args(["checkout", "-b", "feature"])
-            .output()
-            .unwrap();
+        let run = |args: &[&str]| {
+            let out = Command::new("git")
+                .arg("-C")
+                .arg(&repo)
+                .args(args)
+                .output()
+                .unwrap_or_else(|e| panic!("git {args:?}: {e}"));
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+        run(&["checkout", "-b", "feature"]);
         fs::write(repo.join("feat.txt"), "x\n").unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(&repo)
-            .args(["add", "feat.txt"])
-            .output()
-            .unwrap();
-        Command::new("git")
-            .arg("-C")
-            .arg(&repo)
-            .args(["commit", "-m", "feat commit"])
-            .output()
-            .unwrap();
+        run(&["add", "feat.txt"]);
+        run(&["commit", "-m", "feat commit"]);
 
         let log = read_commit_log(&repo, "main", 10).unwrap();
         assert_eq!(log.len(), 1);

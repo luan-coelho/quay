@@ -28,7 +28,7 @@ use alacritty_terminal::term::test::TermSize;
 use alacritty_terminal::term::{Config, Term};
 use alacritty_terminal::vte::ansi::Processor;
 use anyhow::{Context, Result};
-use crossbeam_channel::{Receiver, TryRecvError, bounded};
+use crossbeam_channel::{Receiver, bounded};
 use portable_pty::{
     Child, CommandBuilder, MasterPty, PtySize, native_pty_system,
 };
@@ -186,26 +186,21 @@ impl PtySession {
     /// if a log file is attached, append the same bytes to it.
     pub fn poll(&mut self) -> bool {
         let mut any = false;
-        loop {
-            match self.rx.try_recv() {
-                Ok(chunk) => {
-                    self.processor.advance(&mut self.term, &chunk);
-                    if let Some(writer) = self.log_writer.as_mut() {
-                        if let Err(err) = writer.write_all(&chunk) {
-                            tracing::warn!(%err, "session log write failed; dropping log writer");
-                            self.log_writer = None;
-                        }
-                    }
-                    any = true;
-                }
-                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+        while let Ok(chunk) = self.rx.try_recv() {
+            self.processor.advance(&mut self.term, &chunk);
+            if let Some(writer) = self.log_writer.as_mut()
+                && let Err(err) = writer.write_all(&chunk)
+            {
+                tracing::warn!(%err, "session log write failed; dropping log writer");
+                self.log_writer = None;
             }
+            any = true;
         }
         // Flush once per tick so crashes do not lose the last few bytes.
-        if any {
-            if let Some(writer) = self.log_writer.as_mut() {
-                let _ = writer.flush();
-            }
+        if any
+            && let Some(writer) = self.log_writer.as_mut()
+        {
+            let _ = writer.flush();
         }
         any
     }
@@ -225,7 +220,6 @@ impl PtySession {
     }
 
     /// Resize the PTY and the mirrored `Term`.
-    #[allow(dead_code)]
     pub fn resize(&mut self, cols: usize, rows: usize) {
         let _ = self.master.resize(PtySize {
             rows: rows as u16,
@@ -239,7 +233,6 @@ impl PtySession {
     }
 
     /// Whether the child process has exited.
-    #[allow(dead_code)]
     pub fn is_exited(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(Some(_)))
     }

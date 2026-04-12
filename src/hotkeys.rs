@@ -70,10 +70,10 @@ pub fn classify_hotkey(
     // 1. Quick action shortcut: primary + Alt + digit (1..=9).
     if primary && alt && text.len() == 1 {
         let c = text.chars().next().unwrap_or(' ');
-        if let Some(digit) = c.to_digit(10) {
-            if (1..=9).contains(&digit) {
-                return HotkeyAction::QuickAction((digit - 1) as usize);
-            }
+        if let Some(digit) = c.to_digit(10)
+            && (1..=9).contains(&digit)
+        {
+            return HotkeyAction::QuickAction((digit - 1) as usize);
         }
     }
 

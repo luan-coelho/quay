@@ -7,6 +7,8 @@
 //! live alongside `classify_hotkey` — that's the only reason for this
 //! file's existence.
 
+use std::str::FromStr;
+
 use slint::ComponentHandle;
 
 use crate::hotkeys::{self, HotkeyAction};
@@ -76,9 +78,13 @@ pub fn wire(window: &MainWindow, ctx: &WiringContext) {
                 }
             }
             HotkeyAction::CreateTask => {
+                let project_id = weak.upgrade().and_then(|w| {
+                    let id_str = w.get_active_project_id().to_string();
+                    uuid::Uuid::from_str(&id_str).ok()
+                });
                 let count = state.list_tasks().map(|t| t.len()).unwrap_or(0) + 1;
                 let title = format!("New task {count}");
-                if let Err(err) = state.create_task(title) {
+                if let Err(err) = state.create_task(title, project_id) {
                     tracing::error!(%err, "create_task via shortcut failed");
                     toast("error", format!("Create failed: {err}"));
                 }
@@ -104,10 +110,10 @@ pub fn wire(window: &MainWindow, ctx: &WiringContext) {
                 // Polish 18: re-uses the same close/fall-back logic
                 // as clicking × on the chip by invoking the
                 // Slint-side close-task-tab callback directly.
-                if let Some(active_id) = *state.active_task.borrow() {
-                    if let Some(w) = weak.upgrade() {
-                        w.invoke_close_task_tab(active_id.to_string().into());
-                    }
+                if let Some(active_id) = *state.active_task.borrow()
+                    && let Some(w) = weak.upgrade()
+                {
+                    w.invoke_close_task_tab(active_id.to_string().into());
                 }
             }
             HotkeyAction::OpenTaskSearch => {

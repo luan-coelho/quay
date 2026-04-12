@@ -1,8 +1,9 @@
-// Polish 13 — bottom status bar showing per-column counts and live
-// session info. The 8 properties below are pushed by `refresh_kanban`
-// in Rust on every refresh; nothing in here mutates state.
+// Polish 13 — bottom status bar showing per-column counts, live
+// session dots, and total task count. Properties are pushed by
+// `refresh_kanban` in Rust on every refresh.
 
 import { Tokens } from "../tokens.slint";
+import { SessionDotData } from "../data.slint";
 
 export component StatusBar inherits Rectangle {
     in property <int> stats-backlog: 0;
@@ -13,6 +14,9 @@ export component StatusBar inherits Rectangle {
     in property <int> stats-misc: 0;
     in property <int> stats-sessions: 0;
     in property <int> stats-total: 0;
+    // Phase D — per-session dots with state-based colour.
+    in property <[SessionDotData]> session-dots;
+    callback session-dot-clicked(string);
 
     background: Tokens.card;
 
@@ -78,13 +82,38 @@ export component StatusBar inherits Rectangle {
 
         Rectangle { horizontal-stretch: 1; }
 
-        Text {
-            text: root.stats-sessions + " live session" + (root.stats-sessions == 1 ? "" : "s");
-            color: root.stats-sessions > 0 ? Tokens.kind-enhancement : Tokens.muted-foreground;
+        // Phase D — per-session coloured dots. Green = busy,
+        // amber = awaiting, grey = stopped/exited. Clickable.
+        for dot in root.session-dots: Rectangle {
+            width: 16px;
+            height: self.width;
+            VerticalLayout {
+                alignment: center;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 7px;
+                        height: 7px;
+                        border-radius: 3.5px;
+                        background: dot.session-state == "busy"     ? Tokens.kind-enhancement
+                                  : dot.session-state == "awaiting" ? Tokens.kind-feature
+                                  : Tokens.muted-foreground;
+                    }
+                }
+            }
+            TouchArea {
+                clicked => { root.session-dot-clicked(dot.task-id); }
+            }
+        }
+
+        if root.session-dots.length == 0: Text {
+            text: "0 sessions";
+            color: Tokens.muted-foreground;
             font-size: Tokens.text-xs;
             font-family: Tokens.font-mono;
             vertical-alignment: center;
         }
+
         Text { text: "·"; color: Tokens.muted-foreground; font-size: Tokens.text-xs; vertical-alignment: center; }
         Text {
             text: root.stats-total + " tasks total";

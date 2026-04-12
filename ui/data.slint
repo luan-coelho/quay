@@ -130,3 +130,30 @@ export struct OpenTaskTabData {
     is-active: bool,      // currently focused tab
     session-state: string,// "busy" / "idle" / … — drives the dot
 }
+
+// Phase D — per-session dot in the status bar. One entry per live
+// in-memory session. Clicking a dot switches to that task.
+export struct SessionDotData {
+    task-id: string,       // UUID — click callback
+    display-id: int,       // "#3" label
+    title: string,         // tooltip / label
+    session-state: string, // "busy" | "awaiting" | "stopped" | "exited"
+}
+
+// Phase D — one row in the History tab's session list. Populated from
+// `SessionStore::list_for_task()` when the active task changes.
+export struct SessionEntryData {
+    session-id: string,    // UUID
+    started-at: string,    // pre-formatted timestamp, e.g. "3 minutes ago"
+    duration: string,      // pre-formatted, e.g. "2m 14s" or "running"
+    exit-status: int,      // -1 while running, 0 = success, >0 = error
+    agent-kind: string,    // "claude" | "opencode" | "bare"
+}
+
+// Phase D — worktree entry for the sidebar Worktrees section.
+export struct WorktreeEntryData {
+    path: string,          // absolute path
+    branch: string,        // branch name (extracted from worktree)
+    task-title: string,    // associated task title, if any
+    task-id: string,       // associated task UUID, if any
+}

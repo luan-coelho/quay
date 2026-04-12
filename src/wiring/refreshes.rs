@@ -19,7 +19,8 @@ use uuid::Uuid;
 use crate::app::AppState;
 use crate::wiring::helpers::{label_to_pill, task_to_card};
 use crate::{
-    FileEntryData, MainWindow, ProcessRowData, ProjectData, QuickActionRowData, TaskCardData,
+    FileEntryData, MainWindow, ProcessRowData, ProjectData, QuickActionRowData, SessionEntryData,
+    TaskCardData, WorktreeEntryData,
 };
 
 /// Rebuild the sidebar's project list from the DB. Cheap — one
@@ -45,6 +46,7 @@ pub struct ActivePanelModels {
     pub available_labels: Rc<VecModel<crate::LabelPillData>>,
     pub deps: Rc<VecModel<TaskCardData>>,
     pub available_deps: Rc<VecModel<TaskCardData>>,
+    pub session_history: Rc<VecModel<SessionEntryData>>,
 }
 
 /// Rebuild the per-task labels / available-labels / dependencies /
@@ -68,6 +70,11 @@ pub fn rebuild_active_panels(state: &AppState, models: &ActivePanelModels) {
         models
             .available_deps
             .remove(models.available_deps.row_count() - 1);
+    }
+    while models.session_history.row_count() > 0 {
+        models
+            .session_history
+            .remove(models.session_history.row_count() - 1);
     }
 
     let Some(active_id) = *state.active_task.borrow() else {
@@ -125,6 +132,71 @@ pub fn rebuild_active_panels(state: &AppState, models: &ActivePanelModels) {
         models
             .available_deps
             .push(task_to_card(task, display_id, false, false, Vec::new(), 0));
+    }
+
+    // Phase D: session history for the History tab.
+    let session_store = state.session_store();
+    if let Ok(records) = session_store.list_for_task(active_id) {
+        use crate::wiring::helpers::format_relative_time;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let now_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        // Reverse so newest sessions appear first.
+        for rec in records.into_iter().rev() {
+            let started_at = format_relative_time(rec.started_at);
+            let duration = if let Some(ended) = rec.ended_at {
+                let dur = ended.saturating_sub(rec.started_at) as u64;
+                format_session_duration(dur)
+            } else {
+                let dur = now_secs.saturating_sub(rec.started_at) as u64;
+                format!("{} (running)", format_session_duration(dur))
+            };
+            let exit_status = rec.exit_status.unwrap_or(-1);
+            // Infer agent kind from the command argv. The first element
+            // is the binary name; "claude" → claude, "opencode" → opencode,
+            // everything else → bare.
+            let agent_kind = rec
+                .command
+                .first()
+                .map(|cmd| {
+                    if cmd.contains("claude") {
+                        "claude"
+                    } else if cmd.contains("opencode") {
+                        "opencode"
+                    } else {
+                        "bare"
+                    }
+                })
+                .unwrap_or("bare");
+
+            models.session_history.push(SessionEntryData {
+                session_id: SharedString::from(rec.id.to_string()),
+                started_at: SharedString::from(started_at),
+                duration: SharedString::from(duration),
+                exit_status,
+                agent_kind: SharedString::from(agent_kind),
+            });
+        }
+    }
+}
+
+/// Format a duration in seconds into a compact string: "14s", "2m 14s",
+/// "1h 03m".
+fn format_session_duration(secs: u64) -> String {
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        let m = secs / 60;
+        let s = secs % 60;
+        format!("{m}m {s:02}s")
+    } else {
+        let h = secs / 3600;
+        let m = (secs % 3600) / 60;
+        format!("{h}h {m:02}m")
     }
 }
 
@@ -214,6 +286,32 @@ pub fn rebuild_settings_processes(state: &AppState, model: &Rc<VecModel<ProcessR
             name: SharedString::from(e.name),
             cmdline: SharedString::from(e.cmdline),
             class: SharedString::from(e.class.as_str()),
+        });
+    }
+}
+
+/// Phase D — rebuild the sidebar Worktrees section from tasks that have
+/// an active `worktree_path`. Each entry shows the branch name and
+/// associated task title. Cheap — just iterates the in-memory task list.
+pub fn rebuild_worktrees(state: &AppState, model: &Rc<VecModel<WorktreeEntryData>>) {
+    while model.row_count() > 0 {
+        model.remove(model.row_count() - 1);
+    }
+    let tasks = state.list_tasks().unwrap_or_default();
+    for t in &tasks {
+        let Some(ref wt_path) = t.worktree_path else {
+            continue;
+        };
+        let branch = t
+            .branch_name
+            .as_deref()
+            .unwrap_or("")
+            .to_string();
+        model.push(WorktreeEntryData {
+            path: SharedString::from(wt_path.to_string_lossy().into_owned()),
+            branch: SharedString::from(branch),
+            task_title: SharedString::from(t.title.as_str()),
+            task_id: SharedString::from(t.id.to_string()),
         });
     }
 }

@@ -146,7 +146,7 @@ mod tests {
 
     #[test]
     fn sort_puts_tracked_first() {
-        let mut entries = vec![
+        let mut entries = [
             ProcessEntry {
                 pid: 10,
                 name: "external".into(),

@@ -30,7 +30,7 @@ use crate::editor::EditorBuffer;
 use crate::persistence::QuayDirs;
 use crate::terminal::GlyphAtlas;
 use crate::wiring::helpers::{
-    auto_tag_seed_tasks, default_shell, format_cost, format_relative_time, format_runtime,
+    default_shell, format_cost, format_relative_time, format_runtime,
     format_tokens, home_directory, label_to_pill, replace_model,
 };
 
@@ -54,8 +54,6 @@ fn main() -> Result<()> {
     );
     window.set_cell_w(atlas.cell_w as i32);
     window.set_cell_h(atlas.cell_h as i32);
-    window.set_cols(DEFAULT_COLS as i32);
-    window.set_rows(DEFAULT_ROWS as i32);
 
     // Discover OS data dirs and open the database.
     let dirs = QuayDirs::discover()?;
@@ -73,14 +71,10 @@ fn main() -> Result<()> {
         shell,
         "claude".to_string(),
     )?);
-    state.seed_demo_if_empty()?;
-    // Phase 4: seed the Lanes preset label palette on first run and
-    // auto-tag any seed demo tasks by their heuristic TaskKind so the
-    // kanban has colour from day one.
+    // Phase 4: seed the Lanes preset label palette on first run.
     {
         let label_store = state.label_store();
         label_store.seed_presets_if_empty()?;
-        auto_tag_seed_tasks(&state)?;
     }
     // Phase 5: seed the default Quick Actions + Settings on first run.
     {
@@ -88,6 +82,25 @@ fn main() -> Result<()> {
         qa_store.seed_defaults_if_empty()?;
         let settings_store = crate::settings::Settings::new(&state.db.conn);
         settings_store.seed_defaults_if_empty()?;
+    }
+
+    // Prune stale worktree metadata on startup. Best-effort: if `git`
+    // is not installed or a repo_path is invalid, we log and continue.
+    {
+        let projects = state.project_store().list_all().unwrap_or_default();
+        if let Ok(mgr) = crate::git::worktree::WorktreeManager::detect() {
+            for project in &projects {
+                if crate::app::is_git_repo(&project.repo_path)
+                    && let Err(err) = mgr.prune(&project.repo_path)
+                {
+                    tracing::warn!(
+                        repo = %project.repo_path.display(),
+                        %err,
+                        "worktree prune failed"
+                    );
+                }
+            }
+        }
     }
 
     // Initial blank framebuffer.
@@ -100,6 +113,7 @@ fn main() -> Result<()> {
     window.set_active_task_description("".into());
     window.set_active_task_instructions("".into());
     window.set_active_task_session_state("idle".into());
+    window.set_active_task_agent("claude".into());
     window.set_active_task_tokens_text("".into());
     window.set_active_task_cost_text("".into());
     window.set_active_task_runtime_text("".into());
@@ -206,6 +220,18 @@ fn main() -> Result<()> {
     let open_tabs_model = Rc::new(VecModel::<OpenTaskTabData>::default());
     window.set_open_task_tabs(ModelRc::from(open_tabs_model.clone()));
 
+    // Phase D: per-session status dots for the status bar.
+    let session_dots_model = Rc::new(VecModel::<SessionDotData>::default());
+    window.set_session_dots(ModelRc::from(session_dots_model.clone()));
+
+    // Phase D: session history model for the History tab.
+    let session_history_model = Rc::new(VecModel::<SessionEntryData>::default());
+    window.set_session_history(ModelRc::from(session_history_model.clone()));
+
+    // Phase D: worktree entries for the sidebar.
+    let worktree_entries_model = Rc::new(VecModel::<WorktreeEntryData>::default());
+    window.set_worktree_entries(ModelRc::from(worktree_entries_model.clone()));
+
     // Polish 35: Cmd+P task quick switcher results model.
     let task_search_model = Rc::new(VecModel::<TaskCardData>::default());
     window.set_task_search_results(ModelRc::from(task_search_model.clone()));
@@ -253,7 +279,7 @@ fn main() -> Result<()> {
     // to surface errors. A monotonic generation counter cancels
     // older auto-dismiss timers when a newer toast lands.
     let toast_generation: Rc<std::cell::Cell<u32>> = Rc::new(std::cell::Cell::new(0));
-    let show_toast: Rc<dyn Fn(&str, String)> = {
+    let show_toast: Rc<crate::wiring::context::ToastFn> = {
         let weak = window.as_weak();
         let gen_cell = toast_generation.clone();
         Rc::new(move |kind: &str, msg: String| {
@@ -274,10 +300,10 @@ fn main() -> Result<()> {
                 TimerMode::SingleShot,
                 Duration::from_millis(3200),
                 move || {
-                    if dismiss_gen.get() == my_gen {
-                        if let Some(w) = dismiss_weak.upgrade() {
-                            w.set_toast_visible(false);
-                        }
+                    if dismiss_gen.get() == my_gen
+                        && let Some(w) = dismiss_weak.upgrade()
+                    {
+                        w.set_toast_visible(false);
                     }
                 },
             );
@@ -302,15 +328,18 @@ fn main() -> Result<()> {
         done: done_model.clone(),
         misc: misc_model.clone(),
         open_tabs: open_tabs_model.clone(),
+        session_dots: session_dots_model.clone(),
     });
     let refresh_kanban: Rc<dyn Fn()> = {
         let state = state.clone();
         let weak = window.as_weak();
         let models = kanban_models.clone();
+        let wt_model = worktree_entries_model.clone();
         Rc::new(move || {
             if let Some(window) = weak.upgrade() {
                 crate::wiring::kanban_refresh::rebuild(&state, &window, &models);
             }
+            crate::wiring::refreshes::rebuild_worktrees(&state, &wt_model);
         })
     };
     refresh_kanban();
@@ -324,6 +353,7 @@ fn main() -> Result<()> {
         available_labels: active_task_available_labels_model.clone(),
         deps: active_task_deps_model.clone(),
         available_deps: active_task_available_deps_model.clone(),
+        session_history: session_history_model.clone(),
     });
     let refresh_active_panels: Rc<dyn Fn()> = {
         let state = state.clone();
@@ -428,6 +458,26 @@ fn main() -> Result<()> {
     // Polish 35: clicking a result fires open-task-tab via the
     // existing pinned-tabs callback so the selected task pops into
     // the right pane the same way clicking a kanban card would.
+    // Phase D — clicking a session dot in the status bar switches to that task.
+    {
+        let weak = window.as_weak();
+        window.on_session_dot_clicked(move |task_id| {
+            if let Some(w) = weak.upgrade() {
+                w.invoke_open_task_tab(task_id);
+            }
+        });
+    }
+    // Phase D — clicking a worktree entry in the sidebar switches to
+    // the associated task (same pattern as session dot clicks).
+    {
+        let weak = window.as_weak();
+        window.on_worktree_clicked(move |task_id| {
+            if let Some(w) = weak.upgrade() {
+                w.invoke_open_task_tab(task_id);
+            }
+        });
+    }
+
     // PTY poll timer — drains bytes from all live sessions and blits the
     // active one. Fires ~60 Hz.
     //
@@ -441,26 +491,94 @@ fn main() -> Result<()> {
     {
         let weak = window.as_weak();
         let state = state.clone();
+        let refresh = refresh_kanban.clone();
+        let toast = show_toast.clone();
         let spinner_idx = std::cell::Cell::new(0_usize);
         let spinner_tick = std::cell::Cell::new(0_u8);
+        // Check for exited sessions and resize once per second (every
+        // ~60 ticks), not on every 16ms frame, to avoid unnecessary
+        // DB writes and resize churn.
+        let exit_check_tick = std::cell::Cell::new(0_u8);
+        let prev_cols = std::cell::Cell::new(DEFAULT_COLS as i32);
+        let prev_rows = std::cell::Cell::new(DEFAULT_ROWS as i32);
         poll_timer.start(
             TimerMode::Repeated,
             Duration::from_millis(16),
             move || {
                 let t = spinner_tick.get().wrapping_add(1);
                 spinner_tick.set(t);
-                if t % 6 == 0 {
+                if t.is_multiple_of(6) {
                     let i = (spinner_idx.get() + 1) % SPINNER_GLYPHS.len();
                     spinner_idx.set(i);
                     if let Some(window) = weak.upgrade() {
                         window.set_spinner_glyph(SPINNER_GLYPHS[i].into());
                     }
                 }
-                if state.poll_all_sessions() && state.blit_active() {
+                if state.poll_all_sessions() && state.blit_active()
+                    && let Some(window) = weak.upgrade()
+                {
+                    window.set_frame(Image::from_rgba8_premultiplied(
+                        state.framebuffer.borrow().buffer.clone(),
+                    ));
+                }
+
+                // Session exit detection + resize — check once per second.
+                let et = exit_check_tick.get().wrapping_add(1);
+                exit_check_tick.set(et);
+                if et.is_multiple_of(60) {
+                    let exited = state.check_exited_sessions();
+                    if !exited.is_empty() {
+                        for (_, title) in &exited {
+                            toast("info", format!("Session finished: {title}"));
+                        }
+                        // Update the active task's session state on the
+                        // window if it was one of the exited ones.
+                        if let Some(window) = weak.upgrade() {
+                            let active_id_str = window.get_active_task_id().to_string();
+                            for (id, _) in &exited {
+                                if id.to_string() == active_id_str {
+                                    window.set_active_task_session_state("exited".into());
+                                }
+                            }
+                        }
+                        refresh();
+                    }
+
+                    // Session state detection — inspect terminal output
+                    // for patterns indicating the agent is awaiting input.
+                    let state_changes = state.detect_session_states();
+                    if !state_changes.is_empty() {
+                        if let Some(window) = weak.upgrade() {
+                            let active_id_str = window.get_active_task_id().to_string();
+                            for (id, new_state) in &state_changes {
+                                if id.to_string() == active_id_str {
+                                    window.set_active_task_session_state(
+                                        new_state.as_str().into(),
+                                    );
+                                }
+                            }
+                        }
+                        refresh();
+                    }
+
+                    // PTY resize detection — Slint computes cols/rows
+                    // from available right-pane space. When they change
+                    // (window resized), resize all PTY sessions + rebuild
+                    // the framebuffer.
                     if let Some(window) = weak.upgrade() {
-                        window.set_frame(Image::from_rgba8_premultiplied(
-                            state.framebuffer.borrow().buffer.clone(),
-                        ));
+                        let c = window.get_cols();
+                        let r = window.get_rows();
+                        if c != prev_cols.get() || r != prev_rows.get() {
+                            prev_cols.set(c);
+                            prev_rows.set(r);
+                            state.resize_all_sessions(c as usize, r as usize);
+                            // Re-blit with new dimensions.
+                            if state.blit_active() {
+                                window.set_frame(Image::from_rgba8_premultiplied(
+                                    state.framebuffer.borrow().buffer.clone(),
+                                ));
+                            }
+                        }
                     }
                 }
             },

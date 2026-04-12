@@ -130,7 +130,7 @@ fn rasterize_random_cells(buf: &mut [u8], rng: &mut XorShift) {
                 for dx in 0..CELL_W {
                     let idx = row_start + (dx as usize) * 4;
                     // Tiny 3×3 "glyph" in the middle of the cell.
-                    let in_glyph = (dx >= 3 && dx < 6) && (dy >= 8 && dy < 11);
+                    let in_glyph = (3..6).contains(&dx) && (8..11).contains(&dy);
                     let color = if in_glyph { fg } else { bg };
                     buf[idx] = color[0];
                     buf[idx + 1] = color[1];

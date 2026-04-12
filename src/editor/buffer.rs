@@ -94,7 +94,7 @@ impl EditorBuffer {
     /// Replace the entire contents of the buffer with new text. Marks
     /// dirty. Used by the Slint TextEdit binding.
     pub fn replace_all(&mut self, new_text: &str) {
-        if self.rope.to_string() == new_text {
+        if *self.rope.to_string() == *new_text {
             return;
         }
         self.rope = Rope::from_str(new_text);

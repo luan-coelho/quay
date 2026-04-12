@@ -37,8 +37,8 @@ pub struct AppState {
     pub default_agent: String,
     pub default_shell: String,
 
-    pub cols: usize,
-    pub rows: usize,
+    pub cols: std::cell::Cell<usize>,
+    pub rows: std::cell::Cell<usize>,
 
     /// Per-task PTY sessions, keyed by task UUID. Lazily populated on first
     /// `select_task` for that task. Kept inside a `RefCell` so callbacks can
@@ -107,8 +107,8 @@ impl AppState {
             default_cwd,
             default_agent,
             default_shell,
-            cols,
-            rows,
+            cols: std::cell::Cell::new(cols),
+            rows: std::cell::Cell::new(rows),
             sessions: RefCell::new(HashMap::new()),
             active_task: RefCell::new(None),
             open_tabs: RefCell::new(open_tabs),
@@ -141,7 +141,6 @@ impl AppState {
         ProjectStore::new(&self.db.conn)
     }
 
-    #[allow(dead_code)]
     pub fn session_store(&self) -> SessionStore<'_> {
         SessionStore::new(&self.db.conn)
     }
@@ -262,9 +261,23 @@ impl AppState {
         self.task_store().list_all()
     }
 
-    /// Append a brand-new task to the Backlog with an auto-generated title.
-    pub fn create_task(&self, title: String) -> Result<Task> {
-        let mut task = Task::new(title, self.default_cwd.clone(), self.default_agent.clone());
+    /// Append a brand-new task to the Backlog. When `project_id` is set,
+    /// the task inherits the project's `repo_path` so worktree creation
+    /// and agent sessions point at the right repository.
+    pub fn create_task(&self, title: String, project_id: Option<Uuid>) -> Result<Task> {
+        let (cwd, proj_id) = if let Some(pid) = project_id {
+            let project_store = self.project_store();
+            if let Some(project) = project_store.get(pid)? {
+                (project.repo_path, Some(pid))
+            } else {
+                (self.default_cwd.clone(), None)
+            }
+        } else {
+            (self.default_cwd.clone(), None)
+        };
+
+        let mut task = Task::new(title, cwd, self.default_agent.clone());
+        task.project_id = proj_id;
         // Place at the bottom of the Backlog column.
         let store = self.task_store();
         let existing = store.list_by_state(TaskState::Backlog)?;
@@ -344,17 +357,16 @@ impl AppState {
         // A dirty worktree is kept and logged — a confirmation dialog is
         // a Phase 2.5 UX polish. Non-git repo_paths or missing worktrees
         // are no-ops.
-        if matches!(new_state, TaskState::Done) {
-            if let Some(worktree_path) = task.worktree_path.clone() {
-                if let Err(err) = self.cleanup_worktree_on_done(&task.repo_path, &worktree_path) {
-                    tracing::warn!(
-                        task_id = %id,
-                        worktree = %worktree_path.display(),
-                        %err,
-                        "worktree cleanup on Done failed; leaving worktree in place"
-                    );
-                }
-            }
+        if matches!(new_state, TaskState::Done)
+            && let Some(worktree_path) = task.worktree_path.clone()
+            && let Err(err) = self.cleanup_worktree_on_done(&task.repo_path, &worktree_path)
+        {
+            tracing::warn!(
+                task_id = %id,
+                worktree = %worktree_path.display(),
+                %err,
+                "worktree cleanup on Done failed; leaving worktree in place"
+            );
         }
 
         task.state = new_state;
@@ -460,7 +472,16 @@ impl AppState {
             let display_id = self.display_id_of(id)?;
             let slug = git::naming::branch_slug(display_id);
             let wt_dir = git::naming::worktree_dir(&task.repo_path, display_id);
-            let base_ref = resolve_base_branch(&task.repo_path)?;
+            // Prefer the project's configured base_branch when available;
+            // fall back to the auto-detected main/master otherwise.
+            let base_ref = if let Some(pid) = task.project_id {
+                self.project_store()
+                    .get(pid)?
+                    .map(|p| p.base_branch)
+                    .unwrap_or_else(|| resolve_base_branch(&task.repo_path).unwrap_or_else(|_| "main".to_string()))
+            } else {
+                resolve_base_branch(&task.repo_path)?
+            };
 
             let mgr = git::worktree::WorktreeManager::detect()?;
             mgr.create(&task.repo_path, &slug, &wt_dir, &base_ref)
@@ -542,8 +563,8 @@ impl AppState {
         let log_path = self.dirs.task_log_path(&id.to_string());
         let spawn_time = std::time::SystemTime::now();
         let session = PtySession::spawn(
-            self.cols,
-            self.rows,
+            self.cols.get(),
+            self.rows.get(),
             &argv,
             &env,
             &cwd,
@@ -624,8 +645,8 @@ impl AppState {
         let record = SessionRecord::new(
             id,
             log_path,
-            self.cols as u32,
-            self.rows as u32,
+            self.cols.get() as u32,
+            self.rows.get() as u32,
             cwd,
             argv,
         );
@@ -685,6 +706,25 @@ impl AppState {
         true
     }
 
+    /// Resize all live PTY sessions and rebuild the framebuffer at
+    /// the new dimensions. Called when the window/right-pane resizes.
+    pub fn resize_all_sessions(&self, new_cols: usize, new_rows: usize) {
+        if new_cols == 0 || new_rows == 0 {
+            return;
+        }
+        if new_cols == self.cols.get() && new_rows == self.rows.get() {
+            return;
+        }
+        self.cols.set(new_cols);
+        self.rows.set(new_rows);
+        *self.framebuffer.borrow_mut() = Framebuffer::new(new_cols, new_rows, &self.atlas);
+        let mut sessions = self.sessions.borrow_mut();
+        for sess in sessions.values_mut() {
+            sess.resize(new_cols, new_rows);
+        }
+        tracing::debug!(cols = new_cols, rows = new_rows, "resized all sessions");
+    }
+
     /// Forward bytes to the active session. No-op if no task is active.
     pub fn write_to_active(&self, bytes: &[u8]) {
         let active = match *self.active_task.borrow() {
@@ -701,6 +741,118 @@ impl AppState {
     #[allow(dead_code)]
     pub fn has_session(&self, id: Uuid) -> bool {
         self.sessions.borrow().contains_key(&id)
+    }
+
+    /// Check every live session for exit and update the DB accordingly.
+    /// Returns a vec of `(task_id, title)` pairs for sessions that just
+    /// exited — the caller can use these for toast notifications and
+    /// kanban refresh.
+    ///
+    /// Auto-transitions: when a session in the Implementation column
+    /// exits cleanly (the child process terminated), the task is
+    /// automatically promoted to Review. Planning tasks stay in place
+    /// so the user can review the agent's plan before proceeding.
+    pub fn check_exited_sessions(&self) -> Vec<(Uuid, String)> {
+        let mut exited = Vec::new();
+        let mut sessions = self.sessions.borrow_mut();
+        let mut to_remove = Vec::new();
+
+        for (id, sess) in sessions.iter_mut() {
+            if sess.is_exited() {
+                to_remove.push(*id);
+            }
+        }
+
+        drop(sessions);
+
+        for id in to_remove {
+            let store = self.task_store();
+            if let Ok(Some(mut task)) = store.get(id) {
+                let title = task.title.clone();
+                task.session_state = SessionState::Exited;
+                task.updated_at = unix_millis_now();
+
+                // Auto-transition: Implementation → Review on exit.
+                if task.state == TaskState::Implementation {
+                    task.state = TaskState::Review;
+                    // Re-rank to bottom of the Review column.
+                    let review_tasks = store.list_by_state(TaskState::Review).unwrap_or_default();
+                    task.position = review_tasks.iter().map(|t| t.position).max().unwrap_or(-1) + 1;
+                    tracing::info!(task_id = %id, "auto-transition: Implementation → Review");
+                }
+
+                if let Err(err) = store.update(&task) {
+                    tracing::warn!(%err, task_id = %id, "failed to update session_state to exited");
+                }
+                exited.push((id, title));
+            }
+            // Don't remove the session from the HashMap — keep it alive
+            // so the terminal scrollback remains visible. The session
+            // will be cleaned up when the task is deleted or a new
+            // session is started for the same task.
+        }
+
+        exited
+    }
+
+    /// Inspect live sessions for output patterns indicating the agent
+    /// is awaiting user input. Returns list of (task_id, new_state) pairs
+    /// where the state actually changed.
+    pub fn detect_session_states(&self) -> Vec<(Uuid, SessionState)> {
+        let mut changed = Vec::new();
+        let sessions = self.sessions.borrow();
+        let store = self.task_store();
+
+        for (id, sess) in sessions.iter() {
+            let task = match store.get(*id) {
+                Ok(Some(t)) => t,
+                _ => continue,
+            };
+            // Only detect for sessions that are currently "busy".
+            if task.session_state != SessionState::Busy {
+                continue;
+            }
+            if let Some(new_state) =
+                crate::terminal::detect::detect_session_state(&sess.term, task.cli_selection)
+                && new_state != task.session_state
+            {
+                changed.push((*id, new_state));
+            }
+        }
+
+        drop(sessions);
+
+        // Persist state changes.
+        for (id, new_state) in &changed {
+            if let Ok(Some(mut task)) = store.get(*id) {
+                task.session_state = *new_state;
+                task.updated_at = unix_millis_now();
+                if let Err(err) = store.update(&task) {
+                    tracing::warn!(%err, task_id = %id, "detect_session_states: update failed");
+                }
+            }
+        }
+
+        changed
+    }
+
+    /// Gracefully stop the running session for a task. Sends SIGTERM to
+    /// the child process and updates `session_state` to Stopped in the DB.
+    pub fn stop_session(&self, task_id: Uuid) -> Result<()> {
+        let sessions = self.sessions.borrow();
+        let sess = sessions.get(&task_id).context("no session for task")?;
+        if let Some(pid) = sess.child_pid() {
+            crate::process::terminate(pid)?;
+        }
+        drop(sessions);
+
+        let store = self.task_store();
+        if let Ok(Some(mut task)) = store.get(task_id) {
+            task.session_state = SessionState::Stopped;
+            task.updated_at = unix_millis_now();
+            store.update(&task)?;
+        }
+        Ok(())
     }
 
     /// Collect OS PIDs of every live session — feeds the Process Manager
@@ -746,38 +898,6 @@ impl AppState {
         Ok(Some(action.name.clone()))
     }
 
-    /// Helper for seed data: if the DB is empty, insert a few demo tasks so
-    /// the kanban is not blank on first run.
-    pub fn seed_demo_if_empty(&self) -> Result<()> {
-        if !self.list_tasks()?.is_empty() {
-            return Ok(());
-        }
-        let store = self.task_store();
-        let titles_and_states = [
-            ("Add dark mode", TaskState::Backlog, 0),
-            ("Fix server crash on corrupted db.json", TaskState::Backlog, 1),
-            ("Implement user authentication", TaskState::Planning, 0),
-            ("Set up CI pipeline", TaskState::Done, 0),
-            ("Set up git and repo", TaskState::Done, 1),
-        ];
-        for (title, state, position) in titles_and_states {
-            let mut task = Task::new(
-                title.to_string(),
-                self.default_cwd.clone(),
-                self.default_agent.clone(),
-            );
-            task.state = state;
-            task.position = position;
-            // Seed tasks default to `WorktreeStrategy::Create`. If
-            // `default_cwd` is not a git repo (typical for $HOME), the
-            // worktree creation in `start_session` will be skipped
-            // gracefully and the agent will run in-place. Users who want
-            // actual worktree isolation should create tasks pointing at a
-            // real repo (multi-project support is a Phase 6 feature).
-            store.insert(&task)?;
-        }
-        Ok(())
-    }
 }
 
 // ── Free-standing helpers ───────────────────────────────────────────────────
@@ -813,7 +933,7 @@ fn persist_claude_session_id(
 ///
 /// Uses `git2::Repository::open` so it's purely in-process (no subprocess).
 /// Returns false for non-git directories, missing paths, and broken repos.
-fn is_git_repo(path: &Path) -> bool {
+pub fn is_git_repo(path: &Path) -> bool {
     git2::Repository::open(path).is_ok()
 }
 
@@ -862,9 +982,7 @@ fn pin_tab_in_place(tabs: &mut Vec<Uuid>, id: Uuid) -> bool {
 /// the caller should focus (same index, clamped to the new tail).
 /// Otherwise returns `None`.
 fn close_tab_in_place(tabs: &mut Vec<Uuid>, id: Uuid, was_active: bool) -> Option<Uuid> {
-    let Some(idx) = tabs.iter().position(|t| *t == id) else {
-        return None;
-    };
+    let idx = tabs.iter().position(|t| *t == id)?;
     tabs.remove(idx);
     if !was_active {
         return None;
