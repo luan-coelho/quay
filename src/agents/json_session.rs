@@ -94,6 +94,7 @@ impl JsonSession {
         let mut cmd = Command::new(&self.binary);
         cmd.arg("-p").arg(prompt);
         cmd.arg("--output-format").arg("stream-json");
+        cmd.arg("--verbose");
 
         // Reuse session_id for conversation continuity.
         if let Some(ref id) = self.session_id {
