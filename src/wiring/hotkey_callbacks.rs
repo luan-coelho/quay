@@ -62,6 +62,10 @@ pub fn wire(window: &MainWindow, ctx: &WiringContext) {
                 Ok(()) => {
                     tracing::info!("sent prompt to json session");
                     if let Some(w) = weak.upgrade() {
+                        // Rebuild the chat model immediately so the user
+                        // sees their own message before Claude responds.
+                        let items = crate::build_chat_items_model(&state);
+                        w.set_chat_items(items);
                         w.set_active_task_session_state("busy".into());
                     }
                     refresh();

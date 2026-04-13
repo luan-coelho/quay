@@ -210,6 +210,12 @@ impl JsonSession {
                         SessionState::Awaiting
                     };
                 }
+                ParsedEvent::ToolResultStart { content, is_error } => {
+                    self.items.push(ChatItem::ToolResult {
+                        output: content,
+                        is_error,
+                    });
+                }
                 ParsedEvent::ThinkingDelta(_) | ParsedEvent::Unknown => {}
             }
         }

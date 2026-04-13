@@ -42,6 +42,8 @@ pub enum ParsedEvent {
     ToolUseStart { id: String, name: String },
     /// A chunk of the tool's input JSON (accumulated).
     InputJsonDelta(String),
+    /// A tool_result content block with its text output.
+    ToolResultStart { content: String, is_error: bool },
     /// A content block finished.
     ContentBlockStop { index: u64 },
     /// The agent turn finished — includes summary stats.
@@ -147,6 +149,30 @@ fn parse_stream_event(event: &Value) -> ParsedEvent {
                         .unwrap_or("")
                         .to_string();
                     ParsedEvent::ToolUseStart { id, name }
+                }
+                "tool_result" => {
+                    // Extract text from the content array.
+                    let content = block
+                        .get("content")
+                        .and_then(|c| c.as_array())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|item| {
+                                    if item.get("type").and_then(|t| t.as_str()) == Some("text") {
+                                        item.get("text").and_then(|t| t.as_str())
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n")
+                        })
+                        .unwrap_or_default();
+                    let is_error = block
+                        .get("is_error")
+                        .and_then(|b| b.as_bool())
+                        .unwrap_or(false);
+                    ParsedEvent::ToolResultStart { content, is_error }
                 }
                 _ => ParsedEvent::Unknown,
             }
