@@ -46,6 +46,7 @@ export component RightPane inherits Rectangle {
     // Session terminal (agent CLI).
     in property <image> frame;
     callback terminal-key-pressed(string, bool, bool, bool, bool);
+    callback terminal-scroll(float);
     public function focus-terminal() {
         if root.active-right-tab == "bare-terminal" {
             bare-terminal.focus-input();
@@ -206,6 +207,7 @@ export component RightPane inherits Rectangle {
         key-pressed(text, ctrl, alt, shift, meta) => {
             root.terminal-key-pressed(text, ctrl, alt, shift, meta);
         }
+        terminal-scroll(delta) => { root.terminal-scroll(delta); }
     }
 
     // Bare terminal — visible when active-right-tab == "bare-terminal"
@@ -220,6 +222,7 @@ export component RightPane inherits Rectangle {
         key-pressed(text, ctrl, alt, shift, meta) => {
             root.terminal-key-pressed(text, ctrl, alt, shift, meta);
         }
+        terminal-scroll(delta) => { root.terminal-scroll(delta); }
     }
 
     // Footer status line. The leading ‖ was migrated to a Lucide

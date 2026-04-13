@@ -326,6 +326,8 @@ export component MainWindow inherits Window {
     // text, ctrl, alt, shift, meta. Meta added in Polish 6 for
     // Cmd-based shortcuts on macOS.
     callback key-pressed(string, bool, bool, bool, bool);
+    // Mouse wheel delta (in logical pixels) for the terminal pane.
+    callback terminal-scroll(float);
 
     // Layout constants.
     // Polish 24: sidebar-w switches between full and compact based
@@ -450,6 +452,7 @@ export component MainWindow inherits Window {
         terminal-key-pressed(text, ctrl, alt, shift, meta) => {
             root.key-pressed(text, ctrl, alt, shift, meta);
         }
+        terminal-scroll(delta) => { root.terminal-scroll(delta); }
         bare-terminal-requested(id) => { root.bare-terminal-requested(id); }
 
         // Description tab.

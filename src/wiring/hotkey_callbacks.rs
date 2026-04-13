@@ -17,6 +17,37 @@ use crate::wiring::context::WiringContext;
 use crate::MainWindow;
 
 pub fn wire(window: &MainWindow, ctx: &WiringContext) {
+    // ── Terminal mouse-wheel scroll ─────────────────────────────────
+    {
+        let state = ctx.state.clone();
+        let weak = window.as_weak();
+        window.on_terminal_scroll(move |delta_px| {
+            // Convert pixel delta to terminal lines. Cell height is
+            // available via the framebuffer; fall back to 18 px if the
+            // framebuffer is not initialised yet.
+            let cell_h = state.framebuffer.borrow().cell_h.max(1) as f32;
+            let mut lines = (delta_px / cell_h).round() as i32;
+            // Guarantee at least 1 line per scroll tick so tiny deltas
+            // from high-resolution touchpads still produce visible
+            // movement.
+            if lines == 0 && delta_px != 0.0 {
+                lines = if delta_px > 0.0 { 1 } else { -1 };
+            }
+            state.scroll_active(lines);
+
+            // Re-blit immediately so the user sees the result without
+            // waiting for the next PTY poll tick.
+            if state.blit_active()
+                && let Some(w) = weak.upgrade()
+            {
+                w.set_frame(slint::Image::from_rgba8_premultiplied(
+                    state.framebuffer.borrow().buffer.clone(),
+                ));
+            }
+        });
+    }
+
+    // ── Keyboard dispatch ───────────────────────────────────────────
     let state = ctx.state.clone();
     let weak = window.as_weak();
     let refresh = ctx.refresh_kanban.clone();

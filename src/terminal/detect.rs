@@ -14,18 +14,25 @@ use alacritty_terminal::term::Term;
 
 use crate::kanban::{AgentKind, SessionState};
 
-/// Number of bottom lines to inspect for prompt patterns.
-const INSPECT_LINES: usize = 8;
+/// How many of the bottom-most non-empty lines to check for patterns.
+/// Increased from 3 to 5 to account for multi-line status bars (e.g.
+/// Claude Code renders 2–3 status bar lines below the `❯` prompt).
+const CHECK_NON_EMPTY: usize = 5;
 
-/// Extract the text content of the last `INSPECT_LINES` rows from the
-/// terminal grid. Trailing whitespace on each line is trimmed.
-fn last_lines<T: EventListener>(term: &Term<T>, count: usize) -> Vec<String> {
+/// Extract the text content of every visible row from the terminal grid.
+/// Trailing whitespace on each line is trimmed.
+///
+/// We scan the full screen (not just the last N rows) because Claude
+/// Code's `❯` prompt can sit near the top of a tall terminal — only a
+/// few lines below the startup banner — with the status bar pinned to
+/// the very bottom.  A small fixed window (e.g. 8 rows) would miss the
+/// prompt entirely.
+fn visible_lines<T: EventListener>(term: &Term<T>) -> Vec<String> {
     let grid = term.grid();
     let total_rows = grid.screen_lines();
     let cols = grid.columns();
-    let start = total_rows.saturating_sub(count);
-    let mut lines = Vec::with_capacity(count);
-    for row in start..total_rows {
+    let mut lines = Vec::with_capacity(total_rows);
+    for row in 0..total_rows {
         let mut line = String::with_capacity(cols);
         for col in 0..cols {
             let cell = &grid[Line(row as i32)][Column(col)];
@@ -53,10 +60,9 @@ const CLAUDE_AWAITING_PATTERNS: &[&str] = &[
     "Allow once",
     "Allow always",
     // NOTE: the bare "❯" idle prompt is handled separately in the
-    // detection loop via `ends_with("❯")` because `last_lines` calls
-    // `trim_end()` on each row, stripping the trailing space from "❯ ".
-    // Using `contains("❯ ")` would only match lines where the user has
-    // already typed text (e.g. "❯ implement...") — not the idle prompt.
+    // detection loop via `contains("❯")`. This catches both the idle
+    // prompt ("❯" after trim) and the prompt with user-typed text
+    // ("❯ implement…").
 ];
 
 /// OpenCode patterns that indicate the agent is waiting for input.
@@ -77,12 +83,12 @@ pub fn detect_session_state<T: EventListener>(
     term: &Term<T>,
     agent: AgentKind,
 ) -> Option<SessionState> {
-    let lines = last_lines(term, INSPECT_LINES);
+    let lines = visible_lines(term);
     if lines.is_empty() {
         return None;
     }
 
-    // Look at the last few non-empty lines for patterns.
+    // Look at the bottom-most non-empty lines for patterns.
     let non_empty: Vec<&str> = lines.iter().map(|s| s.as_str()).filter(|s| !s.is_empty()).collect();
     if non_empty.is_empty() {
         return None;
@@ -94,18 +100,19 @@ pub fn detect_session_state<T: EventListener>(
         AgentKind::Bare => return None, // No pattern detection for bare shell
     };
 
-    // Check the last 3 non-empty lines for awaiting patterns.
-    let check_count = non_empty.len().min(3);
+    // Check the last CHECK_NON_EMPTY non-empty lines for awaiting patterns.
+    let check_count = non_empty.len().min(CHECK_NON_EMPTY);
     for line in &non_empty[non_empty.len() - check_count..] {
         for pattern in patterns {
             if line.contains(pattern) {
                 return Some(SessionState::Awaiting);
             }
         }
-        // Claude Code idle prompt: after trim_end(), "❯ " becomes "❯".
-        // Match only at end-of-line to avoid false positives from lines
-        // where the user already typed text ("❯ implement...").
-        if matches!(agent, AgentKind::Claude) && line.ends_with("❯") {
+        // Claude Code idle prompt: `❯` appears at the prompt line.
+        // Use `contains` instead of `ends_with` so we also detect the
+        // prompt when the user has started typing ("❯ implement…") but
+        // hasn't submitted yet — the agent is still waiting for input.
+        if matches!(agent, AgentKind::Claude) && line.contains("❯") {
             return Some(SessionState::Awaiting);
         }
     }

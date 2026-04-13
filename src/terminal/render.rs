@@ -74,9 +74,10 @@ impl Framebuffer {
         }
 
         let grid = term.grid();
+        let display_offset = grid.display_offset() as i32;
 
         for row in 0..rows {
-            let line = Line(row as i32);
+            let line = Line(row as i32 - display_offset);
             for col in 0..cols {
                 let cell = &grid[line][Column(col)];
                 let (fg, bg) = resolve_colors(cell);
@@ -106,32 +107,36 @@ impl Framebuffer {
         }
 
         // Cursor overlay: solid block inverted against the cell.
-        let cursor = grid.cursor.point;
-        let cursor_col = cursor.column.0;
-        let cursor_row = cursor.line.0;
-        if cursor_row >= 0
-            && (cursor_row as usize) < rows
-            && cursor_col < cols
-        {
-            let cr = cursor_row as usize;
-            fill_rect(
-                bytes, fb_w,
-                cursor_col * cell_w, cr * cell_h,
-                cell_w, cell_h,
-                [0xe6, 0xe7, 0xea, 0xff],
-            );
-            let cell = &grid[Line(cr as i32)][Column(cursor_col)];
-            if cell.c != ' '
-                && cell.c != '\0'
-                && let Some(glyph) = atlas.glyph(cell.c)
+        // Hide when scrolled back — the cursor lives at the bottom of
+        // the live viewport, not inside the scrollback history.
+        if display_offset == 0 {
+            let cursor = grid.cursor.point;
+            let cursor_col = cursor.column.0;
+            let cursor_row = cursor.line.0;
+            if cursor_row >= 0
+                && (cursor_row as usize) < rows
+                && cursor_col < cols
             {
-                draw_glyph(
-                    bytes, fb_w, fb_h,
+                let cr = cursor_row as usize;
+                fill_rect(
+                    bytes, fb_w,
                     cursor_col * cell_w, cr * cell_h,
-                    baseline,
-                    &glyph,
-                    DEFAULT_BG,
+                    cell_w, cell_h,
+                    [0xe6, 0xe7, 0xea, 0xff],
                 );
+                let cell = &grid[Line(cr as i32)][Column(cursor_col)];
+                if cell.c != ' '
+                    && cell.c != '\0'
+                    && let Some(glyph) = atlas.glyph(cell.c)
+                {
+                    draw_glyph(
+                        bytes, fb_w, fb_h,
+                        cursor_col * cell_w, cr * cell_h,
+                        baseline,
+                        &glyph,
+                        DEFAULT_BG,
+                    );
+                }
             }
         }
     }

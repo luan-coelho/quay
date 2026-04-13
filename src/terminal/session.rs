@@ -219,6 +219,62 @@ impl PtySession {
         }
     }
 
+    /// Handle mouse-wheel scroll.
+    ///
+    /// Behaviour depends on the terminal mode the child process has set:
+    ///   - **Alternate screen + mouse reporting** (SGR 1006 or legacy):
+    ///     send mouse-wheel escape sequences so the TUI app (Claude Code,
+    ///     vim, less, …) can scroll its own viewport.
+    ///   - **Alternate screen + ALTERNATE_SCROLL** (no mouse reporting):
+    ///     convert the wheel to cursor-up / cursor-down keys.
+    ///   - **Normal screen**: scroll the terminal emulator's scrollback
+    ///     buffer via `Term::scroll_display`.
+    ///
+    /// `delta` is positive for scroll-up (into history) and negative for
+    /// scroll-down (towards the present).
+    pub fn scroll(&mut self, delta: i32) {
+        use alacritty_terminal::grid::Scroll;
+        use alacritty_terminal::term::TermMode;
+
+        if delta == 0 {
+            return;
+        }
+        let mode = *self.term.mode();
+        let count = delta.unsigned_abs();
+
+        if mode.contains(TermMode::ALT_SCREEN) {
+            if mode.intersects(TermMode::MOUSE_MODE) {
+                // TUI app requested mouse events — send wheel as SGR
+                // or legacy mouse encoding.
+                let button: u8 = if delta > 0 { 64 } else { 65 };
+                if mode.contains(TermMode::SGR_MOUSE) {
+                    let seq = format!("\x1b[<{button};1;1M");
+                    for _ in 0..count {
+                        self.write(seq.as_bytes());
+                    }
+                } else {
+                    // Legacy X10 encoding: ESC [ M Cb Cx Cy
+                    let cb = button + 32;
+                    let bytes = [0x1b, b'[', b'M', cb, 33, 33];
+                    for _ in 0..count {
+                        self.write(&bytes);
+                    }
+                }
+            } else if mode.contains(TermMode::ALTERNATE_SCROLL) {
+                let key: &[u8] = if delta > 0 { b"\x1b[A" } else { b"\x1b[B" };
+                for _ in 0..count {
+                    self.write(key);
+                }
+            }
+            // If neither mouse mode nor ALTERNATE_SCROLL, the wheel is
+            // silently ignored (matches standard terminal behaviour for
+            // fullscreen apps like htop that don't request mouse events).
+        } else {
+            // Normal mode — scroll the terminal emulator's scrollback.
+            self.term.scroll_display(Scroll::Delta(delta));
+        }
+    }
+
     /// Resize the PTY and the mirrored `Term`.
     pub fn resize(&mut self, cols: usize, rows: usize) {
         let _ = self.master.resize(PtySize {

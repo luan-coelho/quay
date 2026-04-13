@@ -907,9 +907,36 @@ impl AppState {
 
         let mut sessions = self.sessions.borrow_mut();
         if let Some(sess) = sessions.get_mut(&active) {
+            // Auto-scroll to bottom when the user types while scrolled
+            // back, matching standard terminal behaviour.
+            if sess.term.grid().display_offset() != 0 {
+                use alacritty_terminal::grid::Scroll;
+                sess.term.scroll_display(Scroll::Bottom);
+            }
             sess.write(bytes);
         }
         false
+    }
+
+    /// Forward a mouse-wheel scroll event to the active session.
+    /// `delta` is the scroll amount in terminal lines (positive = up /
+    /// into history, negative = down / towards the present).
+    pub fn scroll_active(&self, delta: i32) {
+        let active = match *self.active_task.borrow() {
+            Some(id) => id,
+            None => return,
+        };
+        if self.active_tab_is_bare.get() {
+            let mut bare = self.bare_sessions.borrow_mut();
+            if let Some(sess) = bare.get_mut(&active) {
+                sess.scroll(delta);
+            }
+        } else {
+            let mut sessions = self.sessions.borrow_mut();
+            if let Some(sess) = sessions.get_mut(&active) {
+                sess.scroll(delta);
+            }
+        }
     }
 
     /// Re-start the agent session for a task that previously had one.
@@ -928,10 +955,10 @@ impl AppState {
         // Claude Code with --resume re-renders its own conversation
         // history, creating overlapping escape sequences.
         let log_path = self.dirs.task_log_path(&id.to_string());
-        if log_path.exists() {
-            if let Err(err) = std::fs::File::create(&log_path) {
-                tracing::warn!(%err, "failed to truncate old PTY log before resume");
-            }
+        if log_path.exists()
+            && let Err(err) = std::fs::File::create(&log_path)
+        {
+            tracing::warn!(%err, "failed to truncate old PTY log before resume");
         }
 
         self.start_session(id, mode)

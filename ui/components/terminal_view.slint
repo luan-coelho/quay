@@ -2,6 +2,8 @@
 // `wiring::poll_timer` in main.rs. Owns the FocusScope so keyboard
 // input flows through `key-pressed`. The empty-state placeholder
 // (Polish 29) appears when no task is selected.
+// Mouse wheel events flow through `terminal-scroll` so the Rust
+// side can forward them to the PTY or the scrollback buffer.
 
 import { IconSet } from "@lucide";
 import { Tokens } from "../tokens.slint";
@@ -11,6 +13,7 @@ export component TerminalView {
     in property <image> frame;
     in property <string> active-task-id;
     callback key-pressed(string, bool, bool, bool, bool);
+    callback terminal-scroll(float);
     // Slint requires the FocusScope reference to be requestable from
     // the parent so the window-level `init` callback can call .focus()
     // on it. Renamed from `focus` to `focus-input` to avoid colliding
@@ -40,6 +43,18 @@ export component TerminalView {
                 height: parent.height;
                 image-fit: contain;
                 image-rendering: pixelated;
+            }
+
+            // Transparent overlay that captures mouse wheel events
+            // and click-to-focus without blocking the image rendering.
+            TouchArea {
+                scroll-event(event) => {
+                    root.terminal-scroll(event.delta-y / 1px);
+                    accept
+                }
+                clicked => {
+                    focus-scope.focus();
+                }
             }
 
             // Empty state — centered glyph + title + hint.
