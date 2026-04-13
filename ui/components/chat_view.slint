@@ -111,11 +111,116 @@ component StatusLine inherits Rectangle {
     }
 }
 
+// Compact chip with upward-opening dropdown for session config.
+component ConfigChip inherits Rectangle {
+    in property <[string]> options;
+    in-out property <string> value;
+    in property <string> label;
+    callback changed(string);
+
+    in-out property <bool> open: false;
+    property <length> option-h: 24px;
+    property <length> popup-h: root.options.length * option-h + 8px;
+
+    height: 26px;
+    width: chip-layout.preferred-width + 20px;
+
+    // Popup — positioned absolutely above the chip.
+    if root.open: Rectangle {
+        x: 0;
+        y: -popup-h - 4px;
+        width: max(root.width, 100px);
+        height: popup-h;
+        background: Tokens.popover;
+        border-radius: 6px;
+        border-width: 1px;
+        border-color: Tokens.border;
+        drop-shadow-color: Tokens.shadow-color-lg;
+        drop-shadow-blur: 8px;
+        drop-shadow-offset-y: -2px;
+        clip: true;
+
+        VerticalLayout {
+            padding: 4px;
+            spacing: 0px;
+
+            for opt in root.options: Rectangle {
+                height: option-h;
+                background: opt-ta.has-hover ? Tokens.accent : transparent;
+                border-radius: 4px;
+
+                opt-ta := TouchArea {
+                    clicked => {
+                        root.value = opt;
+                        root.open = false;
+                        root.changed(opt);
+                    }
+                }
+
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    Text {
+                        text: opt;
+                        color: Tokens.foreground;
+                        font-size: Tokens.text-xs;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+
+    // Chip trigger.
+    Rectangle {
+        background: chip-ta.has-hover ? Tokens.muted.with-alpha(0.15) : transparent;
+        border-radius: 4px;
+        border-width: 1px;
+        border-color: Tokens.border;
+        animate background { duration: 100ms; }
+
+        chip-ta := TouchArea {
+            clicked => { root.open = !root.open; }
+        }
+
+        chip-layout := HorizontalLayout {
+            padding-left: 8px;
+            padding-right: 6px;
+            spacing: 4px;
+            alignment: center;
+
+            Text {
+                text: root.label + ": ";
+                color: Tokens.muted-foreground;
+                font-size: 10px;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.value;
+                color: Tokens.foreground;
+                font-size: 10px;
+                font-weight: Tokens.weight-semibold;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.open ? "▴" : "▾";
+                color: Tokens.muted-foreground;
+                font-size: 8px;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
 export component ChatView inherits Rectangle {
     in property <[ChatItemData]> items;
     in property <string> session-state;    // "idle" | "busy" | "awaiting" | ...
     in property <string> active-task-id;
+    in-out property <string> selected-model: "sonnet";
+    in-out property <string> selected-effort: "high";
     callback send-prompt(string);
+    callback model-changed(string);
+    callback effort-changed(string);
 
     VerticalLayout {
         // Placeholder when no messages yet — overlays the scroll area.
@@ -170,6 +275,32 @@ export component ChatView inherits Rectangle {
                         width: parent.width;
                         text: item.text;
                     }
+                }
+            }
+        }
+
+        // Config strip — model + effort selectors.
+        if root.session-state != "busy" && root.active-task-id != "": Rectangle {
+            height: 32px;
+            // Needs clip:false so the upward popup is visible.
+
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 8px;
+                alignment: start;
+
+                ConfigChip {
+                    label: "Model";
+                    options: ["sonnet", "opus", "haiku"];
+                    value <=> root.selected-model;
+                    changed(v) => { root.model-changed(v); }
+                }
+                ConfigChip {
+                    label: "Effort";
+                    options: ["low", "medium", "high", "max"];
+                    value <=> root.selected-effort;
+                    changed(v) => { root.effort-changed(v); }
                 }
             }
         }

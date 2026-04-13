@@ -49,6 +49,10 @@ pub struct JsonSession {
     binary: PathBuf,
     /// Permission flags (e.g. `["--permission-mode", "acceptEdits", ...]`).
     permission_argv: Vec<String>,
+    /// Model override (e.g. "sonnet", "opus", "haiku").
+    pub model: Option<String>,
+    /// Effort/thinking level ("low", "medium", "high", "max").
+    pub effort: Option<String>,
     /// Total cost across all turns.
     pub total_cost_usd: f64,
     /// Cumulative token counts.
@@ -72,6 +76,8 @@ impl JsonSession {
             cwd,
             binary,
             permission_argv,
+            model: None,
+            effort: None,
             total_cost_usd: 0.0,
             input_tokens: 0,
             output_tokens: 0,
@@ -97,6 +103,14 @@ impl JsonSession {
         // Permission flags.
         for arg in &self.permission_argv {
             cmd.arg(arg);
+        }
+
+        // Model and effort overrides (per-turn).
+        if let Some(ref model) = self.model {
+            cmd.arg("--model").arg(model);
+        }
+        if let Some(ref effort) = self.effort {
+            cmd.arg("--effort").arg(effort);
         }
 
         cmd.current_dir(&self.cwd);

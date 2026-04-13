@@ -672,6 +672,13 @@ impl AppState {
 
             let mut json_sess = JsonSession::new(binary, cwd.clone(), perm_argv);
 
+            // Apply model/effort defaults from settings.
+            {
+                let s = crate::settings::Settings::new(&self.db.conn);
+                json_sess.model = Some(s.get_or(crate::settings::KEY_DEFAULT_MODEL, "sonnet"));
+                json_sess.effort = Some(s.get_or(crate::settings::KEY_DEFAULT_EFFORT, "high"));
+            }
+
             // If the task has instructions, start the first turn
             // immediately. Otherwise mark the session as Awaiting
             // so the ChatView shows the input bar.

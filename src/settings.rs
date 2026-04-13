@@ -27,6 +27,8 @@ pub const KEY_LOCALE: &str = "locale";
 // project in the sidebar. Empty string means no filter.
 pub const KEY_ACTIVE_PROJECT: &str = "active_project";
 pub const KEY_PERMISSION_MODE: &str = "permission_mode";
+pub const KEY_DEFAULT_MODEL: &str = "default_model";
+pub const KEY_DEFAULT_EFFORT: &str = "default_effort";
 
 impl<'a> Settings<'a> {
     pub fn new(conn: &'a Connection) -> Self {
@@ -77,6 +79,8 @@ impl<'a> Settings<'a> {
             (KEY_DEFAULT_BASE_BRANCH, "main"),
             (KEY_DEFAULT_AGENT, "claude"),
             (KEY_THEME, "dark"),
+            (KEY_DEFAULT_MODEL, "sonnet"),
+            (KEY_DEFAULT_EFFORT, "high"),
         ];
         for (k, v) in pairs {
             if self.get(k)?.is_none() {

@@ -60,7 +60,11 @@ export component RightPane inherits Rectangle {
     // Chat view (stream-json sessions).
     in property <bool> is-chat-session: false;
     in property <[ChatItemData]> chat-items;
+    in-out property <string> chat-selected-model;
+    in-out property <string> chat-selected-effort;
     callback send-prompt(string);
+    callback chat-model-changed(string);
+    callback chat-effort-changed(string);
 
     // Bare terminal tab.
     callback bare-terminal-requested(string);  // task-id
@@ -214,7 +218,11 @@ export component RightPane inherits Rectangle {
         items: root.chat-items;
         session-state: root.active-task-session-state;
         active-task-id: root.active-task-id;
+        selected-model <=> root.chat-selected-model;
+        selected-effort <=> root.chat-selected-effort;
         send-prompt(text) => { root.send-prompt(text); }
+        model-changed(v) => { root.chat-model-changed(v); }
+        effort-changed(v) => { root.chat-effort-changed(v); }
     }
 
     terminal := TerminalView {

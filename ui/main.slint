@@ -330,8 +330,12 @@ export component MainWindow inherits Window {
     callback terminal-scroll(float);
     // Chat view (stream-json sessions).
     callback send-prompt(string);
+    callback chat-model-changed(string);
+    callback chat-effort-changed(string);
     in property <bool> is-chat-session: false;
     in property <[ChatItemData]> chat-items;
+    in-out property <string> chat-selected-model: "sonnet";
+    in-out property <string> chat-selected-effort: "high";
 
     // Layout constants.
     // Polish 24: sidebar-w switches between full and compact based
@@ -459,7 +463,11 @@ export component MainWindow inherits Window {
         terminal-scroll(delta) => { root.terminal-scroll(delta); }
         is-chat-session: root.is-chat-session;
         chat-items: root.chat-items;
+        chat-selected-model <=> root.chat-selected-model;
+        chat-selected-effort <=> root.chat-selected-effort;
         send-prompt(text) => { root.send-prompt(text); }
+        chat-model-changed(v) => { root.chat-model-changed(v); }
+        chat-effort-changed(v) => { root.chat-effort-changed(v); }
         bare-terminal-requested(id) => { root.bare-terminal-requested(id); }
 
         // Description tab.

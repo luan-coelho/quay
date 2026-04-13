@@ -78,6 +78,36 @@ pub fn wire(window: &MainWindow, ctx: &WiringContext) {
         });
     }
 
+    // ── Chat config: model selector ────────────────────────────────
+    {
+        let state = ctx.state.clone();
+        window.on_chat_model_changed(move |model| {
+            let model_str = model.to_string();
+            if let Some(id) = *state.active_task.borrow() {
+                if let Some(sess) = state.json_sessions.borrow_mut().get_mut(&id) {
+                    sess.model = Some(model_str.clone());
+                }
+            }
+            let s = crate::settings::Settings::new(&state.db.conn);
+            let _ = s.set(crate::settings::KEY_DEFAULT_MODEL, &model_str);
+        });
+    }
+
+    // ── Chat config: effort selector ─────────────────────────────
+    {
+        let state = ctx.state.clone();
+        window.on_chat_effort_changed(move |effort| {
+            let effort_str = effort.to_string();
+            if let Some(id) = *state.active_task.borrow() {
+                if let Some(sess) = state.json_sessions.borrow_mut().get_mut(&id) {
+                    sess.effort = Some(effort_str.clone());
+                }
+            }
+            let s = crate::settings::Settings::new(&state.db.conn);
+            let _ = s.set(crate::settings::KEY_DEFAULT_EFFORT, &effort_str);
+        });
+    }
+
     // ── Keyboard dispatch ───────────────────────────────────────────
     let state = ctx.state.clone();
     let weak = window.as_weak();

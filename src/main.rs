@@ -214,6 +214,17 @@ fn main() -> Result<()> {
     window.set_active_task_message_count(0);
     window.set_active_right_tab("terminal".into());
 
+    // Chat config defaults from settings.
+    {
+        let s = crate::settings::Settings::new(&state.db.conn);
+        window.set_chat_selected_model(
+            s.get_or(crate::settings::KEY_DEFAULT_MODEL, "sonnet").into(),
+        );
+        window.set_chat_selected_effort(
+            s.get_or(crate::settings::KEY_DEFAULT_EFFORT, "high").into(),
+        );
+    }
+
     // Sidebar: menu items. Icons are picked by `id` inside `MenuRow`
     // via the `lucide-slint` `IconSet`. The `glyph` field is kept on
     // the struct as an accessibility hint but is no longer rendered;
