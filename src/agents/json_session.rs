@@ -116,7 +116,7 @@ impl JsonSession {
         cmd.current_dir(&self.cwd);
         cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::null());
+        cmd.stderr(Stdio::piped());
 
         // Baseline terminal env.
         cmd.env("TERM", "dumb");
@@ -125,17 +125,28 @@ impl JsonSession {
             std::env::var("LANG").unwrap_or_else(|_| "C.UTF-8".into()),
         );
 
+        tracing::info!(
+            binary = %self.binary.display(),
+            prompt_len = prompt.len(),
+            model = ?self.model,
+            effort = ?self.effort,
+            session_id = ?self.session_id,
+            "spawning claude stream-json process"
+        );
+
         let mut child = cmd.spawn().context("failed to spawn claude")?;
         let stdout = child
             .stdout
             .take()
             .context("failed to capture claude stdout")?;
+        let stderr = child.stderr.take();
 
         let (tx, rx) = bounded::<ParsedEvent>(4096);
         self.rx = rx;
         self.child = Some(child);
 
-        // Background reader thread — reads stdout line-by-line.
+        // Background reader thread — reads stdout line-by-line and
+        // forwards parsed events. Also drains stderr for diagnostics.
         thread::Builder::new()
             .name("quay-json-reader".into())
             .spawn(move || {
@@ -145,10 +156,24 @@ impl JsonSession {
                     if line.is_empty() {
                         continue;
                     }
-                    if let Some(event) = parse_line(&line)
-                        && tx.send(event).is_err()
-                    {
-                        break;
+                    if let Some(event) = parse_line(&line) {
+                        if tx.send(event).is_err() {
+                            break;
+                        }
+                    }
+                }
+                // Drain stderr after stdout closes.
+                if let Some(err_stream) = stderr {
+                    let mut err_buf = String::new();
+                    let _ = std::io::Read::read_to_string(
+                        &mut std::io::BufReader::new(err_stream),
+                        &mut err_buf,
+                    );
+                    if !err_buf.trim().is_empty() {
+                        tracing::warn!(
+                            stderr = %err_buf.trim(),
+                            "claude process stderr"
+                        );
                     }
                 }
             })
@@ -237,9 +262,15 @@ impl JsonSession {
         // Check if child process exited (without a result event).
         if self.state == SessionState::Busy
             && let Some(ref mut child) = self.child
-            && let Ok(Some(_status)) = child.try_wait()
+            && let Ok(Some(status)) = child.try_wait()
         {
+            tracing::info!(
+                exit_code = ?status.code(),
+                items_count = self.items.len(),
+                "json session process exited"
+            );
             self.state = SessionState::Awaiting;
+            changed = true;
         }
 
         changed
