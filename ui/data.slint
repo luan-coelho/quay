@@ -22,7 +22,7 @@ export struct QuickActionRowData {
     name: string,
     kind: string,        // "claude" | "shell"
     body: string,
-    shortcut: string,    // "⌘⌥1" .. "⌘⌥9" (only first 9 have shortcuts)
+    shortcut: string,    // "1" .. "9" (digit only, Cmd+Alt rendered by ShortcutKeys)
 }
 
 export struct ProcessRowData {
@@ -148,6 +148,15 @@ export struct SessionEntryData {
     duration: string,      // pre-formatted, e.g. "2m 14s" or "running"
     exit-status: int,      // -1 while running, 0 = success, >0 = error
     agent-kind: string,    // "claude" | "opencode" | "bare"
+}
+
+// Toast stack entry — one per visible notification. `alive` drives
+// the fade-out animation; when false the toast is being dismissed.
+export struct ToastData {
+    id: int,
+    message: string,
+    kind: string,    // "success" | "error" | "info"
+    alive: bool,
 }
 
 // Phase D — worktree entry for the sidebar Worktrees section.

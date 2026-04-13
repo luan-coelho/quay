@@ -21,10 +21,8 @@ pub enum HotkeyAction {
     /// Escape pressed. The dispatcher in `main.rs` decides which modal
     /// gets dismissed (or falls through to the PTY if none is open).
     CloseTopModal,
-    /// Cmd/Ctrl + N — create a new task at the bottom of Backlog.
+    /// Cmd/Ctrl + N — start a new CLI session (terminal-first).
     CreateTask,
-    /// Cmd/Ctrl + D — advance the active task one column forward.
-    MoveActiveForward,
     /// Cmd/Ctrl + , — toggle the Settings modal.
     ToggleSettings,
     /// Cmd/Ctrl + W — close the active open-task tab.
@@ -46,6 +44,8 @@ pub enum HotkeyAction {
     CycleTabsForward,
     /// Cmd/Ctrl + Shift + [ (or `{`) — cycle to the previous open tab.
     CycleTabsBackward,
+    /// Ctrl+Shift+V or Shift+Insert — paste clipboard into the PTY.
+    Paste,
     /// Not a recognised hotkey — caller should encode and forward to
     /// the active PTY.
     Fallthrough,
@@ -82,6 +82,14 @@ pub fn classify_hotkey(
         return HotkeyAction::CloseTopModal;
     }
 
+    // 2.5. Clipboard paste: Ctrl+Shift+V or Shift+Insert.
+    if primary && shift && (text == "v" || text == "V") {
+        return HotkeyAction::Paste;
+    }
+    if shift && text == "\u{F727}" {
+        return HotkeyAction::Paste;
+    }
+
     // 3. Global primary-modifier shortcuts (no Alt).
     //
     // NOTE: this branch does NOT check `shift`. Cmd+Shift+W therefore
@@ -91,7 +99,6 @@ pub fn classify_hotkey(
     if primary && !alt && text.len() == 1 {
         match text.chars().next().unwrap_or('\0') {
             'n' | 'N' => return HotkeyAction::CreateTask,
-            'd' | 'D' => return HotkeyAction::MoveActiveForward,
             ',' => return HotkeyAction::ToggleSettings,
             'w' | 'W' => return HotkeyAction::CloseActiveTab,
             'p' | 'P' => return HotkeyAction::OpenTaskSearch,
@@ -196,18 +203,6 @@ mod tests {
     }
 
     #[test]
-    fn cmd_d_moves_forward() {
-        assert_eq!(
-            key("d", true, false, false),
-            HotkeyAction::MoveActiveForward
-        );
-        assert_eq!(
-            key("D", true, false, false),
-            HotkeyAction::MoveActiveForward
-        );
-    }
-
-    #[test]
     fn cmd_comma_toggles_settings() {
         assert_eq!(key(",", true, false, false), HotkeyAction::ToggleSettings);
     }
@@ -260,6 +255,23 @@ mod tests {
             key("[", true, false, true),
             HotkeyAction::CycleTabsBackward
         );
+    }
+
+    #[test]
+    fn ctrl_shift_v_pastes() {
+        assert_eq!(key("V", true, false, true), HotkeyAction::Paste);
+        assert_eq!(key("v", true, false, true), HotkeyAction::Paste);
+    }
+
+    #[test]
+    fn shift_insert_pastes() {
+        assert_eq!(key("\u{F727}", false, false, true), HotkeyAction::Paste);
+    }
+
+    #[test]
+    fn ctrl_v_without_shift_falls_through() {
+        // Ctrl+V (no shift) should send raw 0x16 to PTY, not paste.
+        assert_eq!(key("v", true, false, false), HotkeyAction::Fallthrough);
     }
 
     #[test]

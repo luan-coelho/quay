@@ -1,0 +1,652 @@
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"POT-Creation-Date: 2026-04-12 17:53+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: \n"
+
+#: ui/components/new_task_modal.slint:21
+msgctxt "NewTaskModal"
+msgid "New Task"
+msgstr ""
+
+#: ui/components/new_task_modal.slint:30
+msgctxt "NewTaskModal"
+msgid "TITLE"
+msgstr ""
+
+#: ui/components/new_task_modal.slint:32
+msgctxt "NewTaskModal"
+msgid "e.g. Add dark mode"
+msgstr ""
+
+#: ui/components/new_task_modal.slint:43
+msgctxt "NewTaskModal"
+msgid "INITIAL INSTRUCTIONS (SENT TO THE AGENT ON START)"
+msgstr ""
+
+#: ui/components/new_task_modal.slint:45
+msgctxt "NewTaskModal"
+msgid "optional — what should the agent do first?"
+msgstr ""
+
+#: ui/components/new_task_modal.slint:56
+msgctxt "NewTaskModal"
+msgid "Cancel"
+msgstr ""
+
+#: ui/components/new_task_modal.slint:63
+msgctxt "NewTaskModal"
+msgid "Create"
+msgstr ""
+
+#: ui/components/files_panel.slint:51
+msgctxt "FilesPanel"
+msgid "Select a task with a worktree"
+msgstr ""
+
+#: ui/components/files_panel.slint:186
+msgctxt "FilesPanel"
+msgid ""
+"Click a text file to open it in the built-in editor. Binary or very large "
+"files fall back to $EDITOR."
+msgstr ""
+
+#: ui/components/files_panel.slint:264
+msgctxt "FilesPanel"
+msgid "save"
+msgstr ""
+
+#: ui/components/files_panel.slint:290
+msgctxt "FilesPanel"
+msgid "(empty file)"
+msgstr ""
+
+#: ui/components/files_panel.slint:339
+msgctxt "FilesPanel"
+msgid ""
+"Top pane: syntect-coloured preview of the last saved state. Bottom pane: "
+"plain editable text. Save to refresh the preview."
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:47
+msgctxt "ShortcutsOverlay"
+msgid "Keyboard Shortcuts"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:68
+msgctxt "ShortcutsOverlay"
+msgid "TASKS"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:73
+msgctxt "ShortcutsOverlay"
+msgid "Create new task in Backlog"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:74
+msgctxt "ShortcutsOverlay"
+msgid "Move active task forward"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:75
+msgctxt "ShortcutsOverlay"
+msgid "Delete active task"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:76
+msgctxt "ShortcutsOverlay"
+msgid "(in Instructions field) Start Implement"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:83
+msgctxt "ShortcutsOverlay"
+msgid "OPEN TABS"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:88
+msgctxt "ShortcutsOverlay"
+msgid "Close active tab"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:89
+msgctxt "ShortcutsOverlay"
+msgid "Close all OTHER tabs"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:90
+msgctxt "ShortcutsOverlay"
+msgid "Close ALL tabs"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:91
+msgctxt "ShortcutsOverlay"
+msgid "Cycle to next tab"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:92
+msgctxt "ShortcutsOverlay"
+msgid "Cycle to previous tab"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:99
+msgctxt "ShortcutsOverlay"
+msgid "QUICK ACTIONS"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:104
+msgctxt "ShortcutsOverlay"
+msgid "Run quick action by index"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:111
+msgctxt "ShortcutsOverlay"
+msgid "SYSTEM"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:116
+msgctxt "ShortcutsOverlay"
+msgid "Quick task switcher"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:117
+msgctxt "ShortcutsOverlay"
+msgid "Open Settings"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:118
+msgctxt "ShortcutsOverlay"
+msgid "Show this overlay"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:119
+msgctxt "ShortcutsOverlay"
+msgid "Close any open modal"
+msgstr ""
+
+#: ui/components/shortcuts_overlay.slint:126
+msgctxt "ShortcutsOverlay"
+msgid "Tip: Cmd on macOS, Ctrl elsewhere. Esc closes this overlay."
+msgstr ""
+
+#: ui/components/task_search_modal.slint:47
+msgctxt "TaskSearchModal"
+msgid "Type to search tasks…"
+msgstr ""
+
+#: ui/components/task_search_modal.slint:68
+msgctxt "TaskSearchModal"
+msgid "No matches"
+msgstr ""
+
+#: ui/components/task_search_modal.slint:113
+msgctxt "TaskSearchModal"
+msgid "Esc to dismiss · click a result to open"
+msgstr ""
+
+#: ui/components/tab_context_menu.slint:52
+msgctxt "TabContextMenu"
+msgid "Close this tab"
+msgstr ""
+
+#: ui/components/tab_context_menu.slint:63
+msgctxt "TabContextMenu"
+msgid "Close other tabs"
+msgstr ""
+
+#: ui/components/tab_context_menu.slint:74
+msgctxt "TabContextMenu"
+msgid "Close tabs to the right"
+msgstr ""
+
+#: ui/components/tab_context_menu.slint:88
+msgctxt "TabContextMenu"
+msgid "Close all tabs"
+msgstr ""
+
+#: ui/components/kanban_grid.slint:77
+msgctxt "KanbanGrid"
+msgid "All"
+msgstr ""
+
+#: ui/components/kanban_grid.slint:155
+msgctxt "KanbanGrid"
+msgid "No tasks yet"
+msgstr ""
+
+#: ui/components/kanban_grid.slint:156
+msgctxt "KanbanGrid"
+msgid "No tasks match the current filter"
+msgstr ""
+
+#: ui/components/kanban_grid.slint:164
+msgctxt "KanbanGrid"
+msgid "Press Cmd+N to create your first task"
+msgstr ""
+
+#: ui/components/kanban_grid.slint:165
+msgctxt "KanbanGrid"
+msgid "Click the active filter chip again to clear it"
+msgstr ""
+
+#: ui/components/kanban_grid.slint:175
+msgctxt "KanbanGrid"
+msgid "Backlog"
+msgstr ""
+
+#: ui/components/kanban_grid.slint:191
+msgctxt "KanbanGrid"
+msgid "Planning & Implementation"
+msgstr ""
+
+#: ui/components/kanban_grid.slint:212
+msgctxt "KanbanGrid"
+msgid "Review"
+msgstr ""
+
+#: ui/components/kanban_grid.slint:225
+msgctxt "KanbanGrid"
+msgid "Done"
+msgstr ""
+
+#: ui/components/kanban_grid.slint:238
+msgctxt "KanbanGrid"
+msgid "Misc"
+msgstr ""
+
+#: ui/components/atoms.slint:152
+msgctxt "KindChip"
+msgid "Enhancement"
+msgstr ""
+
+#: ui/components/atoms.slint:153
+msgctxt "KindChip"
+msgid "Feature"
+msgstr ""
+
+#: ui/components/atoms.slint:154
+msgctxt "KindChip"
+msgid "Bug"
+msgstr ""
+
+#: ui/components/atoms.slint:560
+msgctxt "Select"
+msgid "Select…"
+msgstr ""
+
+#: ui/components/atoms.slint:716
+msgctxt "Select"
+msgid "No branches available"
+msgstr ""
+
+#: ui/components/sidebar.slint:135
+msgctxt "Sidebar"
+msgid "Projects"
+msgstr ""
+
+#: ui/components/sidebar.slint:201
+msgctxt "Sidebar"
+msgid "Worktrees"
+msgstr ""
+
+#: ui/components/new_project_modal.slint:34
+msgctxt "NewProjectModal"
+msgid "New Project"
+msgstr ""
+
+#: ui/components/new_project_modal.slint:45
+msgctxt "NewProjectModal"
+msgid "NAME"
+msgstr ""
+
+#: ui/components/new_project_modal.slint:47
+msgctxt "NewProjectModal"
+msgid "e.g. my-backend"
+msgstr ""
+
+#: ui/components/new_project_modal.slint:63
+msgctxt "NewProjectModal"
+msgid "REPOSITORY PATH"
+msgstr ""
+
+#: ui/components/new_project_modal.slint:75
+msgctxt "NewProjectModal"
+msgid "/absolute/path/to/repo"
+msgstr ""
+
+#: ui/components/new_project_modal.slint:88
+msgctxt "NewProjectModal"
+msgid "Browse"
+msgstr ""
+
+#: ui/components/new_project_modal.slint:111
+msgctxt "NewProjectModal"
+msgid "BASE BRANCH"
+msgstr ""
+
+#: ui/components/new_project_modal.slint:120
+msgctxt "NewProjectModal"
+msgid "Select a branch"
+msgstr ""
+
+#: ui/components/new_project_modal.slint:134
+msgctxt "NewProjectModal"
+msgid "Cancel"
+msgstr ""
+
+#: ui/components/new_project_modal.slint:141
+msgctxt "NewProjectModal"
+msgid "Create"
+msgstr ""
+
+#: ui/components/status_bar.slint:36
+msgctxt "StatusBar"
+msgid "Backlog"
+msgstr ""
+
+#: ui/components/status_bar.slint:44
+msgctxt "StatusBar"
+msgid "Planning"
+msgstr ""
+
+#: ui/components/status_bar.slint:52
+msgctxt "StatusBar"
+msgid "Impl"
+msgstr ""
+
+#: ui/components/status_bar.slint:60
+msgctxt "StatusBar"
+msgid "Review"
+msgstr ""
+
+#: ui/components/status_bar.slint:68
+msgctxt "StatusBar"
+msgid "Done"
+msgstr ""
+
+#: ui/components/status_bar.slint:76
+msgctxt "StatusBar"
+msgid "Misc"
+msgstr ""
+
+#: ui/components/status_bar.slint:110
+msgctxt "StatusBar"
+msgid "0 sessions"
+msgstr ""
+
+#: ui/components/status_bar.slint:119
+msgctxt "StatusBar"
+msgid "tasks total"
+msgstr ""
+
+#: ui/components/git_changes_panel.slint:25
+msgctxt "GitChangesPanel"
+msgid "Git Changes"
+msgstr ""
+
+#: ui/components/git_changes_panel.slint:32
+msgctxt "GitChangesPanel"
+msgid "Select a task with a git worktree to see changes."
+msgstr ""
+
+#: ui/components/git_changes_panel.slint:32
+msgctxt "GitChangesPanel"
+msgid "No changes yet."
+msgstr ""
+
+#: ui/components/git_changes_panel.slint:48
+msgctxt "GitChangesPanel"
+msgid "CHANGED FILES"
+msgstr ""
+
+#: ui/components/git_changes_panel.slint:175
+msgctxt "GitChangesPanel"
+msgid "COMMITS ON THIS BRANCH"
+msgstr ""
+
+#: ui/components/right_pane.slint:195
+msgctxt "RightPane"
+msgid "Terminal"
+msgstr ""
+
+#: ui/components/right_pane.slint:198
+msgctxt "RightPane"
+msgid "Description"
+msgstr ""
+
+#: ui/components/right_pane.slint:201
+msgctxt "RightPane"
+msgid "Git Changes"
+msgstr ""
+
+#: ui/components/right_pane.slint:204
+msgctxt "RightPane"
+msgid "Files"
+msgstr ""
+
+#: ui/components/right_pane.slint:207
+msgctxt "RightPane"
+msgid "History"
+msgstr ""
+
+#: ui/components/right_pane.slint:212
+msgctxt "RightPane"
+msgid "Settings"
+msgstr ""
+
+#: ui/components/right_pane.slint:248
+msgctxt "RightPane"
+msgid "Quay terminal · esc to interrupt the active session"
+msgstr ""
+
+#: ui/components/history_panel.slint:23
+msgctxt "HistoryPanel"
+msgid "Session History"
+msgstr ""
+
+#: ui/components/history_panel.slint:31
+msgctxt "HistoryPanel"
+msgid "No sessions recorded for this task yet."
+msgstr ""
+
+#: ui/components/history_panel.slint:39
+msgctxt "HistoryPanel"
+msgid "Select a task to view its session history."
+msgstr ""
+
+#: ui/components/history_panel.slint:81
+msgctxt "HistoryPanel"
+msgid "Claude"
+msgstr ""
+
+#: ui/components/history_panel.slint:82
+msgctxt "HistoryPanel"
+msgid "OpenCode"
+msgstr ""
+
+#: ui/components/history_panel.slint:83
+msgctxt "HistoryPanel"
+msgid "Terminal"
+msgstr ""
+
+#: ui/components/history_panel.slint:119
+msgctxt "HistoryPanel"
+msgid "running"
+msgstr ""
+
+#: ui/components/history_panel.slint:120
+msgctxt "HistoryPanel"
+msgid "ok"
+msgstr ""
+
+#: ui/components/history_panel.slint:121
+msgctxt "HistoryPanel"
+msgid "exit"
+msgstr ""
+
+#: ui/components/settings_modal.slint:38
+msgctxt "SettingsPanel"
+msgid "Settings"
+msgstr ""
+
+#: ui/components/settings_modal.slint:46
+msgctxt "SettingsPanel"
+msgid "GENERAL"
+msgstr ""
+
+#: ui/components/settings_modal.slint:55
+msgctxt "SettingsPanel"
+msgid "Default base branch"
+msgstr ""
+
+#: ui/components/settings_modal.slint:73
+msgctxt "SettingsPanel"
+msgid "Language"
+msgstr ""
+
+#: ui/components/settings_modal.slint:142
+msgctxt "SettingsPanel"
+msgid "QUICK ACTIONS"
+msgstr ""
+
+#: ui/components/settings_modal.slint:215
+msgctxt "SettingsPanel"
+msgid "name"
+msgstr ""
+
+#: ui/components/settings_modal.slint:263
+msgctxt "SettingsPanel"
+msgid "prompt text…"
+msgstr ""
+
+#: ui/components/settings_modal.slint:263
+msgctxt "SettingsPanel"
+msgid "shell command…"
+msgstr ""
+
+#: ui/components/settings_modal.slint:277
+msgctxt "SettingsPanel"
+msgid "PROCESSES"
+msgstr ""
+
+#: ui/components/settings_modal.slint:284
+msgctxt "SettingsPanel"
+msgid "refresh"
+msgstr ""
+
+#: ui/components/settings_modal.slint:302
+msgctxt "SettingsPanel"
+msgid "No agent processes detected."
+msgstr ""
+
+#: ui/components/settings_modal.slint:344
+msgctxt "SettingsPanel"
+msgid "stop"
+msgstr ""
+
+#: ui/components/settings_modal.slint:350
+msgctxt "SettingsPanel"
+msgid "kill"
+msgstr ""
+
+#: ui/components/description_panel.slint:67
+msgctxt "DescriptionPanel"
+msgid "Description"
+msgstr ""
+
+#: ui/components/description_panel.slint:74
+msgctxt "DescriptionPanel"
+msgid "Select a task to read or edit its description."
+msgstr ""
+
+#: ui/components/description_panel.slint:102
+msgctxt "DescriptionPanel"
+msgid "delete"
+msgstr ""
+
+#: ui/components/description_panel.slint:170
+msgctxt "DescriptionPanel"
+msgid "msgs"
+msgstr ""
+
+#: ui/components/description_panel.slint:181
+msgctxt "DescriptionPanel"
+msgid "Task title"
+msgstr ""
+
+#: ui/components/description_panel.slint:196
+msgctxt "DescriptionPanel"
+msgid "INSTRUCTIONS (SENT TO THE AGENT ON START)"
+msgstr ""
+
+#: ui/components/description_panel.slint:203
+msgctxt "DescriptionPanel"
+msgid "e.g. Add dark mode with a toggle in settings — press Enter to Implement"
+msgstr ""
+
+#: ui/components/description_panel.slint:244
+msgctxt "DescriptionPanel"
+msgid "Plan"
+msgstr ""
+
+#: ui/components/description_panel.slint:251
+msgctxt "DescriptionPanel"
+msgid "Implement"
+msgstr ""
+
+#: ui/components/description_panel.slint:258
+msgctxt "DescriptionPanel"
+msgid "Stop"
+msgstr ""
+
+#: ui/components/description_panel.slint:277
+msgctxt "DescriptionPanel"
+msgid "LABELS"
+msgstr ""
+
+#: ui/components/description_panel.slint:309
+msgctxt "DescriptionPanel"
+msgid "No labels — click + to add one."
+msgstr ""
+
+#: ui/components/description_panel.slint:359
+msgctxt "DescriptionPanel"
+msgid "Pick a label to attach"
+msgstr ""
+
+#: ui/components/description_panel.slint:397
+msgctxt "DescriptionPanel"
+msgid "BLOCKED BY"
+msgstr ""
+
+#: ui/components/description_panel.slint:432
+msgctxt "DescriptionPanel"
+msgid "No dependencies — click + to add one."
+msgstr ""
+
+#: ui/components/description_panel.slint:449
+msgctxt "DescriptionPanel"
+msgid "Pick a task to depend on"
+msgstr ""
+
+#: ui/components/description_panel.slint:458
+msgctxt "DescriptionPanel"
+msgid "No candidate tasks."
+msgstr ""
+
+#: ui/components/description_panel.slint:537
+msgctxt "DescriptionPanel"
+msgid "DESCRIPTION"
+msgstr ""
+
+#: ui/components/description_panel.slint:545
+msgctxt "DescriptionPanel"
+msgid "Add a description, notes for the agent, acceptance criteria…"
+msgstr ""

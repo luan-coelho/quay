@@ -49,8 +49,8 @@ export component TabContextMenu inherits Rectangle {
             spacing: 2px;
 
             TabMenuRow {
-                label: "Close this tab";
-                shortcut: "⌘W";
+                label: @tr("Close this tab");
+                cmd: true; key: "W";
                 enabled: root.target-id != "";
                 clicked => {
                     if root.target-id != "" {
@@ -60,8 +60,8 @@ export component TabContextMenu inherits Rectangle {
                 }
             }
             TabMenuRow {
-                label: "Close other tabs";
-                shortcut: "⌘⇧W";
+                label: @tr("Close other tabs");
+                cmd: true; shift: true; key: "W";
                 enabled: root.open-tabs-count >= 2 && root.target-id != "";
                 clicked => {
                     if root.target-id != "" {
@@ -71,8 +71,7 @@ export component TabContextMenu inherits Rectangle {
                 }
             }
             TabMenuRow {
-                label: "Close tabs to the right";
-                shortcut: "";
+                label: @tr("Close tabs to the right");
                 enabled: root.open-tabs-count >= 2 && root.target-id != "";
                 clicked => {
                     if root.target-id != "" {
@@ -86,8 +85,8 @@ export component TabContextMenu inherits Rectangle {
                 background: Tokens.border;
             }
             TabMenuRow {
-                label: "Close all tabs";
-                shortcut: "⌘⌥W";
+                label: @tr("Close all tabs");
+                cmd: true; alt: true; key: "W";
                 enabled: root.open-tabs-count >= 1;
                 clicked => {
                     root.close-all();

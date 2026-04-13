@@ -255,7 +255,7 @@ pub fn rebuild_settings_qa(state: &AppState, model: &Rc<VecModel<QuickActionRowD
     }
     for (i, a) in actions.iter().enumerate() {
         let shortcut = if i < 9 {
-            format!("⌘⌥{}", i + 1)
+            format!("{}", i + 1)
         } else {
             String::new()
         };

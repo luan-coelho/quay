@@ -12,17 +12,15 @@ import { LineEdit, TextEdit, ScrollView } from "std-widgets.slint";
 import { IconSet } from "@lucide";
 import { Tokens } from "../tokens.slint";
 import { LabelPillData, TaskCardData } from "../data.slint";
-import { LucideIcon, CloseButton, Button, StatsChip, Card, FormField, Input, Select } from "atoms.slint";
+import { LucideIcon, CloseButton, Button, StatsChip, Card, FormField, Input } from "atoms.slint";
 
 export component DescriptionPanel inherits Card {
     in property <string> active-task-id;
     in property <string> active-task-display;
     in property <string> active-task-session-state;
-    in-out property <string> active-task-agent;
     in-out property <string> active-task-title;
     in-out property <string> active-task-title-error;
     in-out property <string> active-task-description;
-    in-out property <string> active-task-instructions;
 
     // Polish 15 — live agent stats.
     in property <string> active-task-tokens-text;
@@ -43,11 +41,6 @@ export component DescriptionPanel inherits Card {
     callback delete-task(string);
     callback title-changed(string);
     callback description-changed(string);
-    callback instructions-changed(string);
-    callback start-plan(string);
-    callback start-implement(string);
-    callback stop-session(string);
-    callback agent-changed(string);
     callback attach-label(string);
     callback detach-label(string);
     callback add-dependency(string);
@@ -64,14 +57,14 @@ export component DescriptionPanel inherits Card {
             alignment: center;
             spacing: Tokens.space-1 + 2px;
             Text {
-                text: "Description";
+                text: @tr("Description");
                 color: Tokens.foreground;
                 font-size: Tokens.text-base;
                 font-weight: Tokens.weight-semibold;
                 horizontal-alignment: center;
             }
             Text {
-                text: "Select a task to read or edit its description.";
+                text: @tr("Select a task to read or edit its description.");
                 color: Tokens.muted-foreground;
                 font-size: Tokens.text-sm;
                 horizontal-alignment: center;
@@ -80,7 +73,7 @@ export component DescriptionPanel inherits Card {
     }
 
     if root.active-task-id != "": VerticalLayout {
-        padding: Tokens.space-4 - 2px;
+        padding: 0px;
         spacing: Tokens.space-3;
 
         // Display ID + session state chip + delete in a single row.
@@ -99,7 +92,7 @@ export component DescriptionPanel inherits Card {
 
             // Delete button — small, unobtrusive, red.
             Button {
-                text: "delete";
+                text: @tr("delete");
                 variant: "destructive";
                 size: "sm";
                 clicked => { root.delete-task(root.active-task-id); }
@@ -167,7 +160,7 @@ export component DescriptionPanel inherits Card {
                 text: root.active-task-runtime-text;
             }
             StatsChip {
-                text: root.active-task-message-count + " msgs";
+                text: root.active-task-message-count + " " + @tr("msgs");
             }
 
             Rectangle { horizontal-stretch: 1; }
@@ -178,7 +171,7 @@ export component DescriptionPanel inherits Card {
         // like the pre-validator behavior).
         FormField {
             text: root.active-task-title;
-            placeholder: "Task title";
+            placeholder: @tr("Task title");
             input-height: 40px;
             error: root.active-task-title-error;
             edited(new-text) => {
@@ -191,90 +184,12 @@ export component DescriptionPanel inherits Card {
             background: Tokens.border;
         }
 
-        // Instructions — the initial prompt sent to the agent.
-        Text {
-            text: "INSTRUCTIONS (SENT TO THE AGENT ON START)";
-            color: Tokens.muted-foreground;
-            font-size: Tokens.text-xs;
-            font-weight: Tokens.weight-bold;
-        }
-        Input {
-            text: root.active-task-instructions;
-            placeholder: "e.g. Add dark mode with a toggle in settings — press Enter to Implement";
-            edited(new-text) => {
-                root.instructions-changed(new-text);
-            }
-            // Polish 12: pressing Enter inside the Instructions field
-            // fires start-implement — the most common gesture is
-            // "type a quick prompt, hit Enter".
-            accepted(new-text) => {
-                root.instructions-changed(new-text);
-                root.start-implement(root.active-task-id);
-            }
-        }
-
-        // Agent picker + Plan / Implement action row.
-        HorizontalLayout {
-            spacing: Tokens.space-2;
-            alignment: start;
-
-            // Agent selector — maps internal values (claude/opencode/bare)
-            // to display labels for the Select dropdown.
-            Select {
-                width: 160px;
-                options: ["Claude Code", "OpenCode", "Terminal"];
-                value: root.active-task-agent == "opencode" ? "OpenCode"
-                     : root.active-task-agent == "bare" ? "Terminal"
-                     : "Claude Code";
-                changed(label) => {
-                    if (label == "OpenCode") {
-                        root.active-task-agent = "opencode";
-                        root.agent-changed("opencode");
-                    } else if (label == "Terminal") {
-                        root.active-task-agent = "bare";
-                        root.agent-changed("bare");
-                    } else {
-                        root.active-task-agent = "claude";
-                        root.agent-changed("claude");
-                    }
-                }
-            }
-
-            Button {
-                text: "Plan";
-                variant: "secondary";
-                leading-icon: "sparkles";
-                clicked => { root.start-plan(root.active-task-id); }
-            }
-
-            Button {
-                text: "Implement";
-                variant: "success";
-                leading-icon: "zap";
-                clicked => { root.start-implement(root.active-task-id); }
-            }
-
-            if root.active-task-session-state == "busy" || root.active-task-session-state == "awaiting": Button {
-                text: "Stop";
-                variant: "destructive";
-                leading-icon: "square";
-                clicked => { root.stop-session(root.active-task-id); }
-            }
-
-            Rectangle { horizontal-stretch: 1; }
-        }
-
-        Rectangle {
-            height: 1px;
-            background: Tokens.border;
-        }
-
         // ── Labels section ─────────────────────────────────
         HorizontalLayout {
             spacing: Tokens.space-1 + 2px;
             alignment: start;
             Text {
-                text: "LABELS";
+                text: @tr("LABELS");
                 color: Tokens.muted-foreground;
                 font-size: Tokens.text-xs;
                 font-weight: Tokens.weight-bold;
@@ -306,7 +221,7 @@ export component DescriptionPanel inherits Card {
             spacing: Tokens.space-1;
             alignment: start;
             if root.active-task-labels.length == 0 && !root.label-picker-open: Text {
-                text: "No labels — click + to add one.";
+                text: @tr("No labels — click + to add one.");
                 color: Tokens.muted-foreground;
                 font-size: Tokens.text-xs;
                 vertical-alignment: center;
@@ -356,7 +271,7 @@ export component DescriptionPanel inherits Card {
                 padding: Tokens.space-1 + 2px;
                 spacing: Tokens.space-1;
                 Text {
-                    text: "Pick a label to attach";
+                    text: @tr("Pick a label to attach");
                     color: Tokens.muted-foreground;
                     font-size: Tokens.text-xs;
                 }
@@ -394,7 +309,7 @@ export component DescriptionPanel inherits Card {
             spacing: Tokens.space-1 + 2px;
             alignment: start;
             Text {
-                text: "BLOCKED BY";
+                text: @tr("BLOCKED BY");
                 color: Tokens.muted-foreground;
                 font-size: Tokens.text-xs;
                 font-weight: Tokens.weight-bold;
@@ -429,7 +344,7 @@ export component DescriptionPanel inherits Card {
             }
         }
         if root.active-task-dependencies.length == 0 && !root.dep-picker-open: Text {
-            text: "No dependencies — click + to add one.";
+            text: @tr("No dependencies — click + to add one.");
             color: Tokens.muted-foreground;
             font-size: Tokens.text-xs;
         }
@@ -446,7 +361,7 @@ export component DescriptionPanel inherits Card {
                 padding: Tokens.space-1 + 2px;
                 spacing: Tokens.space-1;
                 Text {
-                    text: "Pick a task to depend on";
+                    text: @tr("Pick a task to depend on");
                     color: Tokens.muted-foreground;
                     font-size: Tokens.text-xs;
                 }
@@ -455,7 +370,7 @@ export component DescriptionPanel inherits Card {
                     VerticalLayout {
                         spacing: 2px;
                         if root.active-task-available-deps.length == 0: Text {
-                            text: "No candidate tasks.";
+                            text: @tr("No candidate tasks.");
                             color: Tokens.muted-foreground;
                             font-size: Tokens.text-xs;
                         }
@@ -534,7 +449,7 @@ export component DescriptionPanel inherits Card {
         }
 
         Text {
-            text: "DESCRIPTION";
+            text: @tr("DESCRIPTION");
             color: Tokens.muted-foreground;
             font-size: Tokens.text-xs;
             font-weight: Tokens.weight-bold;
@@ -542,7 +457,7 @@ export component DescriptionPanel inherits Card {
 
         TextEdit {
             text: root.active-task-description;
-            placeholder-text: "Add a description, notes for the agent, acceptance criteria…";
+            placeholder-text: @tr("Add a description, notes for the agent, acceptance criteria…");
             wrap: word-wrap;
             horizontal-stretch: 1;
             vertical-stretch: 1;

@@ -1,40 +1,39 @@
-// Files tab — directory listing OR inline editor (Phase 7),
-// switched by `editor-open`. The directory walker uses the flattened
+// Files tab — directory listing OR read-only file viewer,
+// switched by `viewer-open`. The directory walker uses the flattened
 // tree from `wiring::refreshes::rebuild_files`; clicking a file fires
 // `entry-clicked(path, kind)` which the parent uses to either toggle
-// a directory expansion or open the file in the editor.
+// a directory expansion or open the file in the viewer.
 
-import { ScrollView, TextEdit } from "std-widgets.slint";
+import { ScrollView } from "std-widgets.slint";
 import { IconSet } from "@lucide";
 import { Tokens } from "../tokens.slint";
 import { FileEntryData, HighlightedLineData } from "../data.slint";
-import { LucideIcon, Button, Divider } from "atoms.slint";
+import { LucideIcon, Divider } from "atoms.slint";
 
 export component FilesPanel inherits Rectangle {
     in property <[FileEntryData]> file-entries;
     in-out property <string> file-current-dir;
-    in-out property <bool> editor-open;
-    in-out property <string> editor-file-path;
-    in-out property <string> editor-file-content;
-    in property <string> editor-syntax-name;
-    in property <bool> editor-file-dirty;
-    in property <[HighlightedLineData]> editor-highlighted-lines;
-    in property <int> editor-line-count;
+    // When true, shows the coloured read-only viewer instead of the tree.
+    in-out property <bool> viewer-open;
+    in property <string> viewer-file-path;
+    in property <string> viewer-syntax-name;
+    in property <[HighlightedLineData]> viewer-highlighted-lines;
+    in property <int> viewer-line-count;
+    // Keyboard navigation — index of the focused row in the tree (-1 = none).
+    in-out property <int> focused-index: -1;
 
     callback entry-clicked(string, string);
-    callback content-changed(string);
-    callback save();
-    callback close();
+    callback viewer-close();
+    // Keyboard activation — Rust looks up file-entries[index] and
+    // dispatches to entry-clicked with the correct path and kind.
+    callback activate-focused(int);
 
     background: Tokens.card;
-    border-radius: Tokens.radius-md;
-    border-width: 1px;
-    border-color: Tokens.border;
     clip: true;
 
     // ── File tree mode ─────────────────────────────────────
-    if !root.editor-open: VerticalLayout {
-        padding: Tokens.space-3;
+    if !root.viewer-open: VerticalLayout {
+        padding: 0px;
         spacing: Tokens.space-2;
 
         HorizontalLayout {
@@ -48,7 +47,7 @@ export component FilesPanel inherits Rectangle {
                 }
             }
             Text {
-                text: root.file-current-dir == "" ? "Select a task with a worktree" : root.file-current-dir;
+                text: root.file-current-dir == "" ? @tr("Select a task with a worktree") : root.file-current-dir;
                 color: Tokens.foreground;
                 font-size: Tokens.text-sm;
                 font-family: Tokens.font-mono;
@@ -59,122 +58,151 @@ export component FilesPanel inherits Rectangle {
 
         Divider { }
 
-        ScrollView {
+        // FocusScope captures keyboard events for tree navigation.
+        // Arrow Up/Down moves `focused-index`, Enter activates the
+        // focused entry, Escape has no effect in tree mode (viewer
+        // is closed separately).
+        tree-scope := FocusScope {
             horizontal-stretch: 1;
             vertical-stretch: 1;
-            VerticalLayout {
-                spacing: 1px;
-                // Polish 17 — each row is one entry in the flattened
-                // tree. Left padding scales with `depth` so nested
-                // entries indent. Directory chevron flips ▸ ↔ ▾ based
-                // on `expanded`.
-                for entry in root.file-entries: TouchArea {
-                    height: 22px;
-                    clicked => {
-                        root.entry-clicked(entry.path, entry.kind);
+
+            key-pressed(event) => {
+                if event.text == Key.UpArrow {
+                    if root.focused-index > 0 {
+                        root.focused-index -= 1;
+                    } else if root.focused-index == -1 && root.file-entries.length > 0 {
+                        root.focused-index = root.file-entries.length - 1;
                     }
-                    Rectangle {
-                        background: parent.has-hover ? Tokens.accent : transparent;
-                        border-radius: Tokens.radius-sm;
-                        animate background { duration: 120ms; easing: ease-out; }
-                        HorizontalLayout {
-                            padding-left: 10px + entry.depth * 14px;
-                            padding-right: Tokens.space-2;
-                            spacing: Tokens.space-1 + 2px;
-                            alignment: start;
-                            // Directory chevron (▸/▾ replaced by Lucide
-                            // ChevronRight/ChevronDown for vector
-                            // rendering consistency with the rest of
-                            // the UI). Files get a blank placeholder
-                            // of the same width so the name column
-                            // stays aligned.
-                            VerticalLayout {
-                                alignment: center;
-                                width: 10px;
-                                if entry.kind == "directory" && entry.expanded: LucideIcon {
-                                    icon: IconSet.ChevronDown;
-                                    size: 11px;
-                                    stroke: Tokens.muted-foreground;
+                    return accept;
+                }
+                if event.text == Key.DownArrow {
+                    if root.focused-index < root.file-entries.length - 1 {
+                        root.focused-index += 1;
+                    } else if root.focused-index == -1 && root.file-entries.length > 0 {
+                        root.focused-index = 0;
+                    }
+                    return accept;
+                }
+                if event.text == Key.Return {
+                    if root.focused-index >= 0 && root.focused-index < root.file-entries.length {
+                        root.activate-focused(root.focused-index);
+                    }
+                    return accept;
+                }
+                return reject;
+            }
+
+            ScrollView {
+                VerticalLayout {
+                    spacing: 1px;
+                    // Each row is one entry in the flattened tree.
+                    // Left padding scales with `depth` so nested
+                    // entries indent. Directory chevron flips ▸ ↔ ▾
+                    // based on `expanded`.
+                    for entry[idx] in root.file-entries: TouchArea {
+                        height: 22px;
+                        clicked => {
+                            root.focused-index = idx;
+                            root.entry-clicked(entry.path, entry.kind);
+                            tree-scope.focus();
+                        }
+                        Rectangle {
+                            border-width: idx == root.focused-index ? 1px : 0px;
+                            border-color: Tokens.ring;
+                            background: idx == root.focused-index
+                                ? Tokens.accent
+                                : parent.has-hover
+                                    ? Tokens.accent
+                                    : transparent;
+                            border-radius: Tokens.radius-sm;
+                            animate background { duration: 120ms; easing: ease-out; }
+                            HorizontalLayout {
+                                padding-left: 10px + entry.depth * 14px;
+                                padding-right: Tokens.space-2;
+                                spacing: Tokens.space-1 + 2px;
+                                alignment: start;
+                                // Directory chevron.
+                                VerticalLayout {
+                                    alignment: center;
+                                    width: 10px;
+                                    if entry.kind == "directory" && entry.expanded: LucideIcon {
+                                        icon: IconSet.ChevronDown;
+                                        size: 11px;
+                                        stroke: Tokens.muted-foreground;
+                                    }
+                                    if entry.kind == "directory" && !entry.expanded: LucideIcon {
+                                        icon: IconSet.ChevronRight;
+                                        size: 11px;
+                                        stroke: Tokens.muted-foreground;
+                                    }
                                 }
-                                if entry.kind == "directory" && !entry.expanded: LucideIcon {
-                                    icon: IconSet.ChevronRight;
-                                    size: 11px;
-                                    stroke: Tokens.muted-foreground;
+                                // Per-extension Lucide icon.
+                                VerticalLayout {
+                                    alignment: center;
+                                    if entry.icon == "Folder": LucideIcon {
+                                        icon: IconSet.Folder;
+                                        size: 14px;
+                                        stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
+                                    }
+                                    if entry.icon == "FileCode": LucideIcon {
+                                        icon: IconSet.FileCode;
+                                        size: 14px;
+                                        stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
+                                    }
+                                    if entry.icon == "FileText": LucideIcon {
+                                        icon: IconSet.FileText;
+                                        size: 14px;
+                                        stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
+                                    }
+                                    if entry.icon == "FileBraces": LucideIcon {
+                                        icon: IconSet.FileBraces;
+                                        size: 14px;
+                                        stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
+                                    }
+                                    if entry.icon == "FileLock": LucideIcon {
+                                        icon: IconSet.FileLock;
+                                        size: 14px;
+                                        stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
+                                    }
+                                    if entry.icon == "FileTerminal": LucideIcon {
+                                        icon: IconSet.FileTerminal;
+                                        size: 14px;
+                                        stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
+                                    }
+                                    if entry.icon == "FileImage": LucideIcon {
+                                        icon: IconSet.FileImage;
+                                        size: 14px;
+                                        stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
+                                    }
+                                    if entry.icon == "FileMusic": LucideIcon {
+                                        icon: IconSet.FileMusic;
+                                        size: 14px;
+                                        stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
+                                    }
+                                    if entry.icon == "FileVideoCamera": LucideIcon {
+                                        icon: IconSet.FileVideoCamera;
+                                        size: 14px;
+                                        stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
+                                    }
+                                    if entry.icon == "FileArchive": LucideIcon {
+                                        icon: IconSet.FileArchive;
+                                        size: 14px;
+                                        stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
+                                    }
+                                    if entry.icon == "File": LucideIcon {
+                                        icon: IconSet.File;
+                                        size: 14px;
+                                        stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
+                                    }
                                 }
-                            }
-                            // Polish 40 + 40b — real Lucide icon picked
-                            // from `entry.icon`. The Rust
-                            // `pick_file_icon` returns one of 11 icon
-                            // names; here we resolve each name to the
-                            // matching `IconSet.X` constant via a
-                            // chain of `if` branches. Stroke color is
-                            // the RGB triple computed in the same
-                            // Rust call.
-                            VerticalLayout {
-                                alignment: center;
-                                if entry.icon == "Folder": LucideIcon {
-                                    icon: IconSet.Folder;
-                                    size: 14px;
-                                    stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
+                                Text {
+                                    text: entry.name;
+                                    color: Tokens.foreground;
+                                    font-size: Tokens.text-sm;
+                                    font-family: Tokens.font-mono;
+                                    vertical-alignment: center;
+                                    overflow: elide;
                                 }
-                                if entry.icon == "FileCode": LucideIcon {
-                                    icon: IconSet.FileCode;
-                                    size: 14px;
-                                    stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
-                                }
-                                if entry.icon == "FileText": LucideIcon {
-                                    icon: IconSet.FileText;
-                                    size: 14px;
-                                    stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
-                                }
-                                if entry.icon == "FileBraces": LucideIcon {
-                                    icon: IconSet.FileBraces;
-                                    size: 14px;
-                                    stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
-                                }
-                                if entry.icon == "FileLock": LucideIcon {
-                                    icon: IconSet.FileLock;
-                                    size: 14px;
-                                    stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
-                                }
-                                if entry.icon == "FileTerminal": LucideIcon {
-                                    icon: IconSet.FileTerminal;
-                                    size: 14px;
-                                    stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
-                                }
-                                if entry.icon == "FileImage": LucideIcon {
-                                    icon: IconSet.FileImage;
-                                    size: 14px;
-                                    stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
-                                }
-                                if entry.icon == "FileMusic": LucideIcon {
-                                    icon: IconSet.FileMusic;
-                                    size: 14px;
-                                    stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
-                                }
-                                if entry.icon == "FileVideoCamera": LucideIcon {
-                                    icon: IconSet.FileVideoCamera;
-                                    size: 14px;
-                                    stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
-                                }
-                                if entry.icon == "FileArchive": LucideIcon {
-                                    icon: IconSet.FileArchive;
-                                    size: 14px;
-                                    stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
-                                }
-                                if entry.icon == "File": LucideIcon {
-                                    icon: IconSet.File;
-                                    size: 14px;
-                                    stroke: rgb(entry.icon-r, entry.icon-g, entry.icon-b);
-                                }
-                            }
-                            Text {
-                                text: entry.name;
-                                color: Tokens.foreground;
-                                font-size: Tokens.text-sm;
-                                font-family: Tokens.font-mono;
-                                vertical-alignment: center;
-                                overflow: elide;
                             }
                         }
                     }
@@ -183,18 +211,18 @@ export component FilesPanel inherits Rectangle {
         }
 
         Text {
-            text: "Click a text file to open it in the built-in editor. Binary or very large files fall back to $EDITOR.";
+            text: @tr("Click a text file to preview it. Binary or very large files fall back to $EDITOR.");
             color: Tokens.muted-foreground;
             font-size: Tokens.text-xs;
         }
     }
 
-    // ── Inline editor mode (Phase 7) ───────────────────────
-    if root.editor-open: VerticalLayout {
-        padding: Tokens.space-3;
+    // ── Read-only file viewer (syntect-coloured) ────────────
+    if root.viewer-open: VerticalLayout {
+        padding: 0px;
         spacing: Tokens.space-2;
 
-        // Header with path, syntax, dirty indicator, save/close buttons.
+        // Header with back button, file path and syntax badge.
         HorizontalLayout {
             spacing: Tokens.space-2;
             alignment: start;
@@ -203,7 +231,7 @@ export component FilesPanel inherits Rectangle {
             TouchArea {
                 width: 22px;
                 height: 22px;
-                clicked => { root.close(); }
+                clicked => { root.viewer-close(); }
                 Rectangle {
                     background: parent.has-hover ? Tokens.accent : transparent;
                     border-radius: Tokens.radius-sm;
@@ -219,22 +247,12 @@ export component FilesPanel inherits Rectangle {
             }
 
             Text {
-                text: root.editor-file-path;
+                text: root.viewer-file-path;
                 color: Tokens.foreground;
                 font-size: Tokens.text-sm;
                 font-family: Tokens.font-mono;
                 overflow: elide;
                 vertical-alignment: center;
-            }
-
-            // Dirty dot.
-            Rectangle {
-                visible: root.editor-file-dirty;
-                width: 6px;
-                height: 6px;
-                y: (parent.height - self.height) / 2;
-                border-radius: 3px;
-                background: #f5b54e;
             }
 
             Rectangle { horizontal-stretch: 1; }
@@ -247,7 +265,7 @@ export component FilesPanel inherits Rectangle {
                 border-width: 1px;
                 border-color: Tokens.border;
                 syn-text := Text {
-                    text: root.editor-syntax-name;
+                    text: root.viewer-syntax-name;
                     color: Tokens.muted-foreground;
                     font-size: Tokens.text-xs;
                     font-weight: Tokens.weight-medium;
@@ -257,88 +275,66 @@ export component FilesPanel inherits Rectangle {
                     height: parent.height;
                 }
             }
-
-            // Save button — shadcn Button with the `success` variant
-            // to keep the kind-enhancement green tint of the original.
-            Button {
-                text: "save";
-                variant: "success";
-                size: "sm";
-                leading-icon: "check";
-                clicked => { root.save(); }
-            }
         }
 
         Divider { }
 
-        // ── Syntect-coloured read-only preview ──────────────
-        // Shows the last saved state of the file with per-token
-        // colouring. Updates on save so it always reflects disk state.
-        Rectangle {
-            height: 220px;
-            background: Tokens.background;
-            border-radius: Tokens.radius-sm;
-            border-width: 1px;
-            border-color: Tokens.border;
-            clip: true;
+        // Full-height syntect-coloured read-only view with line numbers.
+        // Escape closes the viewer and returns to the file tree.
+        viewer-scope := FocusScope {
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+            key-pressed(event) => {
+                if event.text == Key.Escape {
+                    root.viewer-close();
+                    return accept;
+                }
+                return reject;
+            }
 
-            ScrollView {
-                VerticalLayout {
-                    padding: Tokens.space-2;
-                    spacing: 0px;
-                    if root.editor-line-count == 0: Text {
-                        text: "(empty file)";
-                        color: Tokens.muted-foreground;
-                        font-size: Tokens.text-xs;
-                        font-family: Tokens.font-mono;
-                    }
-                    for line in root.editor-highlighted-lines: HorizontalLayout {
-                        spacing: Tokens.space-2;
-                        alignment: start;
-                        Text {
-                            text: line.line-no;
+            Rectangle {
+                background: Tokens.background;
+                border-radius: Tokens.radius-sm;
+                border-width: 1px;
+                border-color: Tokens.border;
+                clip: true;
+
+                ScrollView {
+                    VerticalLayout {
+                        padding: Tokens.space-2;
+                        spacing: 0px;
+                        if root.viewer-line-count == 0: Text {
+                            text: @tr("(empty file)");
                             color: Tokens.muted-foreground;
                             font-size: Tokens.text-xs;
                             font-family: Tokens.font-mono;
-                            width: 32px;
-                            horizontal-alignment: right;
                         }
-                        HorizontalLayout {
-                            spacing: 0px;
+                        for line in root.viewer-highlighted-lines: HorizontalLayout {
+                            spacing: Tokens.space-2;
                             alignment: start;
-                            horizontal-stretch: 1;
-                            for span in line.spans: Text {
-                                text: span.text;
-                                color: rgb(span.color-r, span.color-g, span.color-b);
-                                font-size: Tokens.text-sm;
+                            Text {
+                                text: line.line-no;
+                                color: Tokens.muted-foreground;
+                                font-size: Tokens.text-xs;
                                 font-family: Tokens.font-mono;
+                                width: 32px;
+                                horizontal-alignment: right;
+                            }
+                            HorizontalLayout {
+                                spacing: 0px;
+                                alignment: start;
+                                horizontal-stretch: 1;
+                                for span in line.spans: Text {
+                                    text: span.text;
+                                    color: rgb(span.color-r, span.color-g, span.color-b);
+                                    font-size: Tokens.text-sm;
+                                    font-family: Tokens.font-mono;
+                                }
                             }
                         }
                     }
                 }
             }
-        }
-
-        // ── Editable TextEdit ───────────────────────────────
-        // Plain (non-coloured) text editing surface. Slint's built-in
-        // TextEdit doesn't support per-token colour so editing happens
-        // in uniform text; the preview above shows the colours for the
-        // last saved state.
-        TextEdit {
-            text: root.editor-file-content;
-            wrap: no-wrap;
-            horizontal-stretch: 1;
-            vertical-stretch: 1;
-            font-size: Tokens.text-base;
-            edited => {
-                root.content-changed(self.text);
-            }
-        }
-
-        Text {
-            text: "Top pane: syntect-coloured preview of the last saved state. Bottom pane: plain editable text. Save to refresh the preview.";
-            color: Tokens.muted-foreground;
-            font-size: Tokens.text-xs;
         }
     }
 }

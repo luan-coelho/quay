@@ -79,6 +79,7 @@ impl TaskState {
     /// Previous state in the primary workflow, if any.
     /// Misc sits outside the linear flow — it has no neighbours and returns
     /// `None` for both forward and backward.
+    #[allow(dead_code)]
     pub fn prev(self) -> Option<Self> {
         match self {
             Self::Backlog => None,
@@ -91,6 +92,7 @@ impl TaskState {
     }
 
     /// Next state in the primary workflow, if any.
+    #[allow(dead_code)]
     pub fn next(self) -> Option<Self> {
         match self {
             Self::Backlog => Some(Self::Planning),

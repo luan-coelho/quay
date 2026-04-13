@@ -107,9 +107,22 @@ src/
 ├── file_tree.rs         ← build_tree + open_in_editor
 ├── process.rs           ← sysinfo enumerate/terminate/kill
 ├── quick_actions.rs     ← QuickActionStore CRUD
-└── settings.rs          ← Settings KV wrapper
+├── settings.rs          ← Settings KV wrapper
+└── i18n.rs              ← locale detection + switching (rust-i18n + Slint gettext)
 
 ui/main.slint            ← UI declarativa (~3700 linhas)
+
+locales/                 ← rust-i18n YAML (strings Rust: toasts, menu)
+├── en.yml               ← inglês (fallback default)
+└── pt-BR.yml            ← português brasileiro
+
+i18n/                    ← gettext (strings Slint: @tr() labels, botões)
+├── quay.pot             ← template (gerado por slint-tr-extractor)
+└── pt-BR/LC_MESSAGES/
+    └── quay.po          ← tradução pt-BR (bundled no build via build.rs)
+
+scripts/
+└── i18n-update.sh       ← automação: extract → merge → compile traduções
 ```
 
 ## Arquitetura essencial
@@ -279,6 +292,72 @@ usam o cache.
 - **Slint não tem `rotation-angle` em Rectangle/Image** — esse foi
   o motivo do spinner ser braille cycle ao invés de SVG arc.
 
+## Internacionalização (i18n)
+
+O Quay suporta múltiplos idiomas. Atualmente: **inglês** (default) e
+**português brasileiro**. A arquitetura usa **dois sistemas** em
+paralelo, cada um nativo ao seu domínio:
+
+| Domínio | Ferramenta | Formato | Macro |
+|---------|-----------|---------|-------|
+| Strings Rust (toasts, menu sidebar) | `rust-i18n` | YAML (`locales/*.yml`) | `t!("key")` |
+| Strings Slint (labels, botões, headers) | Slint gettext | `.po` (`i18n/*/LC_MESSAGES/`) | `@tr("text")` |
+
+### Como funciona
+
+1. **Startup**: `i18n::init_locale()` lê a preferência do usuário
+   (SQLite `settings.locale`) ou detecta o locale do sistema via
+   `sys-locale`. Chama `rust_i18n::set_locale()` + 
+   `slint::select_bundled_translation()`.
+
+2. **Runtime**: o usuário troca o idioma na página Settings. O callback
+   `on_locale_changed` chama `i18n::apply_locale()` que atualiza ambos
+   os backends. As strings `@tr()` do Slint re-renderizam
+   automaticamente; as strings `t!()` do menu sidebar são reconstruídas
+   via `rebuild_menu_model()`.
+
+3. **Build**: `build.rs` usa `.with_bundled_translations("i18n")` para
+   compilar os `.po` no binário. `slint-tr-extractor` extrai strings
+   `@tr()` para o `.pot`.
+
+### Adicionando um novo idioma
+
+1. Criar `locales/<tag>.yml` (ex: `locales/es.yml`) com as mesmas
+   chaves de `locales/en.yml`, sem nível de locale como root — o locale
+   é derivado do nome do arquivo.
+2. Copiar `i18n/pt-BR/` → `i18n/<tag>/LC_MESSAGES/quay.po` e traduzir
+   os `msgstr`.
+3. Adicionar o locale em `src/i18n.rs:SUPPORTED_LOCALES`.
+4. Adicionar um botão no selector de idioma em
+   `ui/components/settings_page.slint` (seção Language).
+5. Rodar `cargo build` — o build.rs bundla o `.po` automaticamente.
+
+### Adicionando uma nova string traduzível
+
+- **Lado Rust** (toast, menu): adicionar a chave em `locales/en.yml` e
+  `locales/pt-BR.yml`, usar `t!("chave").to_string()` no código.
+- **Lado Slint** (UI label): usar `@tr("texto em inglês")` no `.slint`,
+  depois rodar `scripts/i18n-update.sh` para atualizar o `.pot` e
+  mergear no `.po`.
+
+### Formato dos YAML (`locales/*.yml`)
+
+**IMPORTANTE**: as chaves são flat com pontos como separador, **sem**
+nível de locale como raiz. O locale é derivado do nome do arquivo.
+
+```yaml
+# locales/en.yml  ← correto
+menu.new_cli_session: "New CLI Session"
+tasks.created: "Created '%{title}'"
+```
+
+```yaml
+# ERRADO — NÃO usar locale como raiz
+en:
+  menu:
+    new_cli_session: "New CLI Session"
+```
+
 ## Coisas a NÃO fazer
 
 - ❌ Não rodar `cargo build` direto sem `--release` — o profile dev
@@ -298,15 +377,20 @@ usam o cache.
 - ❌ Não tocar `tests/` ou `examples/` sem motivo — são spikes
   históricos.
 
-## Estado atual (2026-04-11)
+## Estado atual (2026-04-12)
 
 - **39 polishes** commitados além das fases originais (Spike A/B/C +
   Fases 1-7 + Tasks 1-9). A UI está visualmente próxima da referência
   Lanes (~95% de match), com extras (Cmd+P task switcher, toast
   notifications, sidebar collapse, animations everywhere).
-- **101 testes** unit + integration, todos verdes. Cobrem o data layer
+- **i18n**: suporte a múltiplos idiomas (en + pt-BR). ~124 strings
+  `@tr()` em 16 arquivos Slint + ~46 strings `t!()` em YAML. Troca de
+  idioma em runtime via página Settings. Deps: `rust-i18n`, `sys-locale`.
+- **Settings como página**: Settings foi convertido de modal overlay
+  para página inline (`active-page: "home" | "settings"`).
+- **159 testes** unit + integration, todos verdes. Cobrem o data layer
   (kanban store, git wrappers, claude_stats, file_tree, settings,
-  quick_actions, process, schema migrations).
+  quick_actions, process, schema migrations, i18n locale resolution).
 - **Cargo.lock** commitado. Rust edition 2024.
 - **CI** (GitHub Actions matrix Linux/Win/macOS) está estruturado mas
   não validado num push real ainda — task #9 pendente.
@@ -323,6 +407,9 @@ usam o cache.
 | Migration falha | `persistence/schema.rs` — não editar migrations já lançadas |
 | Spinner não anima | `main.rs` poll_timer — verificar `set_spinner_glyph` no closure |
 | Toast não aparece | `main.rs` `show_toast` clone — confirmar que a closure capturou |
+| Tradução mostra chave raw | `locales/*.yml` — chaves devem ser flat sem locale prefix; verificar `RUST_I18N_DEBUG=1 cargo check` |
+| @tr() não traduz | Verificar se `.po` existe em `i18n/<locale>/LC_MESSAGES/quay.po` e `build.rs` tem `with_bundled_translations` |
+| Idioma não muda | `src/i18n.rs` — verificar `resolve_locale()` e `SUPPORTED_LOCALES`; menu sidebar usa `rebuild_menu_model()` |
 
 ## Referências externas
 

@@ -19,18 +19,16 @@ use crate::MainWindow;
 use crate::kanban::{SessionState, StartMode, TaskKind};
 use crate::wiring::context::WiringContext;
 use crate::wiring::helpers::kind_to_str;
-use crate::wiring::validation::{NewTaskForm, TaskTitleForm, first_errors};
+use crate::wiring::validation::{TaskTitleForm, first_errors};
 
 pub fn wire(window: &MainWindow, ctx: &WiringContext) {
     wire_select(window, ctx);
     wire_create_submit(window, ctx);
-    wire_move(window, ctx);
+    wire_bare_terminal(window, ctx);
     wire_edit_fields(window, ctx);
-    wire_start_session(window, ctx);
-    wire_stop_session(window, ctx);
-    wire_agent_changed(window, ctx);
     wire_filter_changed(window, ctx);
     wire_delete_task(window, ctx);
+    wire_card_context_menu(window, ctx);
 }
 
 // NOTE: the detailed delete_task impl below mirrors the one inlined
@@ -100,15 +98,13 @@ fn wire_select(window: &MainWindow, ctx: &WiringContext) {
                         None
                     };
 
-                    let (display, title, description, instructions, sess_state, agent) =
+                    let (display, title, description, _instructions, sess_state, _agent) =
                         card_data.unwrap_or_default();
                     window.set_active_task_id(id.clone());
                     window.set_active_task_display(display.into());
                     window.set_active_task_title(title.into());
                     window.set_active_task_description(description.into());
-                    window.set_active_task_instructions(instructions.into());
                     window.set_active_task_session_state(sess_state.into());
-                    window.set_active_task_agent(if agent.is_empty() { "claude".into() } else { agent.into() });
                     // Polish 15: clear old stats immediately so a
                     // stale chip row from the previous task doesn't
                     // flicker until the 2s timer fires.
@@ -133,132 +129,80 @@ fn wire_select(window: &MainWindow, ctx: &WiringContext) {
     });
 }
 
-/// Legacy `on_create_task` path — Cmd/Ctrl+N shortcut that creates a
-/// task with an auto-generated title — plus the modal-submit path.
+/// Terminal-first: `on_create_task` creates a task and immediately
+/// starts a Claude Code session. Called from sidebar "New CLI Session"
+/// and can be reused by any UI path. The old modal-submit path has
+/// been removed — tasks are created directly from the terminal.
 fn wire_create_submit(window: &MainWindow, ctx: &WiringContext) {
-    {
-        let state = ctx.state.clone();
-        let refresh = ctx.refresh_kanban.clone();
-        let toast = ctx.show_toast.clone();
-        let weak = window.as_weak();
-        window.on_create_task(move || {
-            let project_id = weak.upgrade().and_then(|w| {
-                let id_str = w.get_active_project_id().to_string();
-                Uuid::from_str(&id_str).ok()
-            });
-            let count = state.list_tasks().map(|t| t.len()).unwrap_or(0) + 1;
-            let title = format!("New task {count}");
-            match state.create_task(title.clone(), project_id) {
-                Ok(_) => toast("success", format!("Created '{title}'")),
-                Err(err) => {
-                    tracing::error!(%err, "create_task failed");
-                    toast("error", format!("Create failed: {err}"));
-                }
-            }
-            refresh();
+    let state = ctx.state.clone();
+    let refresh = ctx.refresh_kanban.clone();
+    let toast = ctx.show_toast.clone();
+    let weak = window.as_weak();
+    window.on_create_task(move || {
+        let project_id = weak.upgrade().and_then(|w| {
+            let id_str = w.get_active_project_id().to_string();
+            Uuid::from_str(&id_str).ok()
         });
-    }
-    {
-        // Polish 10: user submitted the New Task modal. Insert using
-        // the title + instructions they typed, then reset the form
-        // fields, close the modal, and refresh the kanban.
-        let state = ctx.state.clone();
-        let weak = window.as_weak();
-        let refresh = ctx.refresh_kanban.clone();
-        let toast = ctx.show_toast.clone();
-        window.on_submit_new_task(move || {
-            let Some(w) = weak.upgrade() else { return };
-            let title = w.get_new_task_title().to_string().trim().to_string();
-            let instructions = w.get_new_task_instructions().to_string().trim().to_string();
-
-            // Clear any prior inline error (the user will see the new
-            // one below if validation fails again).
-            w.set_new_task_title_error("".into());
-
-            // Validate — inline errors instead of a toast.
-            let form = NewTaskForm { title: title.clone() };
-            if let Err(errs) = form.validate() {
-                let map = first_errors(&errs);
-                if let Some(msg) = map.get("title") {
-                    w.set_new_task_title_error(msg.clone().into());
-                }
-                tracing::warn!("submit_new_task: validation failed");
-                return;
-            }
-
-            let project_id = {
-                let id_str = w.get_active_project_id().to_string();
-                Uuid::from_str(&id_str).ok()
-            };
-
-            match state.create_task(title, project_id) {
-                Ok(task) => {
-                    if !instructions.is_empty() {
-                        let store = state.task_store();
-                        if let Ok(Some(mut t)) = store.get(task.id) {
-                            t.instructions = Some(instructions);
-                            t.updated_at = crate::kanban::unix_millis_now();
-                            if let Err(err) = store.update(&t) {
-                                tracing::warn!(%err, "set instructions on new task failed");
-                                toast(
-                                    "error",
-                                    format!("Saved task, but instructions failed: {err}"),
-                                );
-                            }
+        let count = state.list_tasks().map(|t| t.len()).unwrap_or(0) + 1;
+        let title = t!("tasks.new_task_title", count = count).to_string();
+        match state.create_task(title, project_id) {
+            Ok(task) => {
+                if let Err(err) = state.start_session(
+                    task.id,
+                    StartMode::Implement,
+                ) {
+                    tracing::error!(err = ?err, "cli session start failed");
+                    toast("error", t!("sessions.implement_failed", err = err.to_string()).to_string());
+                } else {
+                    state.pin_open_tab(task.id);
+                    let _ = state.select_task(task.id);
+                    if let Some(w) = weak.upgrade() {
+                        w.set_active_task_id(task.id.to_string().into());
+                        w.set_active_task_session_state(SessionState::Busy.as_str().into());
+                        w.set_active_right_tab(SharedString::from("terminal"));
+                        if state.blit_active() {
+                            w.set_frame(Image::from_rgba8_premultiplied(
+                                state.framebuffer.borrow().buffer.clone(),
+                            ));
                         }
                     }
                 }
-                Err(err) => {
-                    tracing::error!(%err, "create_task via modal failed");
-                    toast("error", format!("Create task failed: {err}"));
-                    return;
-                }
             }
-
-            // Reset form + close modal.
-            w.set_new_task_title("".into());
-            w.set_new_task_instructions("".into());
-            w.set_new_task_open(false);
-            refresh();
-        });
-    }
+            Err(err) => {
+                tracing::error!(%err, "create_task failed");
+                toast("error", t!("tasks.create_failed", err = err.to_string()).to_string());
+            }
+        }
+        refresh();
+    });
 }
 
-/// Move a task forward/back along the kanban workflow.
-fn wire_move(window: &MainWindow, ctx: &WiringContext) {
-    {
-        let state = ctx.state.clone();
-        let refresh = ctx.refresh_kanban.clone();
-        let toast = ctx.show_toast.clone();
-        window.on_move_task_forward(move |id| {
-            let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
-            if let Err(err) = state.move_forward(uuid) {
-                tracing::error!(%err, "move_forward failed");
-                // move_forward refuses to advance past Planning when a
-                // dependency is unresolved — surfacing the error tells
-                // the user *why* the card didn't move.
-                toast("error", format!("Cannot move forward: {err}"));
-            }
-            refresh();
-        });
-    }
-    {
-        let state = ctx.state.clone();
-        let refresh = ctx.refresh_kanban.clone();
-        let toast = ctx.show_toast.clone();
-        window.on_move_task_back(move |id| {
-            let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
-            if let Err(err) = state.move_backward(uuid) {
-                tracing::error!(%err, "move_backward failed");
-                toast("error", format!("Cannot move back: {err}"));
-            }
-            refresh();
-        });
-    }
+
+/// Lazily spawn a bare terminal for the task when the user clicks
+/// the "Terminal" tab. Sets `active_tab_is_bare` so the poll/blit
+/// loop renders the correct PTY.
+fn wire_bare_terminal(window: &MainWindow, ctx: &WiringContext) {
+    let state = ctx.state.clone();
+    let toast = ctx.show_toast.clone();
+    let weak = window.as_weak();
+    window.on_bare_terminal_requested(move |id| {
+        let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
+        state.active_tab_is_bare.set(true);
+        if let Err(err) = state.start_bare_terminal(uuid) {
+            tracing::error!(%err, "start_bare_terminal failed");
+            toast("error", t!("sessions.implement_failed", err = err.to_string()).to_string());
+        } else if state.blit_active()
+            && let Some(w) = weak.upgrade()
+        {
+            w.set_frame(Image::from_rgba8_premultiplied(
+                state.framebuffer.borrow().buffer.clone(),
+            ));
+        }
+    });
 }
 
-/// Title / description / instructions — live persistence as the user
-/// types. Uses `AppState::update_active_task` to cut per-callback
+/// Title / description — live persistence as the user types.
+/// Uses `AppState::update_active_task` to cut per-callback
 /// boilerplate and surface errors via toast.
 fn wire_edit_fields(window: &MainWindow, ctx: &WiringContext) {
     {
@@ -293,7 +237,7 @@ fn wire_edit_fields(window: &MainWindow, ctx: &WiringContext) {
                 Ok(false) => {}
                 Err(err) => {
                     tracing::error!(%err, "failed to update task title");
-                    toast("error", format!("Failed to save title: {err}"));
+                    toast("error", t!("tasks.title_save_failed", err = err.to_string()).to_string());
                 }
             }
         });
@@ -314,148 +258,10 @@ fn wire_edit_fields(window: &MainWindow, ctx: &WiringContext) {
                 state.update_active_task(|task| task.description = new_value)
             {
                 tracing::error!(%err, "failed to update task description");
-                toast("error", format!("Failed to save description: {err}"));
+                toast("error", t!("tasks.description_save_failed", err = err.to_string()).to_string());
             }
         });
     }
-    {
-        // Instructions field mirrors description: persisted live on
-        // every edited event. Empty strings are coerced to NULL in the
-        // DB.
-        let state = ctx.state.clone();
-        let toast = ctx.show_toast.clone();
-        window.on_instructions_changed(move |text| {
-            let new_value = if text.is_empty() {
-                None
-            } else {
-                Some(text.to_string())
-            };
-            if let Err(err) =
-                state.update_active_task(|task| task.instructions = new_value)
-            {
-                tracing::error!(%err, "failed to update task instructions");
-                toast("error", format!("Failed to save instructions: {err}"));
-            }
-        });
-    }
-}
-
-/// Plan / Implement buttons — spawn an agent session via the Strategy
-/// pattern in `agents::`. The session state chip updates immediately
-/// so the user sees "busy" without waiting for the next poll tick.
-fn wire_start_session(window: &MainWindow, ctx: &WiringContext) {
-    {
-        let state = ctx.state.clone();
-        let weak = window.as_weak();
-        let refresh = ctx.refresh_kanban.clone();
-        let toast = ctx.show_toast.clone();
-        window.on_start_plan(move |id| {
-            let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
-            match state.start_session(uuid, StartMode::Plan) {
-                Ok(()) => {
-                    if let Some(window) = weak.upgrade() {
-                        window.set_active_task_session_state(
-                            SessionState::Busy.as_str().into(),
-                        );
-                        if state.blit_active() {
-                            window.set_frame(Image::from_rgba8_premultiplied(
-                                state.framebuffer.borrow().buffer.clone(),
-                            ));
-                        }
-                        // Jump to Terminal tab so the user sees the agent start.
-                        window.set_active_right_tab(SharedString::from("terminal"));
-                    }
-                    toast("success", "Plan session started".to_string());
-                    refresh();
-                }
-                Err(err) => {
-                    tracing::error!(%err, "start_session(Plan) failed");
-                    if let Some(window) = weak.upgrade() {
-                        window.set_active_task_session_state(
-                            SessionState::Error.as_str().into(),
-                        );
-                    }
-                    toast("error", format!("Plan failed: {err}"));
-                }
-            }
-        });
-    }
-    {
-        // Implement button: same wiring as Plan but StartMode::Implement.
-        let state = ctx.state.clone();
-        let weak = window.as_weak();
-        let refresh = ctx.refresh_kanban.clone();
-        let toast = ctx.show_toast.clone();
-        window.on_start_implement(move |id| {
-            let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
-            match state.start_session(uuid, StartMode::Implement) {
-                Ok(()) => {
-                    if let Some(window) = weak.upgrade() {
-                        window.set_active_task_session_state(
-                            SessionState::Busy.as_str().into(),
-                        );
-                        if state.blit_active() {
-                            window.set_frame(Image::from_rgba8_premultiplied(
-                                state.framebuffer.borrow().buffer.clone(),
-                            ));
-                        }
-                        window.set_active_right_tab(SharedString::from("terminal"));
-                    }
-                    toast("success", "Implement session started".to_string());
-                    refresh();
-                }
-                Err(err) => {
-                    tracing::error!(%err, "start_session(Implement) failed");
-                    if let Some(window) = weak.upgrade() {
-                        window.set_active_task_session_state(
-                            SessionState::Error.as_str().into(),
-                        );
-                    }
-                    toast("error", format!("Implement failed: {err}"));
-                }
-            }
-        });
-    }
-}
-
-/// Stop a running session. Sends SIGTERM to the child process and
-/// updates the card state to "stopped".
-fn wire_stop_session(window: &MainWindow, ctx: &WiringContext) {
-    let state = ctx.state.clone();
-    let refresh = ctx.refresh_kanban.clone();
-    let toast = ctx.show_toast.clone();
-    let weak = window.as_weak();
-    window.on_stop_session(move |id| {
-        let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
-        match state.stop_session(uuid) {
-            Ok(()) => {
-                if let Some(window) = weak.upgrade() {
-                    window.set_active_task_session_state("stopped".into());
-                }
-                toast("info", "Session stopped".to_string());
-            }
-            Err(err) => {
-                tracing::error!(%err, "stop_session failed");
-                toast("error", format!("Stop failed: {err}"));
-            }
-        }
-        refresh();
-    });
-}
-
-/// Agent picker — user changed the agent selection (Claude/OpenCode/Bare)
-/// on the description panel. Persist to `task.cli_selection`.
-fn wire_agent_changed(window: &MainWindow, ctx: &WiringContext) {
-    let state = ctx.state.clone();
-    window.on_agent_changed(move |agent_str| {
-        let kind = crate::kanban::AgentKind::parse(agent_str.as_str())
-            .unwrap_or(crate::kanban::AgentKind::Claude);
-        if let Err(err) = state.update_active_task(|task| {
-            task.cli_selection = kind;
-        }) {
-            tracing::warn!(%err, "agent_changed: update_active_task failed");
-        }
-    });
 }
 
 /// Phase 4 filter chip — user clicked a label filter (or "All").
@@ -486,10 +292,10 @@ fn wire_delete_task(window: &MainWindow, ctx: &WiringContext) {
         state.sessions.borrow_mut().remove(&uuid);
         if let Err(err) = state.task_store().delete(uuid) {
             tracing::warn!(%err, %uuid, "delete task failed");
-            toast("error", format!("Delete failed: {err}"));
+            toast("error", t!("tasks.delete_failed", err = err.to_string()).to_string());
             return;
         }
-        toast("info", "Task deleted".to_string());
+        toast("info", t!("tasks.deleted").to_string());
         // Clear active task if we just deleted it.
         let mut active = state.active_task.borrow_mut();
         if *active == Some(uuid) {
@@ -514,9 +320,7 @@ fn wire_delete_task(window: &MainWindow, ctx: &WiringContext) {
             window.set_active_task_display(SharedString::from(""));
             window.set_active_task_title(SharedString::from(""));
             window.set_active_task_description(SharedString::from(""));
-            window.set_active_task_instructions(SharedString::from(""));
             window.set_active_task_session_state(SharedString::from("idle"));
-            window.set_active_task_agent(SharedString::from("claude"));
             window.set_active_task_tokens_text(SharedString::from(""));
             window.set_active_task_cost_text(SharedString::from(""));
             window.set_active_task_message_count(0);
@@ -524,4 +328,35 @@ fn wire_delete_task(window: &MainWindow, ctx: &WiringContext) {
         refresh_panels();
         refresh();
     });
+}
+
+/// Card context menu — move to column, stop session, delete.
+fn wire_card_context_menu(window: &MainWindow, ctx: &WiringContext) {
+    // Stop session from context menu.
+    {
+        let state = ctx.state.clone();
+        let refresh = ctx.refresh_kanban.clone();
+        let toast = ctx.show_toast.clone();
+        window.on_card_stop_session(move |id| {
+            let Ok(uuid) = Uuid::from_str(id.as_str()) else { return };
+            match state.stop_session(uuid) {
+                Ok(()) => toast("info", t!("sessions.stopped").to_string()),
+                Err(err) => {
+                    tracing::error!(%err, "card_stop_session failed");
+                    toast("error", t!("sessions.stop_failed", err = err.to_string()).to_string());
+                }
+            }
+            refresh();
+        });
+    }
+    // Delete from context menu — delegates to the existing delete_task
+    // callback by invoking it through the window.
+    {
+        let weak = window.as_weak();
+        window.on_card_delete(move |id| {
+            if let Some(w) = weak.upgrade() {
+                w.invoke_delete_task(id);
+            }
+        });
+    }
 }

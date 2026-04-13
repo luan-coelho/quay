@@ -14,6 +14,7 @@ use crate::wiring::validation::{NewProjectForm, first_errors};
 
 pub fn wire(window: &MainWindow, ctx: &WiringContext) {
     wire_project_clicked(window, ctx);
+    wire_close_project_chip(window, ctx);
     wire_create_project(window, ctx);
     wire_browse_new_project_repo(window);
     wire_new_project_repo_path_changed(window);
@@ -25,15 +26,56 @@ pub fn wire(window: &MainWindow, ctx: &WiringContext) {
 fn wire_project_clicked(window: &MainWindow, ctx: &WiringContext) {
     let weak = window.as_weak();
     let refresh = ctx.refresh_kanban.clone();
+    let state = ctx.state.clone();
     window.on_project_clicked(move |project_id| {
         let Some(w) = weak.upgrade() else { return };
         let current = w.get_active_project_id().to_string();
-        if current == project_id.as_str() {
-            w.set_active_project_id(SharedString::from(""));
+        let new_value = if current == project_id.as_str() {
+            String::new()
         } else {
-            w.set_active_project_id(project_id);
+            project_id.to_string()
+        };
+        w.set_active_project_id(SharedString::from(new_value.as_str()));
+        // Persist the active project filter so it survives restarts.
+        let settings = crate::settings::Settings::new(&state.db.conn);
+        if let Err(err) = settings.set(crate::settings::KEY_ACTIVE_PROJECT, &new_value) {
+            tracing::warn!(%err, "persist active_project failed");
         }
         refresh();
+    });
+}
+
+/// Hide a project chip from the filter bar without deleting the
+/// project. The project stays in the sidebar — closing the chip
+/// just removes it from the kanban filter strip.
+fn wire_close_project_chip(window: &MainWindow, ctx: &WiringContext) {
+    let weak = window.as_weak();
+    let refresh_kanban = ctx.refresh_kanban.clone();
+    let state = ctx.state.clone();
+    window.on_close_project_chip(move |id| {
+        let Some(w) = weak.upgrade() else { return };
+        let model = w.get_projects();
+        // Find and remove the entry from the VecModel by id.
+        for i in 0..model.row_count() {
+            if let Some(row) = model.row_data(i)
+                && row.id == id
+            {
+                if let Some(vec_model) = model
+                    .as_any()
+                    .downcast_ref::<slint::VecModel<crate::ProjectData>>()
+                {
+                    vec_model.remove(i);
+                }
+                break;
+            }
+        }
+        // If the closed chip was the active filter, clear and persist.
+        if w.get_active_project_id() == id {
+            w.set_active_project_id(SharedString::from(""));
+            let settings = crate::settings::Settings::new(&state.db.conn);
+            let _ = settings.set(crate::settings::KEY_ACTIVE_PROJECT, "");
+        }
+        refresh_kanban();
     });
 }
 
@@ -91,7 +133,7 @@ fn wire_create_project(window: &MainWindow, ctx: &WiringContext) {
             // Server-side errors (DB, filesystem) still use toast
             // because they aren't input validation — they're runtime
             // failures the user can't fix by typing differently.
-            toast("error", format!("Create project failed: {err}"));
+            toast("error", t!("projects.create_failed", err = err.to_string()).to_string());
             return;
         }
 
@@ -102,7 +144,7 @@ fn wire_create_project(window: &MainWindow, ctx: &WiringContext) {
         w.set_new_project_branches(ModelRc::from(Rc::new(VecModel::<SharedString>::default())));
         w.set_new_project_open(false);
 
-        toast("success", format!("Created project “{project_name}”"));
+        toast("success", t!("projects.created", name = project_name).to_string());
         refresh_projects();
     });
 }
@@ -135,7 +177,7 @@ fn wire_browse_new_project_repo(window: &MainWindow) {
             }
         };
 
-        let mut dialog = rfd::FileDialog::new().set_title("Pick a repository folder");
+        let mut dialog = rfd::FileDialog::new().set_title(t!("projects.pick_repo_title").to_string());
         if let Some(dir) = start_dir {
             dialog = dialog.set_directory(dir);
         }

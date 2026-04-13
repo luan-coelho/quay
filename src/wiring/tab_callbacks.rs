@@ -78,15 +78,13 @@ fn wire_open_task_tab(window: &MainWindow, ctx: &WiringContext) {
                     } else {
                         None
                     };
-                    let (display, title, description, instructions, sess_state, agent) =
+                    let (display, title, description, _instructions, sess_state, _agent) =
                         card_data.unwrap_or_default();
                     window.set_active_task_id(id.clone());
                     window.set_active_task_display(display.into());
                     window.set_active_task_title(title.into());
                     window.set_active_task_description(description.into());
-                    window.set_active_task_instructions(instructions.into());
                     window.set_active_task_session_state(sess_state.into());
-                    window.set_active_task_agent(if agent.is_empty() { "claude".into() } else { agent.into() });
                     window.set_active_task_tokens_text(SharedString::from(""));
                     window.set_active_task_cost_text(SharedString::from(""));
                     window.set_active_task_runtime_text(SharedString::from(""));
@@ -145,14 +143,8 @@ fn wire_close_task_tab(window: &MainWindow, ctx: &WiringContext) {
                             window.set_active_task_description(
                                 task.description.clone().unwrap_or_default().into(),
                             );
-                            window.set_active_task_instructions(
-                                task.instructions.clone().unwrap_or_default().into(),
-                            );
                             window.set_active_task_session_state(
                                 task.session_state.as_str().into(),
-                            );
-                            window.set_active_task_agent(
-                                task.cli_selection.as_str().into(),
                             );
                             window.set_active_task_tokens_text(SharedString::from(""));
                             window.set_active_task_cost_text(SharedString::from(""));
@@ -175,9 +167,7 @@ fn wire_close_task_tab(window: &MainWindow, ctx: &WiringContext) {
                 window.set_active_task_display(SharedString::from(""));
                 window.set_active_task_title(SharedString::from(""));
                 window.set_active_task_description(SharedString::from(""));
-                window.set_active_task_instructions(SharedString::from(""));
                 window.set_active_task_session_state(SharedString::from("idle"));
-                window.set_active_task_agent(SharedString::from("claude"));
                 window.set_active_task_tokens_text(SharedString::from(""));
                 window.set_active_task_cost_text(SharedString::from(""));
                 window.set_active_task_runtime_text(SharedString::from(""));
@@ -203,7 +193,7 @@ fn wire_close_other_tabs(window: &MainWindow, ctx: &WiringContext) {
         {
             window.invoke_open_task_tab(next.to_string().into());
         }
-        toast("info", "Closed other tabs".to_string());
+        toast("info", t!("tabs.closed_other").to_string());
         refresh();
     });
 }
@@ -224,15 +214,13 @@ fn wire_close_all_tabs(window: &MainWindow, ctx: &WiringContext) {
             window.set_active_task_display(SharedString::from(""));
             window.set_active_task_title(SharedString::from(""));
             window.set_active_task_description(SharedString::from(""));
-            window.set_active_task_instructions(SharedString::from(""));
             window.set_active_task_session_state(SharedString::from("idle"));
-            window.set_active_task_agent(SharedString::from("claude"));
             window.set_active_task_tokens_text(SharedString::from(""));
             window.set_active_task_cost_text(SharedString::from(""));
             window.set_active_task_runtime_text(SharedString::from(""));
             window.set_active_task_message_count(0);
         }
-        toast("info", "Closed all tabs".to_string());
+        toast("info", t!("tabs.closed_all").to_string());
         refresh();
         refresh_panels();
     });
@@ -252,7 +240,7 @@ fn wire_close_tabs_right_of(window: &MainWindow, ctx: &WiringContext) {
         {
             window.invoke_open_task_tab(next.to_string().into());
         }
-        toast("info", "Closed tabs to the right".to_string());
+        toast("info", t!("tabs.closed_right").to_string());
         refresh();
     });
 }

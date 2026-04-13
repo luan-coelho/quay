@@ -1,41 +1,46 @@
-// Settings modal — Polish 32 fade. Three sections:
-//   - General (default base branch)
+// Settings panel — inline right-pane page (formerly a modal overlay).
+// Three sections:
+//   - General (default base branch + language)
 //   - Quick Actions CRUD
 //   - Process Manager (Polish 1)
 //
 // Quick Action edit callbacks bubble up to the parent so the Rust
 // side can persist them via QuickActionStore.
 
-import { LineEdit, ScrollView } from "std-widgets.slint";
+import { ScrollView } from "std-widgets.slint";
 import { IconSet } from "@lucide";
 import { Tokens } from "../tokens.slint";
 import { QuickActionRowData, ProcessRowData } from "../data.slint";
-import { LucideIcon, CloseButton, Button, Card, Input, ModalFrame, Divider } from "atoms.slint";
+import { LucideIcon, ShortcutKeys, CloseButton, Button, Card, Input, Divider } from "atoms.slint";
 
-export component SettingsModal inherits Rectangle {
-    in-out property <bool> open;
+export component SettingsPanel inherits Rectangle {
     in-out property <string> default-base-branch;
+    in-out property <string> current-locale: "en";
+    in-out property <string> current-permission-mode: "acceptEdits";
     in property <[QuickActionRowData]> quick-actions;
     in property <[ProcessRowData]> processes;
 
     callback base-branch-changed(string);
+    callback locale-changed(string);
+    callback permission-mode-changed(string);
     callback add-quick-action();
     callback delete-quick-action(string);
     callback update-quick-action(string, string, string, string);
     callback refresh-processes();
     callback process-kill(int);
     callback process-force-kill(int);
+    callback stop-all-sessions();
+    callback kill-all-processes();
 
-    ModalFrame {
-        open <=> root.open;
-        title: "Settings";
-        card-width: 640px;
-        card-height: 560px;
-        closed => { root.open = false; }
+    ScrollView {
+        VerticalLayout {
+            alignment: start;
+            padding: Tokens.space-3;
+            spacing: Tokens.space-2;
 
-        // ── General section ───────────────────────────────────
-        Text {
-                text: "GENERAL";
+            // ── General section ───────────────────────────────────
+            Text {
+                text: @tr("GENERAL");
                 color: Tokens.muted-foreground;
                 font-size: Tokens.text-xs;
                 font-weight: Tokens.weight-bold;
@@ -44,7 +49,7 @@ export component SettingsModal inherits Rectangle {
             VerticalLayout {
                 spacing: Tokens.space-1 + 2px;
                 Text {
-                    text: "Default base branch";
+                    text: @tr("Default base branch");
                     color: Tokens.foreground;
                     font-size: Tokens.text-sm;
                     font-weight: Tokens.weight-medium;
@@ -58,12 +63,156 @@ export component SettingsModal inherits Rectangle {
                 }
             }
 
+            // ── Language section ───────────────────────────────────
+            VerticalLayout {
+                spacing: Tokens.space-1 + 2px;
+                Text {
+                    text: @tr("Language");
+                    color: Tokens.foreground;
+                    font-size: Tokens.text-sm;
+                    font-weight: Tokens.weight-medium;
+                }
+                HorizontalLayout {
+                    spacing: Tokens.space-2;
+
+                    // English option
+                    TouchArea {
+                        width: 120px;
+                        height: 30px;
+                        clicked => {
+                            root.current-locale = "en";
+                            root.locale-changed("en");
+                        }
+                        Rectangle {
+                            background: root.current-locale == "en" ? Tokens.accent : Tokens.secondary;
+                            border-radius: Tokens.radius-md;
+                            border-width: 1px;
+                            border-color: root.current-locale == "en" ? Tokens.ring : Tokens.border;
+                            animate background { duration: 120ms; easing: ease-out; }
+                            Text {
+                                text: "English";
+                                color: Tokens.foreground;
+                                font-size: Tokens.text-sm;
+                                font-weight: root.current-locale == "en" ? Tokens.weight-bold : Tokens.weight-medium;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+
+                    // Português option
+                    TouchArea {
+                        width: 160px;
+                        height: 30px;
+                        clicked => {
+                            root.current-locale = "pt-BR";
+                            root.locale-changed("pt-BR");
+                        }
+                        Rectangle {
+                            background: root.current-locale == "pt-BR" ? Tokens.accent : Tokens.secondary;
+                            border-radius: Tokens.radius-md;
+                            border-width: 1px;
+                            border-color: root.current-locale == "pt-BR" ? Tokens.ring : Tokens.border;
+                            animate background { duration: 120ms; easing: ease-out; }
+                            Text {
+                                text: "Português (Brasil)";
+                                color: Tokens.foreground;
+                                font-size: Tokens.text-sm;
+                                font-weight: root.current-locale == "pt-BR" ? Tokens.weight-bold : Tokens.weight-medium;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Permission Mode section ───────────────────────────
+            VerticalLayout {
+                spacing: Tokens.space-1 + 2px;
+                Text {
+                    text: @tr("Permission mode");
+                    color: Tokens.foreground;
+                    font-size: Tokens.text-sm;
+                    font-weight: Tokens.weight-medium;
+                }
+                Text {
+                    text: @tr("Controls whether the AI agent asks for approval before running commands.");
+                    color: Tokens.muted-foreground;
+                    font-size: Tokens.text-xs;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    spacing: Tokens.space-2;
+
+                    // Accept Edits option
+                    TouchArea {
+                        width: 160px;
+                        height: 30px;
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.current-permission-mode = "acceptEdits";
+                            root.permission-mode-changed("acceptEdits");
+                        }
+                        Rectangle {
+                            background: root.current-permission-mode == "acceptEdits" ? Tokens.accent : Tokens.secondary;
+                            border-radius: Tokens.radius-md;
+                            border-width: 1px;
+                            border-color: root.current-permission-mode == "acceptEdits" ? Tokens.ring : Tokens.border;
+                            animate background { duration: 120ms; easing: ease-out; }
+                            Text {
+                                text: @tr("Accept Edits");
+                                color: Tokens.foreground;
+                                font-size: Tokens.text-sm;
+                                font-weight: root.current-permission-mode == "acceptEdits" ? Tokens.weight-bold : Tokens.weight-medium;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+
+                    // Bypass Permissions option
+                    TouchArea {
+                        width: 200px;
+                        height: 30px;
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.current-permission-mode = "bypassPermissions";
+                            root.permission-mode-changed("bypassPermissions");
+                        }
+                        Rectangle {
+                            background: root.current-permission-mode == "bypassPermissions" ? Tokens.accent : Tokens.secondary;
+                            border-radius: Tokens.radius-md;
+                            border-width: 1px;
+                            border-color: root.current-permission-mode == "bypassPermissions" ? Tokens.ring : Tokens.border;
+                            animate background { duration: 120ms; easing: ease-out; }
+                            Text {
+                                text: @tr("Bypass Permissions");
+                                color: Tokens.foreground;
+                                font-size: Tokens.text-sm;
+                                font-weight: root.current-permission-mode == "bypassPermissions" ? Tokens.weight-bold : Tokens.weight-medium;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: parent.width;
+                                height: parent.height;
+                            }
+                        }
+                    }
+                }
+            }
+
             // ── Quick Actions section ─────────────────────────────
             Divider { }
             HorizontalLayout {
                 spacing: Tokens.space-1 + 2px;
                 Text {
-                    text: "QUICK ACTIONS";
+                    text: @tr("QUICK ACTIONS");
                     color: Tokens.muted-foreground;
                     font-size: Tokens.text-xs;
                     font-weight: Tokens.weight-bold;
@@ -98,97 +247,94 @@ export component SettingsModal inherits Rectangle {
                 }
             }
 
-            // Quick actions list: intrinsic height (each row is 50px +
-            // 4px gap) clamped at 180px. With 1 QA the list is ~54px
-            // tall instead of 180px of empty space; with 4+ QAs the
-            // list scrolls inside 180px.
-            ScrollView {
-                height: min(root.quick-actions.length * 54px + 8px, 180px);
-                VerticalLayout {
-                    spacing: Tokens.space-1;
-                    for qa in root.quick-actions: Rectangle {
-                        height: 50px;
-                        background: Tokens.secondary;
-                        border-radius: Tokens.radius-md;
-                        border-width: 1px;
-                        border-color: Tokens.border;
+            // Quick actions list.
+            VerticalLayout {
+                spacing: Tokens.space-1;
+                for qa in root.quick-actions: Rectangle {
+                    background: Tokens.secondary;
+                    border-radius: Tokens.radius-md;
+                    border-width: 1px;
+                    border-color: Tokens.border;
 
-                        VerticalLayout {
-                            padding: Tokens.space-1 + 2px;
-                            padding-left: Tokens.space-3;
-                            padding-right: Tokens.space-3;
-                            spacing: 2px;
+                    VerticalLayout {
+                        padding: Tokens.space-1 + 2px;
+                        padding-left: Tokens.space-3;
+                        padding-right: Tokens.space-3;
+                        spacing: 2px;
 
-                            // Top row: shortcut + name input + kind toggle + delete.
-                            HorizontalLayout {
-                                spacing: Tokens.space-2;
-                                alignment: start;
-                                VerticalLayout {
-                                    alignment: center;
-                                    width: 34px;
-                                    Text {
-                                        text: qa.shortcut == "" ? "—" : qa.shortcut;
-                                        color: Tokens.muted-foreground;
-                                        font-size: Tokens.text-xs;
-                                        font-family: Tokens.font-mono;
-                                    }
+                        // Top row: shortcut + name input + kind toggle + delete.
+                        HorizontalLayout {
+                            spacing: Tokens.space-2;
+                            alignment: start;
+                            VerticalLayout {
+                                alignment: center;
+                                width: 46px;
+                                if qa.shortcut != "": ShortcutKeys {
+                                    cmd: true; alt: true; key: qa.shortcut;
+                                    icon-size: 11px;
                                 }
-                                qa-name := LineEdit {
-                                    horizontal-stretch: 1;
-                                    text: qa.name;
-                                    font-size: Tokens.text-sm;
-                                    placeholder-text: "name";
-                                    edited(t) => {
-                                        root.update-quick-action(qa.id, t, qa.kind, qa-body.text);
-                                    }
+                                if qa.shortcut == "": Text {
+                                    text: "—";
+                                    color: Tokens.muted-foreground;
+                                    font-size: Tokens.text-xs;
+                                    font-family: Tokens.font-mono;
                                 }
-
-                                // Kind toggle: click to flip claude ↔ shell.
-                                TouchArea {
-                                    width: 58px;
-                                    height: 22px;
-                                    clicked => {
-                                        root.update-quick-action(
-                                            qa.id,
-                                            qa-name.text,
-                                            qa.kind == "claude" ? "shell" : "claude",
-                                            qa-body.text,
-                                        );
-                                    }
-                                    Rectangle {
-                                        background: parent.has-hover ? Tokens.accent : transparent;
-                                        border-radius: Tokens.radius-sm;
-                                        border-width: 1px;
-                                        border-color: Tokens.border;
-                                        animate background { duration: 120ms; easing: ease-out; }
-                                        Text {
-                                            text: qa.kind;
-                                            color: qa.kind == "claude" ? Tokens.kind-feature : Tokens.kind-enhancement;
-                                            font-size: Tokens.text-xs;
-                                            font-weight: Tokens.weight-medium;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
-                                            width: parent.width;
-                                            height: parent.height;
-                                        }
-                                    }
-                                }
-
-                                // Delete button.
-                                CloseButton {
-                                    size: 20px;
-                                    clicked => { root.delete-quick-action(qa.id); }
+                            }
+                            qa-name := Input {
+                                horizontal-stretch: 1;
+                                input-height: 26px;
+                                text: qa.name;
+                                placeholder: @tr("name");
+                                edited(t) => {
+                                    root.update-quick-action(qa.id, t, qa.kind, qa-body.text);
                                 }
                             }
 
-                            // Bottom row: body input (prompt or shell command).
-                            qa-body := LineEdit {
-                                text: qa.body;
-                                font-size: Tokens.text-xs;
-                                placeholder-text: qa.kind == "claude" ? "prompt text…" : "shell command…";
-                                edited(t) => {
-                                    root.update-quick-action(qa.id, qa-name.text, qa.kind, t);
+                            // Kind toggle: click to flip claude ↔ shell.
+                            TouchArea {
+                                width: 58px;
+                                height: 22px;
+                                clicked => {
+                                    root.update-quick-action(
+                                        qa.id,
+                                        qa-name.text,
+                                        qa.kind == "claude" ? "shell" : "claude",
+                                        qa-body.text,
+                                    );
                                 }
+                                Rectangle {
+                                    background: parent.has-hover ? Tokens.accent : transparent;
+                                    border-radius: Tokens.radius-sm;
+                                    border-width: 1px;
+                                    border-color: Tokens.border;
+                                    animate background { duration: 120ms; easing: ease-out; }
+                                    Text {
+                                        text: qa.kind;
+                                        color: qa.kind == "claude" ? Tokens.kind-feature : Tokens.kind-enhancement;
+                                        font-size: Tokens.text-xs;
+                                        font-weight: Tokens.weight-medium;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: parent.width;
+                                        height: parent.height;
+                                    }
+                                }
+                            }
+
+                            // Delete button.
+                            CloseButton {
+                                size: 20px;
+                                clicked => { root.delete-quick-action(qa.id); }
+                            }
+                        }
+
+                        // Bottom row: body input (prompt or shell command).
+                        qa-body := Input {
+                            input-height: 26px;
+                            text: qa.body;
+                            placeholder: qa.kind == "claude" ? @tr("prompt text…") : @tr("shell command…");
+                            edited(t) => {
+                                root.update-quick-action(qa.id, qa-name.text, qa.kind, t);
                             }
                         }
                     }
@@ -200,18 +346,33 @@ export component SettingsModal inherits Rectangle {
             HorizontalLayout {
                 spacing: Tokens.space-1 + 2px;
                 Text {
-                    text: "PROCESSES";
+                    text: @tr("PROCESSES");
                     color: Tokens.muted-foreground;
                     font-size: Tokens.text-xs;
                     font-weight: Tokens.weight-bold;
                 }
                 Rectangle { horizontal-stretch: 1; height: 1px; }
                 Button {
-                    text: "refresh";
+                    text: @tr("refresh");
                     variant: "outline";
                     size: "sm";
                     leading-icon: "rotate-cw";
                     clicked => { root.refresh-processes(); }
+                }
+                Button {
+                    text: @tr("stop all");
+                    variant: "outline";
+                    size: "sm";
+                    disabled: root.processes.length == 0;
+                    clicked => { root.stop-all-sessions(); }
+                }
+                Button {
+                    text: @tr("kill all");
+                    variant: "destructive";
+                    size: "sm";
+                    leading-icon: "x";
+                    disabled: root.processes.length == 0;
+                    clicked => { root.kill-all-processes(); }
                 }
                 Text {
                     text: root.processes.length;
@@ -222,68 +383,65 @@ export component SettingsModal inherits Rectangle {
                 }
             }
 
-            ScrollView {
-                vertical-stretch: 1;
-                VerticalLayout {
-                    spacing: Tokens.space-1;
-                    if root.processes.length == 0: Text {
-                        text: "No agent processes detected.";
-                        color: Tokens.muted-foreground;
-                        font-size: Tokens.text-sm;
-                    }
-                    for p in root.processes: Rectangle {
-                        height: 34px;
-                        background: Tokens.secondary;
-                        border-radius: Tokens.radius-md;
-                        border-width: 1px;
-                        border-color: Tokens.border;
-                        HorizontalLayout {
-                            padding-left: Tokens.space-3;
-                            padding-right: Tokens.space-1 + 2px;
-                            spacing: Tokens.space-2;
-                            alignment: start;
-                            VerticalLayout {
-                                alignment: center;
-                                Rectangle {
-                                    width: 8px;
-                                    height: 8px;
-                                    border-radius: 4px;
-                                    background: p.class == "tracked" ? Tokens.kind-enhancement
-                                              : p.class == "orphan" ? Tokens.destructive
-                                                                     : #f5b54e;
-                                }
+            VerticalLayout {
+                spacing: Tokens.space-1;
+                if root.processes.length == 0: Text {
+                    text: @tr("No agent processes detected.");
+                    color: Tokens.muted-foreground;
+                    font-size: Tokens.text-sm;
+                }
+                for p in root.processes: Rectangle {
+                    height: 34px;
+                    background: Tokens.secondary;
+                    border-radius: Tokens.radius-md;
+                    border-width: 1px;
+                    border-color: Tokens.border;
+                    HorizontalLayout {
+                        padding-left: Tokens.space-3;
+                        padding-right: Tokens.space-1 + 2px;
+                        spacing: Tokens.space-2;
+                        alignment: start;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 8px;
+                                height: 8px;
+                                border-radius: 4px;
+                                background: p.class == "tracked" ? Tokens.kind-enhancement
+                                          : p.class == "orphan" ? Tokens.destructive
+                                                                 : #f5b54e;
                             }
-                            VerticalLayout {
-                                alignment: center;
-                                horizontal-stretch: 1;
-                                Text {
-                                    text: p.name + "  " + p.pid;
-                                    color: Tokens.foreground;
-                                    font-size: Tokens.text-sm;
-                                    font-family: Tokens.font-mono;
-                                }
-                                Text {
-                                    text: p.class;
-                                    color: Tokens.muted-foreground;
-                                    font-size: Tokens.text-xs;
-                                }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: p.name + "  " + p.pid;
+                                color: Tokens.foreground;
+                                font-size: Tokens.text-sm;
+                                font-family: Tokens.font-mono;
                             }
-                            Button {
-                                text: "stop";
-                                variant: "outline";
-                                size: "sm";
-                                clicked => { root.process-kill(p.pid); }
+                            Text {
+                                text: p.class;
+                                color: Tokens.muted-foreground;
+                                font-size: Tokens.text-xs;
                             }
-                            Button {
-                                text: "kill";
-                                variant: "destructive";
-                                size: "sm";
-                                clicked => { root.process-force-kill(p.pid); }
-                            }
+                        }
+                        Button {
+                            text: @tr("stop");
+                            variant: "outline";
+                            size: "sm";
+                            clicked => { root.process-kill(p.pid); }
+                        }
+                        Button {
+                            text: @tr("kill");
+                            variant: "destructive";
+                            size: "sm";
+                            clicked => { root.process-force-kill(p.pid); }
                         }
                     }
                 }
             }
         }
     }
-
+}

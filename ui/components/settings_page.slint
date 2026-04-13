@@ -1,0 +1,119 @@
+// Settings page — full-width dedicated page (replaces the old right-pane tab).
+// Wraps the existing SettingsPanel with a header bar (back button + title)
+// and centers the content at a max-width of 720px for readability.
+
+import { IconSet } from "@lucide";
+import { Tokens } from "../tokens.slint";
+import { QuickActionRowData, ProcessRowData } from "../data.slint";
+import { LucideIcon } from "atoms.slint";
+import { SettingsPanel } from "settings_modal.slint";
+
+export component SettingsPage inherits Rectangle {
+    in-out property <string> default-base-branch;
+    in-out property <string> current-locale: "en";
+    in-out property <string> current-permission-mode: "acceptEdits";
+    in property <[QuickActionRowData]> quick-actions;
+    in property <[ProcessRowData]> processes;
+
+    callback base-branch-changed(string);
+    callback locale-changed(string);
+    callback permission-mode-changed(string);
+    callback add-quick-action();
+    callback delete-quick-action(string);
+    callback update-quick-action(string, string, string, string);
+    callback refresh-processes();
+    callback process-kill(int);
+    callback process-force-kill(int);
+    callback stop-all-sessions();
+    callback kill-all-processes();
+    callback go-back();
+
+    background: Tokens.background;
+
+    // ── Header bar ──────────────────────────────────────────────────
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: 48px;
+
+        HorizontalLayout {
+            padding-left: Tokens.space-4;
+            padding-right: Tokens.space-4;
+            spacing: Tokens.space-2;
+            alignment: start;
+
+            VerticalLayout {
+                alignment: center;
+                back-btn := TouchArea {
+                    width: 28px;
+                    height: 28px;
+                    mouse-cursor: pointer;
+                    clicked => { root.go-back(); }
+                    Rectangle {
+                        width: 100%;
+                        height: 100%;
+                        background: back-btn.has-hover ? Tokens.accent : transparent;
+                        border-radius: Tokens.radius-md;
+                        animate background { duration: 120ms; easing: ease-out; }
+                        LucideIcon {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            icon: IconSet.ArrowLeft;
+                            size: 16px;
+                            stroke: Tokens.foreground;
+                            stroke-width: 2;
+                        }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: @tr("Settings");
+                    color: Tokens.foreground;
+                    font-size: Tokens.text-lg;
+                    font-weight: Tokens.weight-bold;
+                }
+            }
+        }
+
+        // Bottom border.
+        Rectangle {
+            x: 0;
+            y: parent.height - 1px;
+            width: parent.width;
+            height: 1px;
+            background: Tokens.border;
+        }
+    }
+
+    // ── Settings content (centered, max 720px) ──────────────────────
+    SettingsPanel {
+        x: max(Tokens.space-4, (parent.width - 720px) / 2);
+        y: 48px;
+        width: min(parent.width - Tokens.space-4 * 2, 720px);
+        height: parent.height - 48px;
+
+        default-base-branch <=> root.default-base-branch;
+        current-locale <=> root.current-locale;
+        current-permission-mode <=> root.current-permission-mode;
+        quick-actions: root.quick-actions;
+        processes: root.processes;
+
+        base-branch-changed(t) => { root.base-branch-changed(t); }
+        locale-changed(locale) => { root.locale-changed(locale); }
+        permission-mode-changed(mode) => { root.permission-mode-changed(mode); }
+        add-quick-action => { root.add-quick-action(); }
+        delete-quick-action(id) => { root.delete-quick-action(id); }
+        update-quick-action(id, name, kind, body) => {
+            root.update-quick-action(id, name, kind, body);
+        }
+        refresh-processes => { root.refresh-processes(); }
+        process-kill(pid) => { root.process-kill(pid); }
+        process-force-kill(pid) => { root.process-force-kill(pid); }
+        stop-all-sessions => { root.stop-all-sessions(); }
+        kill-all-processes => { root.kill-all-processes(); }
+    }
+}

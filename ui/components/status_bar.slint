@@ -33,7 +33,7 @@ export component StatusBar inherits Rectangle {
         alignment: start;
 
         Text {
-            text: "Backlog " + root.stats-backlog;
+            text: @tr("Backlog") + " " + root.stats-backlog;
             color: Tokens.muted-foreground;
             font-size: Tokens.text-xs;
             font-family: Tokens.font-mono;
@@ -41,7 +41,7 @@ export component StatusBar inherits Rectangle {
         }
         Text { text: "·"; color: Tokens.muted-foreground; font-size: Tokens.text-xs; vertical-alignment: center; }
         Text {
-            text: "Planning " + root.stats-planning;
+            text: @tr("Planning") + " " + root.stats-planning;
             color: Tokens.muted-foreground;
             font-size: Tokens.text-xs;
             font-family: Tokens.font-mono;
@@ -49,7 +49,7 @@ export component StatusBar inherits Rectangle {
         }
         Text { text: "·"; color: Tokens.muted-foreground; font-size: Tokens.text-xs; vertical-alignment: center; }
         Text {
-            text: "Impl " + root.stats-implementation;
+            text: @tr("Impl") + " " + root.stats-implementation;
             color: Tokens.muted-foreground;
             font-size: Tokens.text-xs;
             font-family: Tokens.font-mono;
@@ -57,7 +57,7 @@ export component StatusBar inherits Rectangle {
         }
         Text { text: "·"; color: Tokens.muted-foreground; font-size: Tokens.text-xs; vertical-alignment: center; }
         Text {
-            text: "Review " + root.stats-review;
+            text: @tr("Review") + " " + root.stats-review;
             color: Tokens.muted-foreground;
             font-size: Tokens.text-xs;
             font-family: Tokens.font-mono;
@@ -65,7 +65,7 @@ export component StatusBar inherits Rectangle {
         }
         Text { text: "·"; color: Tokens.muted-foreground; font-size: Tokens.text-xs; vertical-alignment: center; }
         Text {
-            text: "Done " + root.stats-done;
+            text: @tr("Done") + " " + root.stats-done;
             color: Tokens.muted-foreground;
             font-size: Tokens.text-xs;
             font-family: Tokens.font-mono;
@@ -73,7 +73,7 @@ export component StatusBar inherits Rectangle {
         }
         Text { text: "·"; color: Tokens.muted-foreground; font-size: Tokens.text-xs; vertical-alignment: center; }
         Text {
-            text: "Misc " + root.stats-misc;
+            text: @tr("Misc") + " " + root.stats-misc;
             color: Tokens.muted-foreground;
             font-size: Tokens.text-xs;
             font-family: Tokens.font-mono;
@@ -107,7 +107,7 @@ export component StatusBar inherits Rectangle {
         }
 
         if root.session-dots.length == 0: Text {
-            text: "0 sessions";
+            text: @tr("0 sessions");
             color: Tokens.muted-foreground;
             font-size: Tokens.text-xs;
             font-family: Tokens.font-mono;
@@ -116,7 +116,7 @@ export component StatusBar inherits Rectangle {
 
         Text { text: "·"; color: Tokens.muted-foreground; font-size: Tokens.text-xs; vertical-alignment: center; }
         Text {
-            text: root.stats-total + " tasks total";
+            text: root.stats-total + " " + @tr("tasks total");
             color: Tokens.muted-foreground;
             font-size: Tokens.text-xs;
             font-family: Tokens.font-mono;

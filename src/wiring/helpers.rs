@@ -255,9 +255,37 @@ pub fn default_shell() -> (String, String) {
     ("powershell.exe".to_string(), "powershell".to_string())
 }
 
+/// Returns the working directory Quay was launched from. This is used
+/// as the default CWD for tasks when no project is selected — much
+/// safer than `$HOME` because it scopes agents to the directory the
+/// user explicitly chose to run Quay from.
 pub fn home_directory() -> PathBuf {
-    if let Some(dirs) = directories::UserDirs::new() {
-        return dirs.home_dir().to_path_buf();
+    std::env::current_dir().unwrap_or_else(|_| {
+        directories::UserDirs::new()
+            .map(|d| d.home_dir().to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."))
+    })
+}
+
+/// Rebuild the sidebar menu model with freshly-translated labels.
+/// Called when the user changes the locale at runtime so the sidebar
+/// text updates without restarting.
+pub fn rebuild_menu_model(window: &crate::MainWindow) {
+    use crate::MenuItemData;
+    let model = Rc::new(VecModel::<MenuItemData>::default());
+    for (id, glyph, label, shortcut) in [
+        ("new-task",      "",  t!("menu.new_cli_session").to_string(), "".to_string()),
+        ("quick-action",  "",  t!("menu.quick_action").to_string(),    "submenu".to_string()),
+        ("configure",     "",  t!("menu.configure").to_string(),       "".to_string()),
+        ("sessions",      "",  t!("menu.sessions").to_string(),        "".to_string()),
+        ("worktrees",     "",  t!("menu.worktrees").to_string(),       "".to_string()),
+    ] {
+        model.push(MenuItemData {
+            id: id.into(),
+            glyph: glyph.into(),
+            label: SharedString::from(label),
+            shortcut: SharedString::from(shortcut),
+        });
     }
-    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    window.set_menu_items(ModelRc::from(model));
 }

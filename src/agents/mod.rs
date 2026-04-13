@@ -48,12 +48,15 @@ pub trait AgentProvider: Send + Sync {
     /// `instructions` is the initial prompt the user typed into the
     /// Description tab. `resume_id` is only relevant when the provider
     /// reports `supports_resume() == true` — callers should pass `None`
-    /// otherwise.
+    /// otherwise. `permission_mode` is the user-chosen permission level
+    /// (e.g. `"acceptEdits"`, `"bypassPermissions"`); providers that
+    /// have no CLI-level permission controls simply ignore it.
     fn argv(
         &self,
         mode: StartMode,
         instructions: Option<&str>,
         resume_id: Option<&str>,
+        permission_mode: Option<&str>,
     ) -> Vec<String>;
 
     /// Environment variables to export before spawning the child process.

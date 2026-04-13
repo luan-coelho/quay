@@ -44,7 +44,7 @@ export component ShortcutsOverlay inherits Rectangle {
             HorizontalLayout {
                 spacing: Tokens.space-2;
                 Text {
-                    text: "Keyboard Shortcuts";
+                    text: @tr("Keyboard Shortcuts");
                     color: Tokens.foreground;
                     font-size: Tokens.text-xl - 2px;
                     font-weight: Tokens.weight-bold;
@@ -65,65 +65,64 @@ export component ShortcutsOverlay inherits Rectangle {
                 VerticalLayout {
                     spacing: Tokens.space-1;
                     Text {
-                        text: "TASKS";
+                        text: @tr("TASKS");
                         color: Tokens.muted-foreground;
                         font-size: Tokens.text-xs;
                         font-weight: Tokens.weight-bold;
                     }
-                    ShortcutRow { keys: "⌘N"; label: "Create new task in Backlog"; }
-                    ShortcutRow { keys: "⌘D"; label: "Move active task forward"; }
-                    ShortcutRow { keys: "⌘⌫"; label: "Delete active task"; }
-                    ShortcutRow { keys: "Enter"; label: "(in Instructions field) Start Implement"; }
+                    ShortcutRow { cmd: true; key: "N"; label: @tr("New CLI session"); }
+                    ShortcutRow { cmd: true; del: true; label: @tr("Delete active task"); }
                 }
 
                 // Tabs group
                 VerticalLayout {
                     spacing: Tokens.space-1;
                     Text {
-                        text: "OPEN TABS";
+                        text: @tr("OPEN TABS");
                         color: Tokens.muted-foreground;
                         font-size: Tokens.text-xs;
                         font-weight: Tokens.weight-bold;
                     }
-                    ShortcutRow { keys: "⌘W"; label: "Close active tab"; }
-                    ShortcutRow { keys: "⌘⇧W"; label: "Close all OTHER tabs"; }
-                    ShortcutRow { keys: "⌘⌥W"; label: "Close ALL tabs"; }
-                    ShortcutRow { keys: "⌘⇧]"; label: "Cycle to next tab"; }
-                    ShortcutRow { keys: "⌘⇧["; label: "Cycle to previous tab"; }
+                    ShortcutRow { cmd: true; key: "W"; label: @tr("Close active tab"); }
+                    ShortcutRow { cmd: true; shift: true; key: "W"; label: @tr("Close all OTHER tabs"); }
+                    ShortcutRow { cmd: true; alt: true; key: "W"; label: @tr("Close ALL tabs"); }
+                    ShortcutRow { cmd: true; shift: true; key: "]"; label: @tr("Cycle to next tab"); }
+                    ShortcutRow { cmd: true; shift: true; key: "["; label: @tr("Cycle to previous tab"); }
                 }
 
                 // Quick Actions group
                 VerticalLayout {
                     spacing: Tokens.space-1;
                     Text {
-                        text: "QUICK ACTIONS";
+                        text: @tr("QUICK ACTIONS");
                         color: Tokens.muted-foreground;
                         font-size: Tokens.text-xs;
                         font-weight: Tokens.weight-bold;
                     }
-                    ShortcutRow { keys: "⌘⌥1..9"; label: "Run quick action by index"; }
+                    ShortcutRow { cmd: true; alt: true; key: "1..9"; label: @tr("Run quick action by index"); }
                 }
 
                 // System group
                 VerticalLayout {
                     spacing: Tokens.space-1;
                     Text {
-                        text: "SYSTEM";
+                        text: @tr("SYSTEM");
                         color: Tokens.muted-foreground;
                         font-size: Tokens.text-xs;
                         font-weight: Tokens.weight-bold;
                     }
-                    ShortcutRow { keys: "⌘P"; label: "Quick task switcher"; }
-                    ShortcutRow { keys: "⌘,"; label: "Open Settings"; }
-                    ShortcutRow { keys: "⌘?"; label: "Show this overlay"; }
-                    ShortcutRow { keys: "Esc"; label: "Close any open modal"; }
+                    ShortcutRow { cmd: true; key: "P"; label: @tr("Quick task switcher"); }
+                    ShortcutRow { cmd: true; key: ","; label: @tr("Open Settings"); }
+                    ShortcutRow { cmd: true; key: "?"; label: @tr("Show this overlay"); }
+                    ShortcutRow { cmd: true; shift: true; key: "V"; label: @tr("Paste from clipboard"); }
+                    ShortcutRow { key: "Esc"; label: @tr("Close any open modal"); }
                 }
             }
 
             Rectangle { vertical-stretch: 1; }
 
             Text {
-                text: "Tip: ⌘ on macOS, Ctrl elsewhere. Esc closes this overlay.";
+                text: @tr("Tip: Cmd on macOS, Ctrl elsewhere. Esc closes this overlay.");
                 color: Tokens.muted-foreground;
                 font-size: Tokens.text-xs;
                 horizontal-alignment: center;

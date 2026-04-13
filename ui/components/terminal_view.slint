@@ -31,9 +31,6 @@ export component TerminalView {
 
         Rectangle {
             background: Tokens.background;
-            border-radius: Tokens.radius-md;
-            border-width: 1px;
-            border-color: Tokens.border;
             clip: true;
 
             Image {
@@ -45,17 +42,12 @@ export component TerminalView {
                 image-rendering: pixelated;
             }
 
-            // Polish 29 — empty state. Glyph + title + actionable hint
-            // matching the kanban empty state from Polish 28.
-            Rectangle {
-                visible: root.active-task-id == "";
+            // Empty state — centered glyph + title + hint.
+            if root.active-task-id == "": Rectangle {
                 background: Tokens.background;
                 VerticalLayout {
-                    x: 0;
-                    y: (parent.height - self.preferred-height) / 2;
-                    width: parent.width;
-                    spacing: Tokens.space-2 + 2px;
                     alignment: center;
+                    spacing: Tokens.space-2 + 2px;
 
                     HorizontalLayout {
                         alignment: center;
@@ -67,14 +59,14 @@ export component TerminalView {
                         }
                     }
                     Text {
-                        text: "No active session";
+                        text: @tr("No active session");
                         color: Tokens.foreground;
                         font-size: Tokens.text-lg;
                         font-weight: Tokens.weight-semibold;
                         horizontal-alignment: center;
                     }
                     Text {
-                        text: "Click a task in the kanban, then press Plan or Implement.";
+                        text: @tr("Press ⌘N to start a new session, or select a task from the kanban.");
                         color: Tokens.muted-foreground;
                         font-size: Tokens.text-sm;
                         horizontal-alignment: center;

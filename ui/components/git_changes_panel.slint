@@ -12,9 +12,6 @@ export component GitChangesPanel inherits Rectangle {
     in property <[CommitEntryData]> commit-log;
 
     background: Tokens.card;
-    border-radius: Tokens.radius-md;
-    border-width: 1px;
-    border-color: Tokens.border;
     clip: true;
 
     if root.active-task-id == "" || (root.diff-files.length == 0 && root.commit-log.length == 0): Rectangle {
@@ -22,14 +19,14 @@ export component GitChangesPanel inherits Rectangle {
             alignment: center;
             spacing: Tokens.space-1 + 2px;
             Text {
-                text: "Git Changes";
+                text: @tr("Git Changes");
                 color: Tokens.foreground;
                 font-size: Tokens.text-base;
                 font-weight: Tokens.weight-semibold;
                 horizontal-alignment: center;
             }
             Text {
-                text: root.active-task-id == "" ? "Select a task with a git worktree to see changes." : "No changes yet.";
+                text: root.active-task-id == "" ? @tr("Select a task with a git worktree to see changes.") : @tr("No changes yet.");
                 color: Tokens.muted-foreground;
                 font-size: Tokens.text-sm;
                 horizontal-alignment: center;
@@ -38,14 +35,14 @@ export component GitChangesPanel inherits Rectangle {
     }
 
     if root.active-task-id != "" && (root.diff-files.length > 0 || root.commit-log.length > 0): VerticalLayout {
-        padding: Tokens.space-3;
+        padding: 0px;
         spacing: Tokens.space-2 + 2px;
 
         // Changed files header.
         HorizontalLayout {
             spacing: Tokens.space-1 + 2px;
             Text {
-                text: "CHANGED FILES";
+                text: @tr("CHANGED FILES");
                 color: Tokens.muted-foreground;
                 font-size: Tokens.text-xs;
                 font-weight: Tokens.weight-bold;
@@ -172,7 +169,7 @@ export component GitChangesPanel inherits Rectangle {
                 if root.commit-log.length > 0: HorizontalLayout {
                     spacing: Tokens.space-1 + 2px;
                     Text {
-                        text: "COMMITS ON THIS BRANCH";
+                        text: @tr("COMMITS ON THIS BRANCH");
                         color: Tokens.muted-foreground;
                         font-size: Tokens.text-xs;
                         font-weight: Tokens.weight-bold;

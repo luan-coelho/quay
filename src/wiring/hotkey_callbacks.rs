@@ -20,7 +20,6 @@ pub fn wire(window: &MainWindow, ctx: &WiringContext) {
     let state = ctx.state.clone();
     let weak = window.as_weak();
     let refresh = ctx.refresh_kanban.clone();
-    let refresh_panels = ctx.refresh_active_panels.clone();
     let toast = ctx.show_toast.clone();
     window.on_key_pressed(move |text, ctrl, alt, shift, meta| {
         // Pure classification — no Slint, no AppState, no I/O. Tested
@@ -34,7 +33,7 @@ pub fn wire(window: &MainWindow, ctx: &WiringContext) {
                     Ok(None) => tracing::debug!(idx, "no quick action at index"),
                     Err(err) => {
                         tracing::warn!(%err, idx, "quick action failed");
-                        toast("error", format!("Quick action failed: {err}"));
+                        toast("error", t!("hotkeys.quick_action_failed", err = err.to_string()).to_string());
                     }
                 }
             }
@@ -49,7 +48,10 @@ pub fn wire(window: &MainWindow, ctx: &WiringContext) {
                     // Tab context menu has highest priority — it's
                     // the smallest popup so dismissing it first
                     // matches user expectation.
-                    if w.get_tab_menu_open() {
+                    if w.get_card_menu_open() {
+                        w.set_card_menu_open(false);
+                        consumed = true;
+                    } else if w.get_tab_menu_open() {
                         w.set_tab_menu_open(false);
                         consumed = true;
                     } else if w.get_task_search_open() {
@@ -58,52 +60,71 @@ pub fn wire(window: &MainWindow, ctx: &WiringContext) {
                     } else if w.get_shortcuts_open() {
                         w.set_shortcuts_open(false);
                         consumed = true;
-                    } else if w.get_settings_open() {
-                        w.set_settings_open(false);
-                        consumed = true;
                     } else if w.get_new_project_open() {
                         w.set_new_project_open(false);
                         consumed = true;
-                    } else if w.get_new_task_open() {
-                        w.set_new_task_open(false);
+                    } else if w.get_active_page() == "settings" {
+                        w.set_active_page(slint::SharedString::from("home"));
                         consumed = true;
                     }
                 }
                 if !consumed {
                     // No modal open — forward Escape to the PTY.
                     let bytes = key_text_to_bytes(text.as_str(), ctrl, alt, shift);
-                    if !bytes.is_empty() {
-                        state.write_to_active(&bytes);
+                    if !bytes.is_empty() && state.write_to_active(&bytes) {
+                        // Session was auto-resumed — refresh UI.
+                        if let Some(w) = weak.upgrade() {
+                            w.set_active_task_session_state("busy".into());
+                        }
+                        refresh();
                     }
                 }
             }
             HotkeyAction::CreateTask => {
+                // Terminal-first: create task + start Claude Code session immediately.
                 let project_id = weak.upgrade().and_then(|w| {
                     let id_str = w.get_active_project_id().to_string();
                     uuid::Uuid::from_str(&id_str).ok()
                 });
                 let count = state.list_tasks().map(|t| t.len()).unwrap_or(0) + 1;
-                let title = format!("New task {count}");
-                if let Err(err) = state.create_task(title, project_id) {
-                    tracing::error!(%err, "create_task via shortcut failed");
-                    toast("error", format!("Create failed: {err}"));
+                let title = t!("tasks.new_task_title", count = count).to_string();
+                match state.create_task(title, project_id) {
+                    Ok(task) => {
+                        if let Err(err) = state.start_session(
+                            task.id,
+                            crate::kanban::StartMode::Implement,
+                        ) {
+                            tracing::error!(err = ?err, "cli session start failed");
+                            toast("error", t!("sessions.implement_failed", err = err.to_string()).to_string());
+                        } else {
+                            state.pin_open_tab(task.id);
+                            let _ = state.select_task(task.id);
+                            if let Some(w) = weak.upgrade() {
+                                w.set_active_task_id(task.id.to_string().into());
+                                w.set_active_task_session_state(crate::kanban::SessionState::Busy.as_str().into());
+                                w.set_active_right_tab(slint::SharedString::from("terminal"));
+                                if state.blit_active() {
+                                    w.set_frame(slint::Image::from_rgba8_premultiplied(
+                                        state.framebuffer.borrow().buffer.clone(),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        tracing::error!(%err, "create_task via shortcut failed");
+                        toast("error", t!("tasks.create_failed", err = err.to_string()).to_string());
+                    }
                 }
                 refresh();
             }
-            HotkeyAction::MoveActiveForward => {
-                if let Some(active_id) = *state.active_task.borrow() {
-                    if let Err(err) = state.move_forward(active_id) {
-                        tracing::warn!(%err, "move_forward via shortcut failed");
-                        toast("error", format!("Cannot move forward: {err}"));
-                    }
-                    refresh();
-                    refresh_panels();
-                }
-            }
             HotkeyAction::ToggleSettings => {
                 if let Some(w) = weak.upgrade() {
-                    let open = !w.get_settings_open();
-                    w.set_settings_open(open);
+                    if w.get_active_page() == "settings" {
+                        w.set_active_page(slint::SharedString::from("home"));
+                    } else {
+                        w.set_active_page(slint::SharedString::from("settings"));
+                    }
                 }
             }
             HotkeyAction::CloseActiveTab => {
@@ -164,10 +185,23 @@ pub fn wire(window: &MainWindow, ctx: &WiringContext) {
                     }
                 }
             }
+            HotkeyAction::Paste => {
+                match state.paste_to_active() {
+                    Ok(()) => tracing::debug!("clipboard paste"),
+                    Err(err) => {
+                        tracing::warn!(%err, "clipboard paste failed");
+                        toast("error", t!("hotkeys.paste_failed", err = err).to_string());
+                    }
+                }
+            }
             HotkeyAction::Fallthrough => {
                 let bytes = key_text_to_bytes(text.as_str(), ctrl, alt, shift);
-                if !bytes.is_empty() {
-                    state.write_to_active(&bytes);
+                if !bytes.is_empty() && state.write_to_active(&bytes) {
+                    // Session was auto-resumed — refresh UI.
+                    if let Some(w) = weak.upgrade() {
+                        w.set_active_task_session_state("busy".into());
+                    }
+                    refresh();
                 }
             }
         }

@@ -8,7 +8,7 @@
 import { ScrollView } from "std-widgets.slint";
 import { IconSet } from "@lucide";
 import { Tokens } from "../tokens.slint";
-import { TaskCardData, LabelPillData } from "../data.slint";
+import { TaskCardData, LabelPillData, ProjectData } from "../data.slint";
 import { LucideIcon } from "atoms.slint";
 import { FilterChip, SectionHeader } from "menu.slint";
 import { CardRow } from "cards.slint";
@@ -22,15 +22,17 @@ export component KanbanGrid inherits Rectangle {
     in property <[TaskCardData]> tasks-misc;
     in property <[LabelPillData]> all-labels;
     in-out property <string> filter-label-id;
-    in property <string> active-project-id;
+    in property <[ProjectData]> projects;
+    in-out property <string> active-project-id;
     in property <string> active-task-id;
     in property <string> spinner-glyph;
     in property <length> tab-strip-h: 32px;
 
     callback select-task(string);
-    callback move-task-back(string);
-    callback move-task-forward(string);
     callback filter-changed(string);
+    callback close-project-chip(string);  // project-id — hide chip, don't delete project
+    // Card context menu: task-id, cursor-x, cursor-y, column-state, session-state.
+    callback card-right-clicked(string, length, length, string, string);
 
     background: Tokens.background;
 
@@ -42,14 +44,6 @@ export component KanbanGrid inherits Rectangle {
         && root.tasks-review.length == 0
         && root.tasks-done.length == 0
         && root.tasks-misc.length == 0;
-
-    Rectangle {
-        x: parent.width - 1px;
-        y: 0;
-        width: 1px;
-        height: parent.height;
-        background: Tokens.border;
-    }
 
     VerticalLayout {
         spacing: 0px;
@@ -71,53 +65,29 @@ export component KanbanGrid inherits Rectangle {
                 spacing: Tokens.space-1;
                 alignment: start;
 
-                VerticalLayout {
+                // One chip per project.
+                for proj in root.projects: VerticalLayout {
                     alignment: end;
                     FilterChip {
-                        label: "All";
-                        selected: root.filter-label-id == "";
+                        label: proj.name;
+                        icon-kind: "project";
+                        closable: true;
+                        selected: root.active-project-id == proj.id;
                         clicked => {
-                            root.filter-label-id = "";
-                            root.filter-changed("");
-                        }
-                    }
-                }
-                for lbl in root.all-labels: VerticalLayout {
-                    alignment: end;
-                    FilterChip {
-                        label: lbl.name;
-                        selected: root.filter-label-id == lbl.id;
-                        clicked => {
-                            if root.filter-label-id == lbl.id {
-                                root.filter-label-id = "";
+                            if root.active-project-id == proj.id {
+                                root.active-project-id = "";
                                 root.filter-changed("");
                             } else {
-                                root.filter-label-id = lbl.id;
-                                root.filter-changed(lbl.id);
+                                root.active-project-id = proj.id;
+                                root.filter-changed(proj.id);
                             }
                         }
-                    }
-                }
-                // Polish 23: spacer pushes the funnel icon to the right
-                // edge of the strip.
-                Rectangle { horizontal-stretch: 1; }
-                // Polish 23: funnel icon stub. Slint 1.15 has no
-                // dedicated funnel codepoint in its built-in font, so
-                // we use a chevron as the closest visual hint. Click
-                // is a no-op for now — wiring an actual filter menu
-                // is a future polish.
-                VerticalLayout {
-                    alignment: end;
-                    TouchArea {
-                        width: 22px;
-                        height: 22px;
-                        clicked => { /* stub */ }
-                        LucideIcon {
-                            icon: IconSet.ChevronDown;
-                            size: 12px;
-                            stroke: Tokens.muted-foreground;
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
+                        close => {
+                            if root.active-project-id == proj.id {
+                                root.active-project-id = "";
+                                root.filter-changed("");
+                            }
+                            root.close-project-chip(proj.id);
                         }
                     }
                 }
@@ -152,8 +122,8 @@ export component KanbanGrid inherits Rectangle {
                     }
                     Text {
                         text: root.filter-label-id == "" && root.active-project-id == ""
-                            ? "No tasks yet"
-                            : "No tasks match the current filter";
+                            ? @tr("No tasks yet")
+                            : @tr("No tasks match the current filter");
                         color: Tokens.foreground;
                         font-size: Tokens.text-lg;
                         font-weight: Tokens.weight-semibold;
@@ -161,8 +131,8 @@ export component KanbanGrid inherits Rectangle {
                     }
                     Text {
                         text: root.filter-label-id == "" && root.active-project-id == ""
-                            ? "Press ⌘N to create your first task"
-                            : "Click the active filter chip again to clear it";
+                            ? @tr("Press Cmd+N to start your first session")
+                            : @tr("Click the active filter chip again to clear it");
                         color: Tokens.muted-foreground;
                         font-size: Tokens.text-sm;
                         horizontal-alignment: center;
@@ -172,12 +142,13 @@ export component KanbanGrid inherits Rectangle {
                 // Polish 21: Backlog — always visible.
                 if !root.kanban-empty: VerticalLayout {
                     spacing: 0px;
-                    SectionHeader { label: "Backlog"; count: root.tasks-backlog.length; }
+                    SectionHeader { label: @tr("Backlog"); count: root.tasks-backlog.length; }
                     for task in root.tasks-backlog: CardRow {
                         task: task;
                         spinner-glyph: root.spinner-glyph;
                         selected: task.id == root.active-task-id;
                         clicked => { root.select-task(task.id); }
+                        right-clicked(x, y) => { root.card-right-clicked(task.id, x, y, "backlog", task.session-state); }
                     }
                 }
 
@@ -188,7 +159,7 @@ export component KanbanGrid inherits Rectangle {
                 if !root.kanban-empty: VerticalLayout {
                     spacing: 0px;
                     SectionHeader {
-                        label: "Planning & Implementation";
+                        label: @tr("Planning & Implementation");
                         count: root.tasks-planning.length + root.tasks-implementation.length;
                     }
                     for task in root.tasks-planning: CardRow {
@@ -196,12 +167,14 @@ export component KanbanGrid inherits Rectangle {
                         spinner-glyph: root.spinner-glyph;
                         selected: task.id == root.active-task-id;
                         clicked => { root.select-task(task.id); }
+                        right-clicked(x, y) => { root.card-right-clicked(task.id, x, y, "planning", task.session-state); }
                     }
                     for task in root.tasks-implementation: CardRow {
                         task: task;
                         spinner-glyph: root.spinner-glyph;
                         selected: task.id == root.active-task-id;
                         clicked => { root.select-task(task.id); }
+                        right-clicked(x, y) => { root.card-right-clicked(task.id, x, y, "implementation", task.session-state); }
                     }
                 }
 
@@ -209,12 +182,13 @@ export component KanbanGrid inherits Rectangle {
                 VerticalLayout {
                     visible: root.tasks-review.length > 0;
                     spacing: 0px;
-                    SectionHeader { label: "Review"; count: root.tasks-review.length; }
+                    SectionHeader { label: @tr("Review"); count: root.tasks-review.length; }
                     for task in root.tasks-review: CardRow {
                         task: task;
                         spinner-glyph: root.spinner-glyph;
                         selected: task.id == root.active-task-id;
                         clicked => { root.select-task(task.id); }
+                        right-clicked(x, y) => { root.card-right-clicked(task.id, x, y, "review", task.session-state); }
                     }
                 }
 
@@ -222,12 +196,13 @@ export component KanbanGrid inherits Rectangle {
                 VerticalLayout {
                     visible: root.tasks-done.length > 0;
                     spacing: 0px;
-                    SectionHeader { label: "Done"; count: root.tasks-done.length; }
+                    SectionHeader { label: @tr("Done"); count: root.tasks-done.length; }
                     for task in root.tasks-done: CardRow {
                         task: task;
                         spinner-glyph: root.spinner-glyph;
                         selected: task.id == root.active-task-id;
                         clicked => { root.select-task(task.id); }
+                        right-clicked(x, y) => { root.card-right-clicked(task.id, x, y, "done", task.session-state); }
                     }
                 }
 
@@ -235,15 +210,26 @@ export component KanbanGrid inherits Rectangle {
                 VerticalLayout {
                     visible: root.tasks-misc.length > 0;
                     spacing: 0px;
-                    SectionHeader { label: "Misc"; count: root.tasks-misc.length; }
+                    SectionHeader { label: @tr("Misc"); count: root.tasks-misc.length; }
                     for task in root.tasks-misc: CardRow {
                         task: task;
                         spinner-glyph: root.spinner-glyph;
                         selected: task.id == root.active-task-id;
                         clicked => { root.select-task(task.id); }
+                        right-clicked(x, y) => { root.card-right-clicked(task.id, x, y, "misc", task.session-state); }
                     }
                 }
             }
         }
+    }
+
+    // Right-edge divider — rendered last so it paints on top of the
+    // filter strip and scroll content, running from top to bottom.
+    Rectangle {
+        x: parent.width - 1px;
+        y: 0;
+        width: 1px;
+        height: parent.height;
+        background: Tokens.border;
     }
 }

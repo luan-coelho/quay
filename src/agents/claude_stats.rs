@@ -155,6 +155,72 @@ fn compute_cost_cents(stats: &SessionStats) -> u64 {
     input_cents + output_cents + cache_read_cents + cache_creation_cents
 }
 
+/// Extract the first user prompt from a Claude Code session JSONL.
+/// Returns `None` if the file doesn't exist, is empty, or contains no
+/// user message. The returned text is truncated to `max_len` characters
+/// with "…" appended if it exceeds the limit.
+pub fn read_first_prompt(path: &Path, max_len: usize) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    for line in content.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let value: Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        // Claude Code JSONL uses "type": "human" for user messages.
+        let msg_type = value.get("type").and_then(|v| v.as_str());
+        if !matches!(msg_type, Some("human" | "user")) {
+            continue;
+        }
+        // Try to extract text from the message content.
+        if let Some(text) = extract_user_text(&value) {
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            // Take only the first line and truncate.
+            let first_line = trimmed.lines().next().unwrap_or(trimmed);
+            if first_line.len() > max_len {
+                let truncated: String = first_line.chars().take(max_len).collect();
+                return Some(format!("{truncated}…"));
+            }
+            return Some(first_line.to_string());
+        }
+    }
+    None
+}
+
+/// Try to extract user-facing text from a "human" JSONL entry.
+/// Handles several known Claude Code JSONL shapes:
+///   - `{"message": {"content": [{"type": "text", "text": "..."}]}}`
+///   - `{"message": {"content": "..."}}`
+///   - `{"content": [{"type": "text", "text": "..."}]}`
+///   - `{"content": "..."}`
+fn extract_user_text(value: &Value) -> Option<String> {
+    // Look in "message" → "content" first, then top-level "content".
+    let content = value
+        .get("message")
+        .and_then(|m| m.get("content"))
+        .or_else(|| value.get("content"))?;
+
+    match content {
+        Value::String(s) => Some(s.clone()),
+        Value::Array(items) => {
+            for item in items {
+                if item.get("type").and_then(|t| t.as_str()) == Some("text")
+                    && let Some(text) = item.get("text").and_then(|t| t.as_str())
+                {
+                    return Some(text.to_string());
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
 /// Resolve the current session JSONL path for a task from its cwd +
 /// session id, using the same `.claude/projects/<encoded-cwd>/<id>.jsonl`
 /// layout the `claude_resume` capture already uses.
@@ -330,5 +396,80 @@ mod tests {
             let parent_name = path.parent().unwrap().file_name().unwrap().to_string_lossy();
             assert_eq!(parent_name, "-tmp-quay-test-project");
         }
+    }
+
+    #[test]
+    fn read_first_prompt_extracts_human_message() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("sess.jsonl");
+        let mut f = File::create(&path).unwrap();
+        // Assistant message first (should be skipped).
+        writeln!(f, r#"{{"type":"assistant","message":{{"usage":{{"input_tokens":10}}}}}}"#).unwrap();
+        // Human message with content array.
+        writeln!(f, r#"{{"type":"human","message":{{"content":[{{"type":"text","text":"Fix the login bug"}}]}}}}"#).unwrap();
+
+        let prompt = read_first_prompt(&path, 80);
+        assert_eq!(prompt.as_deref(), Some("Fix the login bug"));
+    }
+
+    #[test]
+    fn read_first_prompt_truncates_long_text() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("sess.jsonl");
+        let mut f = File::create(&path).unwrap();
+        let long_text = "A".repeat(100);
+        writeln!(f, r#"{{"type":"human","message":{{"content":[{{"type":"text","text":"{long_text}"}}]}}}}"#).unwrap();
+
+        let prompt = read_first_prompt(&path, 20);
+        assert!(prompt.is_some());
+        let p = prompt.unwrap();
+        assert!(p.ends_with('…'));
+        assert!(p.len() <= 24); // 20 chars + "…" (3 bytes UTF-8)
+    }
+
+    #[test]
+    fn read_first_prompt_returns_none_for_no_human() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("sess.jsonl");
+        let mut f = File::create(&path).unwrap();
+        writeln!(f, r#"{{"type":"assistant","message":{{"usage":{{"input_tokens":10}}}}}}"#).unwrap();
+
+        assert!(read_first_prompt(&path, 80).is_none());
+    }
+
+    #[test]
+    fn read_first_prompt_handles_string_content() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("sess.jsonl");
+        let mut f = File::create(&path).unwrap();
+        writeln!(f, r#"{{"type":"human","message":{{"content":"Add dark mode"}}}}"#).unwrap();
+
+        let prompt = read_first_prompt(&path, 80);
+        assert_eq!(prompt.as_deref(), Some("Add dark mode"));
+    }
+
+    #[test]
+    fn read_first_prompt_extracts_user_type_message() {
+        // Real Claude Code JSONL uses "type": "user", not "human".
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("sess.jsonl");
+        let mut f = File::create(&path).unwrap();
+        writeln!(f, r#"{{"type":"permission-mode","permissionMode":"bypassPermissions"}}"#).unwrap();
+        writeln!(f, r#"{{"type":"user","message":{{"content":[{{"type":"text","text":"Refactor the auth module"}}]}}}}"#).unwrap();
+
+        let prompt = read_first_prompt(&path, 80);
+        assert_eq!(prompt.as_deref(), Some("Refactor the auth module"));
+    }
+
+    #[test]
+    fn read_first_prompt_user_string_content() {
+        // "type": "user" with plain string content.
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("sess.jsonl");
+        let mut f = File::create(&path).unwrap();
+        writeln!(f, r#"{{"type":"user","message":{{"content":"Fix the crash on startup"}}}}"#).unwrap();
+
+        let prompt = read_first_prompt(&path, 80);
+        assert_eq!(prompt.as_deref(), Some("Fix the crash on startup"));
     }
 }

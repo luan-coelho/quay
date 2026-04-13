@@ -36,6 +36,7 @@ import {
     HlSpanData, HighlightedLineData, TaskCardData, DiffLineData,
     DiffFileData, CommitEntryData, MenuItemData, ProjectData,
     OpenTaskTabData, SessionDotData, WorktreeEntryData, SessionEntryData,
+    ToastData,
 } from "data.slint";
 import {
     LucideIcon, KindDiamond, Spinner, KindChip, Avatar, CloseButton,
@@ -46,17 +47,16 @@ import {
     SectionHeader, RightTab,
 } from "components/menu.slint";
 import { CardRow, OpenTaskTab } from "components/cards.slint";
-import { TitleBar } from "components/title_bar.slint";
 import { Sidebar } from "components/sidebar.slint";
 import { KanbanGrid } from "components/kanban_grid.slint";
 import { RightPane } from "components/right_pane.slint";
 import { StatusBar } from "components/status_bar.slint";
-import { NewTaskModal } from "components/new_task_modal.slint";
 import { NewProjectModal } from "components/new_project_modal.slint";
-import { SettingsModal } from "components/settings_modal.slint";
+import { SettingsPage } from "components/settings_page.slint";
 import { ShortcutsOverlay } from "components/shortcuts_overlay.slint";
 import { TaskSearchModal } from "components/task_search_modal.slint";
 import { TabContextMenu } from "components/tab_context_menu.slint";
+import { CardContextMenu } from "components/card_context_menu.slint";
 
 // ── Main window ─────────────────────────────────────────────────────────────
 
@@ -88,13 +88,11 @@ export component MainWindow inherits Window {
     // (cargo, npm, rustup, …) follows.
     in property <string> spinner-glyph: "⣾";
 
-    // Polish 25 — transient notification state. The Toast component
-    // at the bottom of the window reads these. A Slint Timer in
-    // main.rs (started by `show_toast`) clears `toast-visible` after
-    // ~3 s.
-    in-out property <string> toast-message: "";
-    in-out property <string> toast-kind: "info";
-    in-out property <bool> toast-visible: false;
+    // Polish 25 — stacking toast notifications (Sonner-style). Each
+    // entry in the model is one visible toast; newest at the end.
+    // Rust pushes / removes via a VecModel, individual timers handle
+    // auto-dismiss. `alive` drives the fade-out animation.
+    in property <[ToastData]> toast-items: [];
 
     // Polish 26 — keyboard shortcuts overlay. Toggled by Cmd+? from
     // the key dispatcher in main.rs. Esc closes (handled in the
@@ -131,12 +129,8 @@ export component MainWindow inherits Window {
     // user types again. Empty string = no error.
     in-out property <string> active-task-title-error: "";
     in-out property <string> active-task-description: "";
-    in-out property <string> active-task-instructions: "";
     // Session state for the active task: one of idle/busy/awaiting/stopped/exited/error.
     in property <string> active-task-session-state: "idle";
-    // Agent picker: "claude", "opencode", or "bare". Persisted in task.cli_selection.
-    in-out property <string> active-task-agent: "claude";
-    callback agent-changed(string);
 
     // Polish 15 — live stats parsed from the Claude Code session JSONL
     // transcript at ~/.claude/projects/<cwd>/<session-id>.jsonl. A 2s
@@ -174,8 +168,7 @@ export component MainWindow inherits Window {
     // Set by clicking a project row in the sidebar.
     in-out property <string> active-project-id: "";
 
-    // Settings modal state + content.
-    in-out property <bool> settings-open: false;
+    // Settings page data.
     in-out property <string> settings-default-base-branch: "main";
     in property <[QuickActionRowData]> settings-quick-actions;
     in property <[ProcessRowData]> settings-processes;
@@ -197,13 +190,6 @@ export component MainWindow inherits Window {
     in-out property <string> new-project-name-error: "";
     in-out property <string> new-project-repo-path-error: "";
 
-    // Polish 10: New Task modal state.
-    in-out property <bool> new-task-open: false;
-    in-out property <string> new-task-title: "";
-    in-out property <string> new-task-instructions: "";
-    // Inline validation error for the New Task form title field.
-    in-out property <string> new-task-title-error: "";
-
     // Polish 13: status bar counts, updated on every refresh_kanban.
     in property <int> stats-backlog: 0;
     in property <int> stats-planning: 0;
@@ -224,17 +210,16 @@ export component MainWindow inherits Window {
     in property <[FileEntryData]> file-entries;
     in-out property <string> file-current-dir: "";
 
-    // Editor state (Phase 7). When `editor-open` is true, the Files tab
-    // shows the editor surface instead of the directory listing.
-    in-out property <bool> editor-open: false;
-    in-out property <string> editor-file-path: "";
-    in-out property <string> editor-file-content: "";
-    in property <string> editor-syntax-name: "Plain Text";
-    in property <bool> editor-file-dirty: false;
-    // Polish 5: syntect-coloured read-only preview of the last saved
-    // state of the file, rendered above the editable TextEdit.
-    in property <[HighlightedLineData]> editor-highlighted-lines;
-    in property <int> editor-line-count: 0;
+    // Read-only file viewer state. When `viewer-open` is true, the
+    // Files tab shows the syntect-coloured viewer instead of the
+    // directory listing.
+    in-out property <bool> viewer-open: false;
+    in property <string> viewer-file-path: "";
+    in property <string> viewer-syntax-name: "Plain Text";
+    in property <[HighlightedLineData]> viewer-highlighted-lines;
+    in property <int> viewer-line-count: 0;
+    // Keyboard navigation — focused row in file tree (-1 = none).
+    in-out property <int> file-tree-focused-index: -1;
 
     // Description tab: labels attached to the active task + dependencies.
     in property <[LabelPillData]> active-task-labels;
@@ -250,6 +235,9 @@ export component MainWindow inherits Window {
     // Git Changes tab data — refreshed ~1×/s while the tab is open.
     in property <[DiffFileData]> git-diff-files;
     in property <[CommitEntryData]> git-commit-log;
+
+    // Page-level navigation: "home" (kanban 3-pane) or "settings".
+    in-out property <string> active-page: "home";
 
     // Right pane tab selection.
     in-out property <string> active-right-tab: "terminal";
@@ -282,30 +270,39 @@ export component MainWindow inherits Window {
     in-out property <length> tab-menu-x: 0px;
     in-out property <length> tab-menu-y: 0px;
 
+    // Card context menu state — right-click on a kanban card.
+    in-out property <bool> card-menu-open: false;
+    in-out property <string> card-menu-target-id: "";
+    in-out property <length> card-menu-x: 0px;
+    in-out property <length> card-menu-y: 0px;
+    in-out property <bool> card-menu-target-has-session: false;
+    callback card-stop-session(string);             // task-id
+    callback card-delete(string);                   // task-id
+
     // Polish 20 — sidebar collapse stub. Wired to a no-op for now;
     // a future polish will actually shrink `sidebar-w` when toggled.
     callback toggle-sidebar();
 
     callback select-task(string);
-    callback move-task-back(string);
-    callback move-task-forward(string);
     callback create-task();
+    callback bare-terminal-requested(string);  // task-id — lazily spawn bare shell
     callback title-changed(string);
     callback description-changed(string);
-    callback instructions-changed(string);
-    callback start-plan(string);
-    callback start-implement(string);
-    callback stop-session(string);
     callback filter-changed(string);  // Phase 4: fires when filter-label-id changes
     callback toggle-settings();
     callback settings-base-branch-changed(string);
+    callback locale-changed(string);   // i18n: switch language at runtime
+    in-out property <string> current-locale: "en";
+    callback permission-mode-changed(string);
+    in-out property <string> current-permission-mode: "acceptEdits";
     callback process-kill(int);        // SIGTERM
     callback process-force-kill(int);  // SIGKILL
+    callback stop-all-sessions();      // SIGTERM all tracked
+    callback kill-all-processes();     // SIGKILL all
     callback refresh-processes();
     callback file-entry-clicked(string, string);   // path, kind
-    callback editor-content-changed(string);
-    callback editor-save();
-    callback editor-close();
+    callback viewer-close();
+    callback activate-focused(int);              // keyboard Enter on tree
     callback attach-label(string);   // label id
     callback detach-label(string);   // label id
     callback remove-dependency(string);  // dep task id
@@ -322,7 +319,7 @@ export component MainWindow inherits Window {
     // refresh `new-project-branches` for the BASE BRANCH Select.
     callback new-project-repo-path-changed(string);
     callback project-clicked(string);   // project id
-    callback submit-new-task();         // actually inserts the task from the modal fields
+    callback close-project-chip(string);   // project id — hide chip from filter bar
     callback add-quick-action();        // opens inline editor with blank row
     callback delete-quick-action(string); // by id
     callback update-quick-action(string, string, string, string); // id, name, kind, body
@@ -337,41 +334,29 @@ export component MainWindow inherits Window {
     // the toggle is fired.
     in-out property <bool> sidebar-collapsed: false;
     property <length> sidebar-w: sidebar-collapsed ? 56px : 200px;
-    property <length> middle-w: 400px;
-    property <length> title-bar-h: 36px;
+    property <length> middle-w: (root.width - sidebar-w) * 45%;
+    property <length> title-bar-h: 0px;
     property <length> tab-strip-h: 32px;
     property <length> term-w: root.cols * root.cell-w * 1px;
     property <length> term-h: root.rows * root.cell-h * 1px;
-    property <length> right-pad-h: 18px;
-    property <length> right-pad-v: 14px;
+    property <length> right-pad-h: 0px;
+    property <length> right-pad-v: 0px;
 
     property <length> status-bar-h: 22px;
 
-    // Polish 16 — height of the open-task tabs strip above the inner
-    // Terminal/Description/… strip. Collapses to 0 when ≤1 task is
-    // open, so a single-task workflow keeps the original compact look.
-    property <length> open-tabs-strip-h: root.open-task-tabs.length >= 2 ? 34px : 0px;
+    // Height of the open-task tabs strip above the inner
+    // Terminal/Description/… strip. Always visible when at least one
+    // tab is open, matching the Lanes reference layout.
+    property <length> open-tabs-strip-h: root.open-task-tabs.length >= 1 ? 34px : 0px;
 
     // Preferred size uses the default 96×28 terminal; min allows 40×10
     // so the user can shrink the window and the PTY reflows.
-    preferred-width: sidebar-w + middle-w + 96 * root.cell-w * 1px + right-pad-h * 2 + 2px;
+    preferred-width: 1280px;
     preferred-height: title-bar-h + tab-strip-h + open-tabs-strip-h + 28 * root.cell-h * 1px + right-pad-v * 2 + 14px + status-bar-h;
-    min-width: sidebar-w + middle-w + 40 * root.cell-w * 1px + right-pad-h * 2 + 2px;
+    min-width: 900px;
     min-height: title-bar-h + tab-strip-h + open-tabs-strip-h + 10 * root.cell-h * 1px + right-pad-v * 2 + 14px + status-bar-h;
 
-    init => { right-pane.focus-terminal(); }
-
-    // ── Title bar ────────────────────────────────────────────────────────
-    TitleBar {
-        x: 0; y: 0;
-        width: parent.width;
-        height: title-bar-h;
-
-        active-task-display: root.active-task-display;
-        active-task-title: root.active-task-title;
-    }
-
-    // ── Sidebar ──────────────────────────────────────────────────────────
+    // ── Sidebar (persists across all pages) ────────────────────────────
     Sidebar {
         x: 0;
         y: title-bar-h;
@@ -385,15 +370,19 @@ export component MainWindow inherits Window {
         collapsed <=> root.sidebar-collapsed;
 
         menu-item-clicked(id) => {
-            if (id == "new-task") { root.new-task-open = true; }
-            if (id == "configure") { root.toggle-settings(); }
-            if (id == "sessions") { root.toggle-settings(); }
+            if (id == "new-task") { root.create-task(); }
+            if (id == "configure") { root.active-page = "settings"; }
+            if (id == "sessions") { root.active-right-tab = "history"; root.active-page = "home"; }
         }
         open-new-project => { root.new-project-open = true; }
         project-clicked(id) => { root.project-clicked(id); }
         worktree-clicked(task-id) => { root.worktree-clicked(task-id); }
         toggle-collapsed => { root.toggle-sidebar(); }
     }
+
+    // ── HOME PAGE ─────────────────────────────────────────────────────
+    if root.active-page == "home": Rectangle {
+        x: 0; y: 0; width: parent.width; height: parent.height;
 
     // ── Middle pane: kanban grid ────────────────────────────────────────
     KanbanGrid {
@@ -410,19 +399,27 @@ export component MainWindow inherits Window {
         tasks-misc: root.tasks-misc;
         all-labels: root.all-labels;
         filter-label-id <=> root.filter-label-id;
-        active-project-id: root.active-project-id;
+        projects: root.projects;
+        active-project-id <=> root.active-project-id;
         active-task-id: root.active-task-id;
         spinner-glyph: root.spinner-glyph;
         tab-strip-h: root.tab-strip-h;
 
         select-task(id) => { root.select-task(id); }
-        move-task-back(id) => { root.move-task-back(id); }
-        move-task-forward(id) => { root.move-task-forward(id); }
         filter-changed(id) => { root.filter-changed(id); }
+        close-project-chip(id) => { root.close-project-chip(id); }
+        card-right-clicked(id, x, y, state, session-state) => {
+            root.card-menu-target-id = id;
+            root.card-menu-x = x;
+            root.card-menu-y = y;
+            root.card-menu-target-has-session =
+                session-state == "busy" || session-state == "awaiting";
+            root.card-menu-open = true;
+        }
     }
 
     // ── Right pane ───────────────────────────────────────────────────────
-    right-pane := RightPane {
+    RightPane {
         x: sidebar-w + middle-w;
         y: title-bar-h;
         width: parent.width - sidebar-w - middle-w;
@@ -453,16 +450,15 @@ export component MainWindow inherits Window {
         terminal-key-pressed(text, ctrl, alt, shift, meta) => {
             root.key-pressed(text, ctrl, alt, shift, meta);
         }
+        bare-terminal-requested(id) => { root.bare-terminal-requested(id); }
 
         // Description tab.
         active-task-id: root.active-task-id;
         active-task-display: root.active-task-display;
         active-task-session-state: root.active-task-session-state;
-        active-task-agent <=> root.active-task-agent;
         active-task-title <=> root.active-task-title;
         active-task-title-error <=> root.active-task-title-error;
         active-task-description <=> root.active-task-description;
-        active-task-instructions <=> root.active-task-instructions;
         active-task-tokens-text: root.active-task-tokens-text;
         active-task-cost-text: root.active-task-cost-text;
         active-task-runtime-text: root.active-task-runtime-text;
@@ -477,11 +473,6 @@ export component MainWindow inherits Window {
         delete-task(id) => { root.delete-task(id); }
         title-changed(t) => { root.title-changed(t); }
         description-changed(t) => { root.description-changed(t); }
-        instructions-changed(t) => { root.instructions-changed(t); }
-        start-plan(id) => { root.start-plan(id); }
-        start-implement(id) => { root.start-implement(id); }
-        stop-session(id) => { root.stop-session(id); }
-        agent-changed(v) => { root.agent-changed(v); }
         attach-label(id) => { root.attach-label(id); }
         detach-label(id) => { root.detach-label(id); }
         add-dependency(id) => { root.add-dependency(id); }
@@ -494,31 +485,18 @@ export component MainWindow inherits Window {
         // Files tab.
         file-entries: root.file-entries;
         file-current-dir <=> root.file-current-dir;
-        editor-open <=> root.editor-open;
-        editor-file-path <=> root.editor-file-path;
-        editor-file-content <=> root.editor-file-content;
-        editor-syntax-name: root.editor-syntax-name;
-        editor-file-dirty: root.editor-file-dirty;
-        editor-highlighted-lines: root.editor-highlighted-lines;
-        editor-line-count: root.editor-line-count;
+        viewer-open <=> root.viewer-open;
+        viewer-file-path: root.viewer-file-path;
+        viewer-syntax-name: root.viewer-syntax-name;
+        viewer-highlighted-lines: root.viewer-highlighted-lines;
+        viewer-line-count: root.viewer-line-count;
+        file-tree-focused-index <=> root.file-tree-focused-index;
         file-entry-clicked(path, kind) => { root.file-entry-clicked(path, kind); }
-        editor-content-changed(t) => { root.editor-content-changed(t); }
-        editor-save => { root.editor-save(); }
-        editor-close => { root.editor-close(); }
+        viewer-close => { root.viewer-close(); }
+        activate-focused(idx) => { root.activate-focused(idx); }
 
         // History tab.
         session-history: root.session-history;
-    }
-
-    // Polish 25 + 31 — notification toast. Anchored bottom-right.
-    Toast {
-        x: parent.width - self.width - 16px;
-        y: parent.height - status-bar-h - self.height - (root.toast-visible ? 12px : -4px);
-        width: 320px;
-        message: root.toast-message;
-        kind: root.toast-kind;
-        visible-toast: root.toast-visible;
-        animate y { duration: 220ms; easing: ease-out; }
     }
 
     // ── Status bar (Polish 13) ──────────────────────────────────────────
@@ -540,16 +518,49 @@ export component MainWindow inherits Window {
         session-dot-clicked(id) => { root.session-dot-clicked(id); }
     }
 
-    // ── New Task modal overlay (Polish 10 / 32) ─────────────────────────
-    NewTaskModal {
-        x: 0; y: 0;
-        width: parent.width;
-        height: parent.height;
-        open <=> root.new-task-open;
-        title-text <=> root.new-task-title;
-        instructions-text <=> root.new-task-instructions;
-        title-error <=> root.new-task-title-error;
-        submit => { root.submit-new-task(); }
+    } // end home page
+
+    // ── SETTINGS PAGE ───────────────────────────────────────────────────
+    if root.active-page == "settings": SettingsPage {
+        x: sidebar-w;
+        y: title-bar-h;
+        width: parent.width - sidebar-w;
+        height: parent.height - title-bar-h;
+
+        default-base-branch <=> root.settings-default-base-branch;
+        current-locale <=> root.current-locale;
+        current-permission-mode <=> root.current-permission-mode;
+        quick-actions: root.settings-quick-actions;
+        processes: root.settings-processes;
+
+        base-branch-changed(t) => { root.settings-base-branch-changed(t); }
+        locale-changed(locale) => { root.locale-changed(locale); }
+        permission-mode-changed(mode) => { root.permission-mode-changed(mode); }
+        add-quick-action => { root.add-quick-action(); }
+        delete-quick-action(id) => { root.delete-quick-action(id); }
+        update-quick-action(id, name, kind, body) => {
+            root.update-quick-action(id, name, kind, body);
+        }
+        refresh-processes => { root.refresh-processes(); }
+        process-kill(pid) => { root.process-kill(pid); }
+        process-force-kill(pid) => { root.process-force-kill(pid); }
+        stop-all-sessions => { root.stop-all-sessions(); }
+        kill-all-processes => { root.kill-all-processes(); }
+        go-back => { root.active-page = "home"; }
+    }
+
+    // Polish 25 + 31 — stacking toast notifications (Sonner-style).
+    // Newest toast at the bottom, older ones slide upward. Each item
+    // in `toast-items` is rendered independently; the `alive` field
+    // drives per-toast fade-out before removal from the model.
+    for toast-entry[idx] in root.toast-items: Toast {
+        x: parent.width - self.width - 16px;
+        y: parent.height - status-bar-h - (self.height + 8px) * (root.toast-items.length - idx) - 4px;
+        width: 340px;
+        message: toast-entry.message;
+        kind: toast-entry.kind;
+        visible-toast: toast-entry.alive;
+        animate y { duration: 220ms; easing: ease-out; }
     }
 
     // ── New Project modal overlay (Polish 8 / 32) ───────────────────────
@@ -567,27 +578,6 @@ export component MainWindow inherits Window {
         browse-repo => { root.pick-new-project-repo-path(); }
         repo-path-changed(t) => { root.new-project-repo-path-changed(t); }
         submit => { root.create-project(); }
-    }
-
-    // ── Settings modal overlay ──────────────────────────────────────────
-    SettingsModal {
-        x: 0; y: 0;
-        width: parent.width;
-        height: parent.height;
-        open <=> root.settings-open;
-        default-base-branch <=> root.settings-default-base-branch;
-        quick-actions: root.settings-quick-actions;
-        processes: root.settings-processes;
-
-        base-branch-changed(t) => { root.settings-base-branch-changed(t); }
-        add-quick-action => { root.add-quick-action(); }
-        delete-quick-action(id) => { root.delete-quick-action(id); }
-        update-quick-action(id, name, kind, body) => {
-            root.update-quick-action(id, name, kind, body);
-        }
-        refresh-processes => { root.refresh-processes(); }
-        process-kill(pid) => { root.process-kill(pid); }
-        process-force-kill(pid) => { root.process-force-kill(pid); }
     }
 
     // ── Keyboard shortcuts overlay (Polish 26 + 32) ─────────────────────
@@ -624,5 +614,19 @@ export component MainWindow inherits Window {
         close-others(id) => { root.close-other-task-tabs(id); }
         close-right-of(id) => { root.close-task-tabs-right-of(id); }
         close-all => { root.close-all-task-tabs(); }
+    }
+
+    // ── Card right-click context menu ───────────────────────────────────
+    CardContextMenu {
+        x: 0; y: 0;
+        width: parent.width;
+        height: parent.height;
+        open <=> root.card-menu-open;
+        target-id <=> root.card-menu-target-id;
+        anchor-x <=> root.card-menu-x;
+        anchor-y <=> root.card-menu-y;
+        target-has-session: root.card-menu-target-has-session;
+        stop-task-session(id) => { root.card-stop-session(id); }
+        delete-card(id) => { root.card-delete(id); }
     }
 }

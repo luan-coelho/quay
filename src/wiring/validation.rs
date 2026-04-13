@@ -23,8 +23,9 @@ use std::path::Path;
 
 use validator::{Validate, ValidationError};
 
-/// Form backing the "New Task" modal (Cmd+N).
+/// Form backing the "New Task" modal (Cmd+N). Retained for test coverage.
 #[derive(Debug, Validate)]
+#[allow(dead_code)]
 pub struct NewTaskForm {
     #[validate(length(min = 1, message = "Title is required"))]
     pub title: String,

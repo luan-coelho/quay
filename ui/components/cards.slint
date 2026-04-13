@@ -17,10 +17,9 @@ export component CardRow inherits Rectangle {
     // CardRow instance forwards `root.spinner-glyph` here.
     in property <string> spinner-glyph;
     callback clicked();
-    // NOTE: `move-back` / `move-forward` callbacks were removed with
-    // the chevron arrows — task state transitions will be handled
-    // automatically by the system (session events → column promotion)
-    // in a future iteration, not through manual per-row controls.
+    // Right-click context menu. Carries the cursor's absolute window
+    // coordinates so the parent can anchor the dropdown at the cursor.
+    callback right-clicked(length, length);
 
     height: 30px;
     background: selected ? Tokens.secondary
@@ -50,7 +49,18 @@ export component CardRow inherits Rectangle {
         animate width { duration: 140ms; easing: ease-out; }
     }
 
-    ta := TouchArea { clicked => { root.clicked(); } }
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+        pointer-event(event) => {
+            if (event.button == PointerEventButton.right
+                && event.kind == PointerEventKind.down) {
+                root.right-clicked(
+                    self.absolute-position.x + self.mouse-x,
+                    self.absolute-position.y + self.mouse-y
+                );
+            }
+        }
+    }
 
     HorizontalLayout {
         padding-left: Tokens.space-3;
@@ -165,12 +175,8 @@ export component CardRow inherits Rectangle {
             }
         }
 
-        // Polish 22: status indicator. Spinner when busy, otherwise
-        // the existing static dot (green if running, hollow if idle).
-        // Sits flush next to the KindChip cluster — manual move
-        // arrows used to live to the right of this dot but were
-        // removed in favor of a future automatic system that will
-        // promote tasks between columns based on session events.
+        // Status indicator: spinner when agent/CLI is busy,
+        // green dot when awaiting user interaction, hollow otherwise.
         VerticalLayout {
             alignment: center;
             if task.session-state == "busy": Spinner {
@@ -178,13 +184,21 @@ export component CardRow inherits Rectangle {
                 glyph-color: Tokens.kind-feature;
                 size: 10px;
             }
-            if task.session-state != "busy": Rectangle {
+            if task.session-state == "awaiting": Rectangle {
                 width: 8px;
                 height: 8px;
                 border-radius: 4px;
-                background: task.running ? Tokens.kind-enhancement : transparent;
+                background: Tokens.kind-enhancement;
                 border-width: 1px;
-                border-color: task.running ? Tokens.kind-enhancement : Tokens.border;
+                border-color: Tokens.kind-enhancement;
+            }
+            if task.session-state != "busy" && task.session-state != "awaiting": Rectangle {
+                width: 8px;
+                height: 8px;
+                border-radius: 4px;
+                background: transparent;
+                border-width: 1px;
+                border-color: Tokens.border;
             }
         }
     }

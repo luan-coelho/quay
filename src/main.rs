@@ -1,11 +1,16 @@
 //! Quay — cross-platform native workspace for orchestrating AI coding agent sessions.
 
+#[macro_use]
+extern crate rust_i18n;
+rust_i18n::i18n!("locales", fallback = "en");
+
 mod agents;
 mod app;
 mod editor;
 mod file_tree;
 mod git;
 mod hotkeys;
+mod i18n;
 mod kanban;
 mod persistence;
 mod process;
@@ -21,7 +26,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use anyhow::Result;
-use slint::{ComponentHandle, Image, ModelRc, SharedString, Timer, TimerMode, VecModel};
+use slint::{ComponentHandle, Image, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 use std::cell::RefCell;
 
@@ -83,6 +88,21 @@ fn main() -> Result<()> {
         let settings_store = crate::settings::Settings::new(&state.db.conn);
         settings_store.seed_defaults_if_empty()?;
     }
+    // i18n: initialise locale from user preference or system locale.
+    {
+        let settings_store = crate::settings::Settings::new(&state.db.conn);
+        i18n::init_locale(&settings_store);
+    }
+
+    // Reset stale session states on startup. When the app closed,
+    // any running PTY processes died, so tasks stuck in "busy" or
+    // "awaiting" should be marked "exited" and have their PID cleared.
+    {
+        let reset_count = state.reset_stale_sessions();
+        if reset_count > 0 {
+            tracing::info!(count = reset_count, "reset stale session states to exited");
+        }
+    }
 
     // Prune stale worktree metadata on startup. Best-effort: if `git`
     // is not installed or a repo_path is invalid, we log and continue.
@@ -103,6 +123,32 @@ fn main() -> Result<()> {
         }
     }
 
+    // Restore the active project filter from persisted settings so the
+    // user's project context survives restarts.
+    {
+        let settings = crate::settings::Settings::new(&state.db.conn);
+        let persisted_project = settings
+            .get(crate::settings::KEY_ACTIVE_PROJECT)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        if !persisted_project.is_empty() {
+            // Validate the project still exists before restoring.
+            let project_exists = uuid::Uuid::parse_str(&persisted_project)
+                .ok()
+                .and_then(|id| state.project_store().get(id).ok().flatten())
+                .is_some();
+            if project_exists {
+                window.set_active_project_id(SharedString::from(persisted_project.as_str()));
+                tracing::info!(project_id = %persisted_project, "restored active project filter");
+            } else {
+                // Stale project id — clear it.
+                let _ = settings.set(crate::settings::KEY_ACTIVE_PROJECT, "");
+                tracing::info!("cleared stale active project filter");
+            }
+        }
+    }
+
     // Initial blank framebuffer.
     window.set_frame(Image::from_rgba8_premultiplied(
         state.framebuffer.borrow().buffer.clone(),
@@ -111,9 +157,7 @@ fn main() -> Result<()> {
     window.set_active_task_display("".into());
     window.set_active_task_title("".into());
     window.set_active_task_description("".into());
-    window.set_active_task_instructions("".into());
     window.set_active_task_session_state("idle".into());
-    window.set_active_task_agent("claude".into());
     window.set_active_task_tokens_text("".into());
     window.set_active_task_cost_text("".into());
     window.set_active_task_runtime_text("".into());
@@ -126,19 +170,18 @@ fn main() -> Result<()> {
     // submenu rows pass the literal `"submenu"` in `shortcut` so the
     // slint side renders a Lucide chevron in that slot.
     let menu_model = Rc::new(VecModel::<MenuItemData>::default());
-    for item in [
-        ("new-task",      "",  "New CLI Session", "⌘N"),
-        ("new-terminal",  "",  "New Terminal",    "⌘T"),
-        ("quick-action",  "",  "Quick Action",    "submenu"),
-        ("configure",     "",  "Configure",       ""),
-        ("sessions",      "",  "Sessions",        ""),
-        ("worktrees",     "",  "Worktrees",       ""),
+    for (id, glyph, label, shortcut) in [
+        ("new-task",      "",  t!("menu.new_cli_session").to_string(), "".to_string()),
+        ("quick-action",  "",  t!("menu.quick_action").to_string(),    "submenu".to_string()),
+        ("configure",     "",  t!("menu.configure").to_string(),       "".to_string()),
+        ("sessions",      "",  t!("menu.sessions").to_string(),        "".to_string()),
+        ("worktrees",     "",  t!("menu.worktrees").to_string(),       "".to_string()),
     ] {
         menu_model.push(MenuItemData {
-            id: item.0.into(),
-            glyph: item.1.into(),
-            label: item.2.into(),
-            shortcut: item.3.into(),
+            id: id.into(),
+            glyph: glyph.into(),
+            label: SharedString::from(label),
+            shortcut: SharedString::from(shortcut),
         });
     }
     window.set_menu_items(ModelRc::from(menu_model));
@@ -153,7 +196,7 @@ fn main() -> Result<()> {
         let project_store = state.project_store();
         if project_store.list_all().map(|v| v.is_empty()).unwrap_or(false) {
             let _ = project_store.insert(&crate::kanban::Project::new(
-                "Home",
+                t!("projects.default_home").to_string(),
                 state.default_cwd.clone(),
                 "main",
             ));
@@ -242,29 +285,30 @@ fn main() -> Result<()> {
     window.set_file_entries(ModelRc::from(file_entries_model.clone()));
     window.set_file_current_dir("".into());
 
-    // Phase 7 editor state. A single shared `EditorBuffer` is opened on
-    // demand when the user clicks a text file in the Files tab.
-    let editor_buffer: Rc<RefCell<Option<EditorBuffer>>> = Rc::new(RefCell::new(None));
-    window.set_editor_open(false);
-    window.set_editor_file_path("".into());
-    window.set_editor_file_content("".into());
-    window.set_editor_file_dirty(false);
-    window.set_editor_syntax_name("Plain Text".into());
-    // Polish 5: coloured preview model for the syntect view.
-    let editor_lines_model = Rc::new(VecModel::<HighlightedLineData>::default());
-    window.set_editor_highlighted_lines(ModelRc::from(editor_lines_model.clone()));
-    window.set_editor_line_count(0);
+    // Read-only file viewer state. A single shared `EditorBuffer` is
+    // opened on demand when the user clicks a text file in the Files tab.
+    // The buffer is used only for syntax detection + highlighting, not
+    // for editing.
+    let viewer_buffer: Rc<RefCell<Option<EditorBuffer>>> = Rc::new(RefCell::new(None));
+    window.set_viewer_open(false);
+    window.set_viewer_file_path("".into());
+    window.set_viewer_syntax_name("Plain Text".into());
+    let viewer_lines_model = Rc::new(VecModel::<HighlightedLineData>::default());
+    window.set_viewer_highlighted_lines(ModelRc::from(viewer_lines_model.clone()));
+    window.set_viewer_line_count(0);
 
     // Settings modal state — initial values loaded from SQLite.
     let settings_qa_model = Rc::new(VecModel::<QuickActionRowData>::default());
     let settings_proc_model = Rc::new(VecModel::<ProcessRowData>::default());
     window.set_settings_quick_actions(ModelRc::from(settings_qa_model.clone()));
     window.set_settings_processes(ModelRc::from(settings_proc_model.clone()));
-    window.set_settings_open(false);
+    // Settings is a dedicated page (active-page == "settings"), not a right-pane tab.
     {
         let settings = crate::settings::Settings::new(&state.db.conn);
         let base_branch = settings.get_or(crate::settings::KEY_DEFAULT_BASE_BRANCH, "main");
         window.set_settings_default_base_branch(base_branch.into());
+        let perm_mode = settings.get_or(crate::settings::KEY_PERMISSION_MODE, "acceptEdits");
+        window.set_current_permission_mode(perm_mode.into());
     }
     {
         let label_store = state.label_store();
@@ -274,41 +318,71 @@ fn main() -> Result<()> {
         }
     }
 
-    // Polish 25: notification toast helper. Wrapped in `Rc<dyn Fn>`
-    // so it can be cloned into the many callback closures that need
-    // to surface errors. A monotonic generation counter cancels
-    // older auto-dismiss timers when a newer toast lands.
-    let toast_generation: Rc<std::cell::Cell<u32>> = Rc::new(std::cell::Cell::new(0));
+    // Polish 25: stacking toast notifications (Sonner-style). Each
+    // toast is pushed into a VecModel<ToastData>, rendered by a `for`
+    // loop in Slint. Individual timers handle auto-dismiss: first
+    // setting `alive = false` (fade-out animation), then removing the
+    // entry from the model after the animation completes. Max 5
+    // simultaneous toasts — oldest evicted when the cap is reached.
+    let toast_model: Rc<VecModel<ToastData>> = Rc::new(VecModel::default());
+    window.set_toast_items(ModelRc::from(toast_model.clone()));
+    let toast_counter: Rc<std::cell::Cell<i32>> = Rc::new(std::cell::Cell::new(0));
     let show_toast: Rc<crate::wiring::context::ToastFn> = {
-        let weak = window.as_weak();
-        let gen_cell = toast_generation.clone();
+        let model = toast_model.clone();
+        let counter = toast_counter.clone();
         Rc::new(move |kind: &str, msg: String| {
-            let Some(window) = weak.upgrade() else { return };
-            let my_gen = gen_cell.get().wrapping_add(1);
-            gen_cell.set(my_gen);
-            window.set_toast_kind(SharedString::from(kind));
-            window.set_toast_message(msg.into());
-            window.set_toast_visible(true);
-            // Schedule auto-dismiss after 3.2 s. We leak the Timer so
-            // it survives this closure call — Slint's runtime cleans
-            // up dropped timers itself, but the safest pattern here
-            // is to keep one strong reference alive via mem::forget.
-            let dismiss_weak = weak.clone();
-            let dismiss_gen = gen_cell.clone();
-            let timer = Box::new(Timer::default());
-            timer.start(
+            let id = counter.get().wrapping_add(1);
+            counter.set(id);
+            // Cap at 5 visible toasts — evict oldest (index 0).
+            const MAX_TOASTS: usize = 5;
+            while model.row_count() >= MAX_TOASTS {
+                model.remove(0);
+            }
+            model.push(ToastData {
+                id,
+                message: msg.into(),
+                kind: SharedString::from(kind),
+                alive: true,
+            });
+            // Auto-dismiss: after 3.2 s set alive=false (fade-out),
+            // then remove from model after 250 ms (animation duration).
+            let fade_model = model.clone();
+            let fade_timer = Box::new(Timer::default());
+            fade_timer.start(
                 TimerMode::SingleShot,
-                Duration::from_millis(3200),
+                Duration::from_millis(5000),
                 move || {
-                    if dismiss_gen.get() == my_gen
-                        && let Some(w) = dismiss_weak.upgrade()
-                    {
-                        w.set_toast_visible(false);
+                    // Find this toast by id and set alive = false.
+                    for i in 0..fade_model.row_count() {
+                        if let Some(mut item) = fade_model.row_data(i)
+                            && item.id == id
+                        {
+                            item.alive = false;
+                            fade_model.set_row_data(i, item);
+                            // Schedule actual removal after fade-out.
+                            let remove_model = fade_model.clone();
+                            let remove_timer = Box::new(Timer::default());
+                            remove_timer.start(
+                                TimerMode::SingleShot,
+                                Duration::from_millis(250),
+                                move || {
+                                    for j in 0..remove_model.row_count() {
+                                        if let Some(entry) = remove_model.row_data(j)
+                                            && entry.id == id
+                                        {
+                                            remove_model.remove(j);
+                                            break;
+                                        }
+                                    }
+                                },
+                            );
+                            Box::leak(remove_timer);
+                            break;
+                        }
                     }
                 },
             );
-            // Outlive the closure call.
-            Box::leak(timer);
+            Box::leak(fade_timer);
         })
     };
 
@@ -424,12 +498,13 @@ fn main() -> Result<()> {
     // Phase 5 Settings modal: toggle, Quick Actions CRUD, base branch,
     // Process Manager.
     crate::wiring::settings_callbacks::wire(&window, &ctx);
-    // Phase 6 / 7 — file tree click + inline editor save/close.
+    // File tree click + read-only viewer open/close + keyboard nav.
     crate::wiring::editor_callbacks::wire(
         &window,
         &ctx,
-        editor_buffer.clone(),
-        editor_lines_model.clone(),
+        viewer_buffer.clone(),
+        viewer_lines_model.clone(),
+        file_entries_model.clone(),
     );
     // Polish 6 + 18 key dispatcher — delegates to `classify_hotkey`.
     crate::wiring::hotkey_callbacks::wire(&window, &ctx);
@@ -514,7 +589,21 @@ fn main() -> Result<()> {
                         window.set_spinner_glyph(SPINNER_GLYPHS[i].into());
                     }
                 }
-                if state.poll_all_sessions() && state.blit_active()
+                // Sync active_tab_is_bare from the Slint UI state.
+                // Detect tab changes to force a re-blit so the correct
+                // session (agent vs. bare) renders without waiting for
+                // new PTY bytes.
+                let mut tab_changed = false;
+                if let Some(w) = weak.upgrade() {
+                    let is_bare = w.get_active_right_tab() == "bare-terminal";
+                    let was_bare = state.active_tab_is_bare.get();
+                    if is_bare != was_bare {
+                        state.active_tab_is_bare.set(is_bare);
+                        tab_changed = true;
+                    }
+                }
+                let polled = state.poll_all_sessions();
+                if (polled || tab_changed) && state.blit_active()
                     && let Some(window) = weak.upgrade()
                 {
                     window.set_frame(Image::from_rgba8_premultiplied(
@@ -529,7 +618,7 @@ fn main() -> Result<()> {
                     let exited = state.check_exited_sessions();
                     if !exited.is_empty() {
                         for (_, title) in &exited {
-                            toast("info", format!("Session finished: {title}"));
+                            toast("info", t!("sessions.finished", title = title.as_str()).to_string());
                         }
                         // Update the active task's session state on the
                         // window if it was one of the exited ones.
@@ -682,6 +771,7 @@ fn main() -> Result<()> {
     {
         let weak = window.as_weak();
         let state = state.clone();
+        let refresh_kanban = refresh_kanban.clone();
         stats_refresh_timer.start(
             TimerMode::Repeated,
             Duration::from_secs(2),
@@ -729,6 +819,25 @@ fn main() -> Result<()> {
                 window
                     .set_active_task_runtime_text(format_runtime(stats.runtime_secs.unwrap_or(0)).into());
                 window.set_active_task_message_count(stats.message_count as i32);
+
+                // Auto-rename: if the task still has the auto-generated
+                // title, read the first user prompt from the JSONL and
+                // use it as the new title.
+                let is_auto_title = task.title.starts_with("New task ")
+                    || task.title.starts_with("Nova tarefa ")
+                    || task.title.starts_with("Terminal ");
+                if is_auto_title
+                    && let Some(prompt) = crate::agents::claude_stats::read_first_prompt(&jsonl_path, 80)
+                {
+                    let store = state.task_store();
+                    if let Ok(Some(mut t)) = store.get(active_id) {
+                        t.title = prompt.clone();
+                        t.updated_at = crate::kanban::unix_millis_now();
+                        let _ = store.update(&t);
+                        window.set_active_task_title(prompt.into());
+                        refresh_kanban();
+                    }
+                }
             },
         );
     }

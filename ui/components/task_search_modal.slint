@@ -44,7 +44,7 @@ export component TaskSearchModal inherits Rectangle {
             // Search input.
             Input {
                 text: root.query;
-                placeholder: "Type to search tasks…";
+                placeholder: @tr("Type to search tasks…");
                 edited(new-text) => {
                     root.query = new-text;
                     root.query-changed(new-text);
@@ -65,7 +65,7 @@ export component TaskSearchModal inherits Rectangle {
                         spacing: Tokens.space-1 + 2px;
                         alignment: start;
                         Text {
-                            text: "No matches";
+                            text: @tr("No matches");
                             color: Tokens.muted-foreground;
                             font-size: Tokens.text-base;
                             horizontal-alignment: center;
@@ -110,7 +110,7 @@ export component TaskSearchModal inherits Rectangle {
             }
 
             Text {
-                text: "Esc to dismiss · click a result to open";
+                text: @tr("Esc to dismiss · click a result to open");
                 color: Tokens.muted-foreground;
                 font-size: Tokens.text-xs;
                 horizontal-alignment: center;

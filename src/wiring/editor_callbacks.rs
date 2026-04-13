@@ -1,43 +1,41 @@
-//! Phase 6 / Polish 17 — file tree click handler plus Phase 7 inline
-//! editor (content changed / save / close). Grouped together because
-//! the file tree click either opens a file inside the editor or
-//! toggles a directory's expansion state, so the two are one cohesive
-//! piece of UX.
+//! File tree click handler + read-only file viewer (open / close) +
+//! keyboard navigation (activate-focused). Clicking a directory toggles
+//! its expansion state; clicking a file opens the syntect-coloured
+//! read-only viewer. Binary or oversized files fall back to `$EDITOR`.
 
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use slint::{ComponentHandle, SharedString, VecModel};
+use slint::{ComponentHandle, Model, SharedString, VecModel};
 
 use crate::editor::EditorBuffer;
 use crate::wiring::context::WiringContext;
 use crate::wiring::helpers::{is_likely_binary, rebuild_editor_highlight};
-use crate::{HighlightedLineData, MainWindow};
+use crate::{FileEntryData, HighlightedLineData, MainWindow};
 
 pub fn wire(
     window: &MainWindow,
     ctx: &WiringContext,
-    editor_buffer: Rc<RefCell<Option<EditorBuffer>>>,
-    editor_lines_model: Rc<VecModel<HighlightedLineData>>,
+    viewer_buffer: Rc<RefCell<Option<EditorBuffer>>>,
+    viewer_lines_model: Rc<VecModel<HighlightedLineData>>,
+    file_entries_model: Rc<VecModel<FileEntryData>>,
 ) {
-    wire_file_entry_clicked(window, ctx, editor_buffer.clone(), editor_lines_model.clone());
-    wire_editor_content_changed(window, editor_buffer.clone());
-    wire_editor_save(window, ctx, editor_buffer.clone(), editor_lines_model.clone());
-    wire_editor_close(window, editor_buffer);
+    wire_file_entry_clicked(window, ctx, viewer_buffer.clone(), viewer_lines_model.clone());
+    wire_viewer_close(window, viewer_buffer);
+    wire_activate_focused(window, file_entries_model);
 }
 
 /// Click handler for file tree entries.
-/// Polish 17:
 /// - Directory → toggle its presence in `state.expanded_dirs` and
 ///   rebuild the flattened tree model.
-/// - File → try to open inline in the editor. If the file is binary
-///   or too large (>1 MB), fall back to `$EDITOR`.
+/// - File → open read-only in the syntect-coloured viewer. If the
+///   file is binary or too large (>1 MB), fall back to `$EDITOR`.
 fn wire_file_entry_clicked(
     window: &MainWindow,
     ctx: &WiringContext,
-    editor_buffer: Rc<RefCell<Option<EditorBuffer>>>,
-    editor_lines_model: Rc<VecModel<HighlightedLineData>>,
+    viewer_buffer: Rc<RefCell<Option<EditorBuffer>>>,
+    viewer_lines_model: Rc<VecModel<HighlightedLineData>>,
 ) {
     let state = ctx.state.clone();
     let refresh = ctx.refresh_files.clone();
@@ -65,18 +63,15 @@ fn wire_file_entry_clicked(
                     match EditorBuffer::open(&path) {
                         Ok(buf) => {
                             if let Some(w) = weak.upgrade() {
-                                w.set_editor_file_path(
+                                w.set_viewer_file_path(
                                     path.to_string_lossy().into_owned().into(),
                                 );
-                                w.set_editor_file_content(buf.rope.to_string().into());
-                                w.set_editor_syntax_name(buf.syntax_name.clone().into());
-                                w.set_editor_file_dirty(false);
-                                w.set_editor_line_count(buf.line_count() as i32);
-                                w.set_editor_open(true);
+                                w.set_viewer_syntax_name(buf.syntax_name.clone().into());
+                                w.set_viewer_line_count(buf.line_count() as i32);
+                                w.set_viewer_open(true);
                             }
-                            // Polish 5: populate the coloured preview.
-                            rebuild_editor_highlight(&buf, &editor_lines_model);
-                            *editor_buffer.borrow_mut() = Some(buf);
+                            rebuild_editor_highlight(&buf, &viewer_lines_model);
+                            *viewer_buffer.borrow_mut() = Some(buf);
                             return;
                         }
                         Err(err) => {
@@ -96,72 +91,40 @@ fn wire_file_entry_clicked(
     });
 }
 
-/// Editor — content changed live, tracks dirty flag.
-fn wire_editor_content_changed(
+/// Viewer close — clears the buffer and resets all viewer Slint
+/// properties so the Files tab returns to the directory listing.
+fn wire_viewer_close(
     window: &MainWindow,
-    editor_buffer: Rc<RefCell<Option<EditorBuffer>>>,
+    viewer_buffer: Rc<RefCell<Option<EditorBuffer>>>,
 ) {
     let weak = window.as_weak();
-    window.on_editor_content_changed(move |new_text| {
-        if let Some(buf) = editor_buffer.borrow_mut().as_mut() {
-            buf.replace_all(new_text.as_str());
-            if let Some(w) = weak.upgrade() {
-                w.set_editor_file_dirty(buf.dirty);
-            }
-        }
-    });
-}
-
-/// Editor — save. On success, rebuilds the coloured preview so it
-/// reflects the on-disk state; on failure surfaces via toast.
-fn wire_editor_save(
-    window: &MainWindow,
-    ctx: &WiringContext,
-    editor_buffer: Rc<RefCell<Option<EditorBuffer>>>,
-    editor_lines_model: Rc<VecModel<HighlightedLineData>>,
-) {
-    let weak = window.as_weak();
-    let toast = ctx.show_toast.clone();
-    window.on_editor_save(move || {
-        let mut borrow = editor_buffer.borrow_mut();
-        let Some(buf) = borrow.as_mut() else { return };
-        match buf.save() {
-            Ok(()) => {
-                if let Some(w) = weak.upgrade() {
-                    w.set_editor_file_dirty(false);
-                    w.set_editor_line_count(buf.line_count() as i32);
-                }
-                // Polish 5: refresh the coloured preview to reflect
-                // the on-disk state.
-                rebuild_editor_highlight(buf, &editor_lines_model);
-                tracing::info!(
-                    path = %buf.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default(),
-                    "editor save ok"
-                );
-                toast("success", "File saved".to_string());
-            }
-            Err(err) => {
-                tracing::warn!(%err, "editor save failed");
-                toast("error", format!("Save failed: {err}"));
-            }
-        }
-    });
-}
-
-/// Editor — close. Clears the buffer and all editor Slint properties
-/// so the Files tab returns to the directory listing view.
-fn wire_editor_close(
-    window: &MainWindow,
-    editor_buffer: Rc<RefCell<Option<EditorBuffer>>>,
-) {
-    let weak = window.as_weak();
-    window.on_editor_close(move || {
-        *editor_buffer.borrow_mut() = None;
+    window.on_viewer_close(move || {
+        *viewer_buffer.borrow_mut() = None;
         if let Some(w) = weak.upgrade() {
-            w.set_editor_open(false);
-            w.set_editor_file_path(SharedString::from(""));
-            w.set_editor_file_content(SharedString::from(""));
-            w.set_editor_file_dirty(false);
+            w.set_viewer_open(false);
+            w.set_viewer_file_path(SharedString::from(""));
+        }
+    });
+}
+
+/// Keyboard navigation — when the user presses Enter on a focused row
+/// in the file tree, this looks up the entry at the given index in the
+/// model and fires the same logic as a mouse click (toggle directory
+/// or open file via `file-entry-clicked`).
+fn wire_activate_focused(
+    window: &MainWindow,
+    file_entries_model: Rc<VecModel<FileEntryData>>,
+) {
+    let weak = window.as_weak();
+    window.on_activate_focused(move |idx| {
+        let idx = idx as usize;
+        if idx >= file_entries_model.row_count() {
+            return;
+        }
+        let entry = file_entries_model.row_data(idx);
+        let Some(entry) = entry else { return };
+        if let Some(w) = weak.upgrade() {
+            w.invoke_file_entry_clicked(entry.path, entry.kind);
         }
     });
 }

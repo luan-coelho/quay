@@ -38,16 +38,38 @@ export component Sidebar inherits Rectangle {
         padding-top: Tokens.space-3;
         spacing: Tokens.space-4;
 
-        // Collapse/expand toggle — shadcn `SidebarTrigger` pattern.
-        // Rendered inside the sidebar itself (not in the window title
-        // bar) because the title bar is now owned by the OS chrome.
-        // Icon flips between `PanelLeftClose` (when expanded → click
-        // to collapse) and `PanelLeftOpen` (when collapsed → click
-        // to expand) so the affordance is immediately readable.
+        // Sidebar header — app logo + name + collapse toggle.
         HorizontalLayout {
             height: 28px;
-            alignment: root.collapsed ? center : end;
+            alignment: root.collapsed ? center : stretch;
+            padding-left: root.collapsed ? 0px : Tokens.space-3;
             padding-right: root.collapsed ? 0px : Tokens.space-1;
+            spacing: Tokens.space-2;
+
+            if !root.collapsed: HorizontalLayout {
+                horizontal-stretch: 1;
+                spacing: Tokens.space-2;
+                alignment: start;
+
+                VerticalLayout {
+                    alignment: center;
+                    LucideIcon {
+                        icon: IconSet.Layers;
+                        size: 16px;
+                        stroke: Tokens.foreground;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "Quay";
+                        color: Tokens.foreground;
+                        font-size: Tokens.text-sm;
+                        font-weight: Tokens.weight-semibold;
+                    }
+                }
+            }
+
             TouchArea {
                 width: 28px;
                 height: 28px;
@@ -110,7 +132,7 @@ export component Sidebar inherits Rectangle {
                     alignment: center;
                     horizontal-stretch: 1;
                     Text {
-                        text: "Projects";
+                        text: @tr("Projects");
                         color: Tokens.muted-foreground;
                         font-size: Tokens.text-sm;
                         font-weight: Tokens.weight-semibold;
@@ -176,7 +198,7 @@ export component Sidebar inherits Rectangle {
                             }
                         }
                         Text {
-                            text: "Worktrees";
+                            text: @tr("Worktrees");
                             color: Tokens.muted-foreground;
                             font-size: Tokens.text-sm;
                             font-weight: Tokens.weight-semibold;

@@ -43,6 +43,7 @@ impl AgentProvider for OpencodeProvider {
         _mode: StartMode,
         instructions: Option<&str>,
         _resume_id: Option<&str>,
+        _permission_mode: Option<&str>,
     ) -> Vec<String> {
         let mut argv = vec![self.binary.to_string_lossy().into_owned()];
         if let Some(prompt) = instructions
@@ -67,7 +68,7 @@ mod tests {
     #[test]
     fn plan_without_instructions() {
         let p = stub();
-        let argv = p.argv(StartMode::Plan, None, None);
+        let argv = p.argv(StartMode::Plan, None, None, None);
         assert_eq!(argv, vec!["/usr/local/bin/opencode".to_string()]);
     }
 
@@ -80,6 +81,7 @@ mod tests {
             StartMode::Implement,
             Some("Refactor the auth module"),
             Some("sess-xyz"),
+            None,
         );
         assert_eq!(
             argv,
@@ -95,9 +97,29 @@ mod tests {
         // The Strategy collapses modes — OpenCode has no Plan/Implement
         // distinction at the CLI level.
         let p = stub();
-        let plan = p.argv(StartMode::Plan, Some("Test"), None);
-        let implement = p.argv(StartMode::Implement, Some("Test"), None);
+        let plan = p.argv(StartMode::Plan, Some("Test"), None, None);
+        let implement = p.argv(StartMode::Implement, Some("Test"), None, None);
         assert_eq!(plan, implement);
+    }
+
+    #[test]
+    fn permission_mode_is_ignored() {
+        // OpenCode has no CLI-level permission controls. The permission_mode
+        // parameter must not leak into argv regardless of its value.
+        let p = stub();
+        let argv = p.argv(
+            StartMode::Implement,
+            Some("Test"),
+            None,
+            Some("bypassPermissions"),
+        );
+        assert_eq!(
+            argv,
+            vec![
+                "/usr/local/bin/opencode".to_string(),
+                "Test".to_string(),
+            ]
+        );
     }
 
     #[test]
@@ -127,7 +149,7 @@ mod tests {
         // Mirrors the claude_code edge case: empty string should not
         // append a stray empty positional argument to argv.
         let p = stub();
-        let argv = p.argv(StartMode::Plan, Some(""), None);
+        let argv = p.argv(StartMode::Plan, Some(""), None, None);
         assert_eq!(argv, vec!["/usr/local/bin/opencode".to_string()]);
     }
 }

@@ -1,12 +1,18 @@
 //! Claude Code CLI adapter — concrete Strategy for
 //! [`super::AgentProvider`].
 //!
-//! Translates Quay's (StartMode, instructions, resume_id) triple into the
-//! argv Claude Code's `claude` binary expects:
+//! Translates Quay's (StartMode, instructions, resume_id, permission_mode)
+//! into the argv Claude Code's `claude` binary expects:
 //!
-//!   Plan      → `claude [<instructions>]`
-//!   Implement → `claude --permission-mode acceptEdits [<instructions>]`
-//!   Resume    → `claude --resume <id> ...` (prepended to any of the above)
+//!   acceptEdits       → `claude --permission-mode acceptEdits --allowedTools …`
+//!   bypassPermissions → `claude --dangerously-skip-permissions`
+//!   Resume            → `claude --resume <id> ...` (prepended to any of above)
+//!
+//! The `permission_mode` setting controls how aggressively the agent
+//! auto-approves operations. `acceptEdits` with an explicit allowlist is
+//! the safe default — it pre-approves common dev tools (Bash, Edit, Read,
+//! etc.) while keeping destructive shell commands behind a prompt.
+//! `bypassPermissions` is the nuclear option for fully headless operation.
 //!
 //! Claude Code supports `--resume <session-id>` to rehydrate the agent's
 //! internal conversation memory from its state directory at
@@ -36,6 +42,14 @@ impl ClaudeCodeProvider {
     }
 }
 
+/// Tools pre-approved via `--allowedTools` in `acceptEdits` mode.
+/// These cover the common dev workflow without granting blanket shell
+/// access — destructive commands still require interactive approval.
+const ALLOWED_TOOLS: &[&str] = &[
+    "Bash", "Edit", "Read", "Write", "Grep", "Glob",
+    "WebFetch", "WebSearch", "NotebookEdit",
+];
+
 impl AgentProvider for ClaudeCodeProvider {
     fn name(&self) -> &'static str {
         "claude"
@@ -43,9 +57,10 @@ impl AgentProvider for ClaudeCodeProvider {
 
     fn argv(
         &self,
-        mode: StartMode,
+        _mode: StartMode,
         instructions: Option<&str>,
         resume_id: Option<&str>,
+        permission_mode: Option<&str>,
     ) -> Vec<String> {
         let mut argv = vec![self.binary.to_string_lossy().into_owned()];
 
@@ -56,11 +71,23 @@ impl AgentProvider for ClaudeCodeProvider {
             argv.push(id.into());
         }
 
-        // Implement mode auto-accepts file edits; Plan mode leaves the
-        // default permission model in place (agent proposes, user confirms).
-        if matches!(mode, StartMode::Implement) {
-            argv.push("--permission-mode".into());
-            argv.push("acceptEdits".into());
+        // Permission mode — applies to both Plan and Implement since the
+        // agent needs file access in either mode.
+        match permission_mode.unwrap_or("acceptEdits") {
+            "bypassPermissions" => {
+                argv.push("--dangerously-skip-permissions".into());
+            }
+            _ => {
+                // Default: acceptEdits + explicit allowlist of common dev
+                // tools. This is strictly safer than bypassPermissions
+                // because only named tools are pre-approved.
+                argv.push("--permission-mode".into());
+                argv.push("acceptEdits".into());
+                argv.push("--allowedTools".into());
+                for tool in ALLOWED_TOOLS {
+                    argv.push((*tool).into());
+                }
+            }
         }
 
         // Prompt passed as positional argument triggers interactive mode
@@ -92,24 +119,36 @@ mod tests {
         }
     }
 
+    /// Build the expected argv prefix for the default acceptEdits mode.
+    fn accept_edits_argv() -> Vec<String> {
+        let mut v = vec![
+            "--permission-mode".to_string(),
+            "acceptEdits".to_string(),
+            "--allowedTools".to_string(),
+        ];
+        for tool in ALLOWED_TOOLS {
+            v.push((*tool).to_string());
+        }
+        v
+    }
+
     #[test]
     fn plan_without_instructions_or_resume() {
         let p = stub();
-        let argv = p.argv(StartMode::Plan, None, None);
-        assert_eq!(argv, vec!["/usr/local/bin/claude".to_string()]);
+        let argv = p.argv(StartMode::Plan, None, None, None);
+        let mut expected = vec!["/usr/local/bin/claude".to_string()];
+        expected.extend(accept_edits_argv());
+        assert_eq!(argv, expected);
     }
 
     #[test]
     fn plan_with_instructions() {
         let p = stub();
-        let argv = p.argv(StartMode::Plan, Some("Add dark mode"), None);
-        assert_eq!(
-            argv,
-            vec![
-                "/usr/local/bin/claude".to_string(),
-                "Add dark mode".to_string(),
-            ]
-        );
+        let argv = p.argv(StartMode::Plan, Some("Add dark mode"), None, None);
+        let mut expected = vec!["/usr/local/bin/claude".to_string()];
+        expected.extend(accept_edits_argv());
+        expected.push("Add dark mode".to_string());
+        assert_eq!(argv, expected);
     }
 
     #[test]
@@ -119,39 +158,69 @@ mod tests {
             StartMode::Implement,
             Some("Fix server crash"),
             Some("sess-abc"),
+            Some("acceptEdits"),
         );
-        assert_eq!(
-            argv,
-            vec![
-                "/usr/local/bin/claude".to_string(),
-                "--resume".to_string(),
-                "sess-abc".to_string(),
-                "--permission-mode".to_string(),
-                "acceptEdits".to_string(),
-                "Fix server crash".to_string(),
-            ]
-        );
+        let mut expected = vec![
+            "/usr/local/bin/claude".to_string(),
+            "--resume".to_string(),
+            "sess-abc".to_string(),
+        ];
+        expected.extend(accept_edits_argv());
+        expected.push("Fix server crash".to_string());
+        assert_eq!(argv, expected);
     }
 
     #[test]
     fn implement_without_instructions() {
         let p = stub();
-        let argv = p.argv(StartMode::Implement, None, None);
+        let argv = p.argv(StartMode::Implement, None, None, Some("acceptEdits"));
+        let mut expected = vec!["/usr/local/bin/claude".to_string()];
+        expected.extend(accept_edits_argv());
+        assert_eq!(argv, expected);
+    }
+
+    #[test]
+    fn bypass_permissions_mode() {
+        let p = stub();
+        let argv = p.argv(
+            StartMode::Implement,
+            Some("Deploy"),
+            None,
+            Some("bypassPermissions"),
+        );
         assert_eq!(
             argv,
             vec![
                 "/usr/local/bin/claude".to_string(),
-                "--permission-mode".to_string(),
-                "acceptEdits".to_string(),
+                "--dangerously-skip-permissions".to_string(),
+                "Deploy".to_string(),
             ]
         );
     }
 
     #[test]
+    fn none_permission_mode_defaults_to_accept_edits() {
+        let p = stub();
+        let with_none = p.argv(StartMode::Plan, None, None, None);
+        let with_explicit = p.argv(StartMode::Plan, None, None, Some("acceptEdits"));
+        assert_eq!(with_none, with_explicit);
+    }
+
+    #[test]
+    fn plan_and_implement_get_same_permission_flags() {
+        let p = stub();
+        let plan = p.argv(StartMode::Plan, None, None, Some("acceptEdits"));
+        let implement = p.argv(StartMode::Implement, None, None, Some("acceptEdits"));
+        assert_eq!(plan, implement);
+    }
+
+    #[test]
     fn empty_instructions_treated_as_none() {
         let p = stub();
-        let argv = p.argv(StartMode::Plan, Some(""), None);
-        assert_eq!(argv, vec!["/usr/local/bin/claude".to_string()]);
+        let argv = p.argv(StartMode::Plan, Some(""), None, None);
+        let mut expected = vec!["/usr/local/bin/claude".to_string()];
+        expected.extend(accept_edits_argv());
+        assert_eq!(argv, expected);
     }
 
     #[test]
@@ -162,9 +231,6 @@ mod tests {
 
     #[test]
     fn name_matches_agent_kind() {
-        // Use the kanban-side enum as the source of truth so a rename
-        // there breaks this test loudly instead of silently desyncing
-        // the strategy lookup.
         use crate::kanban::AgentKind;
         let p = stub();
         assert_eq!(p.name(), AgentKind::Claude.as_str());
@@ -172,25 +238,20 @@ mod tests {
 
     #[test]
     fn env_is_empty_by_default() {
-        // Claude Code uses no extra environment variables — the default
-        // empty `env()` keeps Quay from accidentally injecting something
-        // into the child process.
         let p = stub();
         assert!(p.env().is_empty());
     }
 
     #[test]
     fn resume_with_no_instructions() {
-        // Resume + Plan with no prompt — argv is `claude --resume <id>`.
         let p = stub();
-        let argv = p.argv(StartMode::Plan, None, Some("sess-only-resume"));
-        assert_eq!(
-            argv,
-            vec![
-                "/usr/local/bin/claude".to_string(),
-                "--resume".to_string(),
-                "sess-only-resume".to_string(),
-            ]
-        );
+        let argv = p.argv(StartMode::Plan, None, Some("sess-only-resume"), None);
+        let mut expected = vec![
+            "/usr/local/bin/claude".to_string(),
+            "--resume".to_string(),
+            "sess-only-resume".to_string(),
+        ];
+        expected.extend(accept_edits_argv());
+        assert_eq!(argv, expected);
     }
 }

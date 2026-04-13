@@ -6,17 +6,22 @@
 import { IconSet } from "@lucide";
 import { Tokens } from "../tokens.slint";
 import { MenuItemData, ProjectData } from "../data.slint";
-import { LucideIcon } from "atoms.slint";
+import { LucideIcon, ShortcutKeys } from "atoms.slint";
 
 // Polish 41 — single row in the tab management dropdown menu.
-// Left: action label (full-width). Right: optional shortcut hint.
-// `enabled: bool` greys out + disables the click when the action
-// doesn't apply (e.g. "Close other tabs" with only 1 tab open).
+// Left: action label (full-width). Right: optional shortcut hint
+// rendered via Lucide icons for modifier keys.
 export component TabMenuRow inherits Rectangle {
     in property <string> label;
-    in property <string> shortcut;
+    in property <bool> cmd;
+    in property <bool> shift;
+    in property <bool> alt;
+    in property <bool> del;
+    in property <string> key;
     in property <bool> enabled: true;
     callback clicked();
+
+    property <color> hint-color: enabled ? Tokens.muted-foreground : rgba(163, 163, 163, 40%);
 
     height: 26px;
     border-radius: Tokens.radius-sm;
@@ -44,23 +49,28 @@ export component TabMenuRow inherits Rectangle {
                 vertical-alignment: center;
             }
         }
-        VerticalLayout {
+        if root.cmd || root.key != "": VerticalLayout {
             alignment: center;
-            Text {
-                text: shortcut;
-                color: enabled ? Tokens.muted-foreground : rgba(163, 163, 163, 40%);
-                font-size: Tokens.text-xs;
-                font-family: Tokens.font-mono;
-                vertical-alignment: center;
+            ShortcutKeys {
+                cmd: root.cmd;
+                shift: root.shift;
+                alt: root.alt;
+                del: root.del;
+                key: root.key;
+                icon-color: root.hint-color;
             }
         }
     }
 }
 
 // Polish 26 — single row in the keyboard shortcuts overlay.
-// Left: chip showing the key combo. Right: human description.
+// Left: chip showing the key combo via Lucide icons. Right: description.
 export component ShortcutRow inherits Rectangle {
-    in property <string> keys;
+    in property <bool> cmd;
+    in property <bool> shift;
+    in property <bool> alt;
+    in property <bool> del;
+    in property <string> key;
     in property <string> label;
 
     height: 22px;
@@ -77,15 +87,13 @@ export component ShortcutRow inherits Rectangle {
             border-width: 1px;
             border-color: Tokens.border;
             background: Tokens.secondary;
-            Text {
-                text: keys;
-                color: Tokens.foreground;
-                font-size: Tokens.text-xs;
-                font-family: Tokens.font-mono;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                width: parent.width;
-                height: parent.height;
+            ShortcutKeys {
+                cmd: root.cmd;
+                shift: root.shift;
+                alt: root.alt;
+                del: root.del;
+                key: root.key;
+                icon-color: Tokens.foreground;
             }
         }
         VerticalLayout {
@@ -111,7 +119,7 @@ export component MenuRow inherits Rectangle {
     // Polish 20 — when the shortcut slot carries the `submenu` sentinel
     // (set in `src/main.rs`), the row is acting as a submenu indicator
     // (e.g. Quick Action) and the slot renders a Lucide chevron instead
-    // of a `⌘N`-style hint.
+    // of a shortcut hint.
     property <bool> is-submenu: item.shortcut == "submenu";
 
     height: 26px;
@@ -126,7 +134,7 @@ export component MenuRow inherits Rectangle {
         padding-left: compact ? 0px : Tokens.space-3;
         padding-right: compact ? 0px : Tokens.space-3;
         spacing: Tokens.space-3;
-        alignment: compact ? center : start;
+        alignment: compact ? center : stretch;
 
         VerticalLayout {
             alignment: center;
@@ -134,7 +142,6 @@ export component MenuRow inherits Rectangle {
             // `MenuItemData` is no longer rendered — kept only as a
             // hint for accessibility / future tooling.
             if item.id == "new-task":     LucideIcon { icon: IconSet.MessageSquarePlus; size: 15px; }
-            if item.id == "new-terminal": LucideIcon { icon: IconSet.SquareTerminal;    size: 15px; }
             if item.id == "quick-action": LucideIcon { icon: IconSet.Zap;               size: 15px; }
             if item.id == "configure":    LucideIcon { icon: IconSet.Settings;          size: 15px; }
             if item.id == "sessions":     LucideIcon { icon: IconSet.List;              size: 15px; }
@@ -153,19 +160,15 @@ export component MenuRow inherits Rectangle {
         }
         if !compact: VerticalLayout {
             alignment: center;
-            // Submenu indicator → Lucide chevron. Plain shortcut hint
-            // (e.g. ⌘N) → text. Empty shortcut → nothing.
+            // Submenu indicator → Lucide chevron. Shortcut hints use
+            // Lucide icons for modifier keys (Cmd/Shift/Option/Delete).
             if is-submenu: LucideIcon {
                 icon: IconSet.ChevronRight;
                 size: 13px;
                 stroke: Tokens.muted-foreground;
             }
-            if !is-submenu: Text {
-                text: item.shortcut;
-                color: Tokens.muted-foreground;
-                font-size: Tokens.text-xs;
-                font-family: Tokens.font-mono;
-                vertical-alignment: center;
+            if !is-submenu && item.id == "new-task": ShortcutKeys {
+                cmd: true; key: "N";
             }
         }
     }
@@ -196,17 +199,9 @@ export component ProjectRow inherits Rectangle {
         alignment: compact ? center : start;
         VerticalLayout {
             alignment: center;
-            // In compact (collapsed sidebar) mode the row degenerates to
-            // a folder glyph; in expanded mode it's a chevron that flips
-            // when the project is selected.
-            if compact: LucideIcon {
+            LucideIcon {
                 icon: IconSet.Folder;
-                size: 14px;
-                stroke: root.selected ? Tokens.kind-feature : Tokens.muted-foreground;
-            }
-            if !compact: LucideIcon {
-                icon: root.selected ? IconSet.ChevronDown : IconSet.ChevronRight;
-                size: 12px;
+                size: compact ? 14px : 15px;
                 stroke: root.selected ? Tokens.kind-feature : Tokens.muted-foreground;
             }
         }
@@ -226,7 +221,14 @@ export component ProjectRow inherits Rectangle {
 export component FilterChip inherits Rectangle {
     in property <string> label;
     in property <bool> selected;
+    // "project" shows FolderGit2, "none" hides the icon, anything
+    // else (default) shows the original Diamond glyph.
+    in property <string> icon-kind: "default";
+    // Whether the chip shows a close (×) button. For project chips
+    // this allows removing the project.
+    in property <bool> closable: false;
     callback clicked();
+    callback close();
 
     // Tab-style chip — rounded TOP corners only so the bottom edge
     // sits flush against the divider line that runs underneath the
@@ -242,7 +244,6 @@ export component FilterChip inherits Rectangle {
     border-width: 1px;
     border-color: selected ? Tokens.ring : Tokens.border;
     background: selected ? Tokens.secondary : transparent;
-    // Polish 30 — smooth filter chip toggle.
     animate background { duration: 120ms; easing: ease-out; }
     animate border-color { duration: 120ms; easing: ease-out; }
 
@@ -253,11 +254,16 @@ export component FilterChip inherits Rectangle {
         padding-right: Tokens.space-2;
         spacing: Tokens.space-2 - 2px;
         alignment: center;
-        // Polish 23: kind glyph on the left of the label, matching
-        // the Lanes reference. Color is muted because filter chips
-        // aren't kinded. Rendered via Lucide Diamond for consistency
-        // with the other diamond indicators across the kanban.
-        VerticalLayout {
+        if root.icon-kind == "project": VerticalLayout {
+            alignment: center;
+            LucideIcon {
+                icon: IconSet.FolderGit2;
+                size: 10px;
+                stroke: Tokens.muted-foreground;
+                stroke-width: 2.5;
+            }
+        }
+        if root.icon-kind == "default": VerticalLayout {
             alignment: center;
             LucideIcon {
                 icon: IconSet.Diamond;
@@ -276,14 +282,22 @@ export component FilterChip inherits Rectangle {
                 vertical-alignment: center;
             }
         }
-        // Polish 23: × only renders when the chip is the active
-        // filter, removing visual noise from the inactive ones.
-        if root.selected: VerticalLayout {
+        // × renders when closable (project chips) or when selected
+        // (active filter toggle).
+        if root.closable || root.selected: VerticalLayout {
             alignment: center;
-            LucideIcon {
-                icon: IconSet.X;
-                size: 11px;
-                stroke: Tokens.muted-foreground;
+            TouchArea {
+                width: 14px;
+                height: 14px;
+                clicked => {
+                    if root.closable { root.close(); }
+                    else { root.clicked(); }
+                }
+                LucideIcon {
+                    icon: IconSet.X;
+                    size: 11px;
+                    stroke: parent.has-hover ? Tokens.foreground : Tokens.muted-foreground;
+                }
             }
         }
     }
@@ -340,9 +354,6 @@ export component RightTab inherits Rectangle {
     in property <bool> selected;
     callback clicked();
 
-    // Tab-style shape — rounded top, flat bottom — so the tab strip
-    // visually merges with the divider line beneath it (same pattern
-    // as FilterChip in the middle pane).
     height: 28px;
     width: row.preferred-width + 18px;
     border-top-left-radius: Tokens.radius-md;
@@ -365,11 +376,12 @@ export component RightTab inherits Rectangle {
 
         VerticalLayout {
             alignment: center;
-            if tab-kind == "terminal":   LucideIcon { icon: IconSet.Terminal;  size: 13px; stroke: selected ? Tokens.foreground : Tokens.muted-foreground; }
-            if tab-kind == "description":LucideIcon { icon: IconSet.FileText;  size: 13px; stroke: selected ? Tokens.foreground : Tokens.muted-foreground; }
-            if tab-kind == "git":        LucideIcon { icon: IconSet.GitBranch; size: 13px; stroke: selected ? Tokens.foreground : Tokens.muted-foreground; }
-            if tab-kind == "files":      LucideIcon { icon: IconSet.Folder;    size: 13px; stroke: selected ? Tokens.foreground : Tokens.muted-foreground; }
-            if tab-kind == "history":    LucideIcon { icon: IconSet.History;   size: 13px; stroke: selected ? Tokens.foreground : Tokens.muted-foreground; }
+            if tab-kind == "terminal":      LucideIcon { icon: IconSet.Terminal;      size: 13px; stroke: Tokens.kind-enhancement; }
+            if tab-kind == "bare-terminal":LucideIcon { icon: IconSet.SquareTerminal; size: 13px; stroke: selected ? Tokens.foreground : Tokens.muted-foreground; }
+            if tab-kind == "description":  LucideIcon { icon: IconSet.FileText;      size: 13px; stroke: selected ? Tokens.foreground : Tokens.muted-foreground; }
+            if tab-kind == "git":          LucideIcon { icon: IconSet.GitBranch;     size: 13px; stroke: selected ? Tokens.foreground : Tokens.muted-foreground; }
+            if tab-kind == "files":        LucideIcon { icon: IconSet.Folder;        size: 13px; stroke: selected ? Tokens.foreground : Tokens.muted-foreground; }
+            if tab-kind == "history":      LucideIcon { icon: IconSet.History;       size: 13px; stroke: selected ? Tokens.foreground : Tokens.muted-foreground; }
         }
         VerticalLayout {
             alignment: center;

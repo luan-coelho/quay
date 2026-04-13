@@ -28,7 +28,7 @@ fn wire_labels(window: &MainWindow, ctx: &WiringContext) {
             let store = state.label_store();
             if let Err(err) = store.attach(active_id, label_uuid) {
                 tracing::warn!(%err, "attach_label failed");
-                toast("error", format!("Attach label failed: {err}"));
+                toast("error", t!("labels.attach_failed", err = err.to_string()).to_string());
                 return;
             }
             refresh_panels();
@@ -46,7 +46,7 @@ fn wire_labels(window: &MainWindow, ctx: &WiringContext) {
             let store = state.label_store();
             if let Err(err) = store.detach(active_id, label_uuid) {
                 tracing::warn!(%err, "detach_label failed");
-                toast("error", format!("Detach label failed: {err}"));
+                toast("error", t!("labels.detach_failed", err = err.to_string()).to_string());
                 return;
             }
             refresh_panels();
@@ -70,13 +70,13 @@ fn wire_dependencies(window: &MainWindow, ctx: &WiringContext) {
             let store = state.dependency_store();
             match store.add(active_id, dep_uuid) {
                 Ok(()) => {
-                    toast("success", "Dependency added".to_string());
+                    toast("success", t!("dependencies.added").to_string());
                     refresh_panels();
                     refresh();
                 }
                 Err(err) => {
                     tracing::warn!(%err, "add_dependency rejected");
-                    toast("error", format!("Cannot add dependency: {err}"));
+                    toast("error", t!("dependencies.cannot_add", err = err.to_string()).to_string());
                 }
             }
         });
@@ -92,7 +92,7 @@ fn wire_dependencies(window: &MainWindow, ctx: &WiringContext) {
             let store = state.dependency_store();
             if let Err(err) = store.remove(active_id, dep_uuid) {
                 tracing::warn!(%err, "remove_dependency failed");
-                toast("error", format!("Remove dependency failed: {err}"));
+                toast("error", t!("dependencies.remove_failed", err = err.to_string()).to_string());
                 return;
             }
             refresh_panels();

@@ -10,17 +10,14 @@ export component HistoryPanel inherits Rectangle {
     in property <string> active-task-id;
 
     background: Tokens.card;
-    border-radius: Tokens.radius-md;
-    border-width: 1px;
-    border-color: Tokens.border;
 
     VerticalLayout {
-        padding: Tokens.space-3;
+        padding: 0px;
         spacing: Tokens.space-2;
 
         // Header row.
         Text {
-            text: "Session History";
+            text: @tr("Session History");
             color: Tokens.foreground;
             font-size: Tokens.text-base;
             font-weight: Tokens.weight-semibold;
@@ -28,7 +25,7 @@ export component HistoryPanel inherits Rectangle {
 
         // Empty state.
         if root.session-history.length == 0 && root.active-task-id != "": Text {
-            text: "No sessions recorded for this task yet.";
+            text: @tr("No sessions recorded for this task yet.");
             color: Tokens.muted-foreground;
             font-size: Tokens.text-sm;
             horizontal-alignment: center;
@@ -36,7 +33,7 @@ export component HistoryPanel inherits Rectangle {
         }
 
         if root.active-task-id == "": Text {
-            text: "Select a task to view its session history.";
+            text: @tr("Select a task to view its session history.");
             color: Tokens.muted-foreground;
             font-size: Tokens.text-sm;
             horizontal-alignment: center;
@@ -78,9 +75,9 @@ export component HistoryPanel inherits Rectangle {
                         VerticalLayout {
                             alignment: center;
                             Text {
-                                text: entry.agent-kind == "claude" ? "Claude"
-                                    : entry.agent-kind == "opencode" ? "OpenCode"
-                                    : "Terminal";
+                                text: entry.agent-kind == "claude" ? @tr("Claude")
+                                    : entry.agent-kind == "opencode" ? @tr("OpenCode")
+                                    : @tr("Terminal");
                                 color: Tokens.muted-foreground;
                                 font-size: Tokens.text-xs;
                                 font-family: Tokens.font-mono;
@@ -116,9 +113,9 @@ export component HistoryPanel inherits Rectangle {
                         VerticalLayout {
                             alignment: center;
                             Text {
-                                text: entry.exit-status == -1 ? "running"
-                                    : entry.exit-status == 0  ? "ok"
-                                    : "exit " + entry.exit-status;
+                                text: entry.exit-status == -1 ? @tr("running")
+                                    : entry.exit-status == 0  ? @tr("ok")
+                                    : @tr("exit") + " " + entry.exit-status;
                                 color: entry.exit-status == -1 ? Tokens.kind-enhancement
                                      : entry.exit-status == 0  ? Tokens.kind-done
                                      : Tokens.destructive;

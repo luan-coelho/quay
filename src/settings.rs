@@ -22,6 +22,11 @@ pub const KEY_THEME: &str = "theme";
 // Polish 34: persisted list of pinned task UUIDs (right-pane open
 // tabs strip). Stored as a JSON array of strings.
 pub const KEY_OPEN_TABS: &str = "open_tabs";
+pub const KEY_LOCALE: &str = "locale";
+// Persisted active project filter — UUID string of the selected
+// project in the sidebar. Empty string means no filter.
+pub const KEY_ACTIVE_PROJECT: &str = "active_project";
+pub const KEY_PERMISSION_MODE: &str = "permission_mode";
 
 impl<'a> Settings<'a> {
     pub fn new(conn: &'a Connection) -> Self {

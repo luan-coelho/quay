@@ -43,20 +43,27 @@ export component RightPane inherits Rectangle {
     // Tab strip.
     in-out property <string> active-right-tab;
 
-    // Terminal.
+    // Session terminal (agent CLI).
     in property <image> frame;
     callback terminal-key-pressed(string, bool, bool, bool, bool);
-    public function focus-terminal() { terminal.focus-input(); }
+    public function focus-terminal() {
+        if root.active-right-tab == "bare-terminal" {
+            bare-terminal.focus-input();
+        } else {
+            terminal.focus-input();
+        }
+    }
+
+    // Bare terminal tab.
+    callback bare-terminal-requested(string);  // task-id
 
     // Description tab.
     in property <string> active-task-id;
     in property <string> active-task-display;
     in property <string> active-task-session-state;
-    in-out property <string> active-task-agent;
     in-out property <string> active-task-title;
     in-out property <string> active-task-title-error;
     in-out property <string> active-task-description;
-    in-out property <string> active-task-instructions;
     in property <string> active-task-tokens-text;
     in property <string> active-task-cost-text;
     in property <string> active-task-runtime-text;
@@ -70,11 +77,6 @@ export component RightPane inherits Rectangle {
     callback delete-task(string);
     callback title-changed(string);
     callback description-changed(string);
-    callback instructions-changed(string);
-    callback start-plan(string);
-    callback start-implement(string);
-    callback stop-session(string);
-    callback agent-changed(string);
     callback attach-label(string);
     callback detach-label(string);
     callback add-dependency(string);
@@ -84,32 +86,28 @@ export component RightPane inherits Rectangle {
     in property <[DiffFileData]> git-diff-files;
     in property <[CommitEntryData]> git-commit-log;
 
-    // Files.
+    // Files — read-only viewer + keyboard nav.
     in property <[FileEntryData]> file-entries;
     in-out property <string> file-current-dir;
-    in-out property <bool> editor-open;
-    in-out property <string> editor-file-path;
-    in-out property <string> editor-file-content;
-    in property <string> editor-syntax-name;
-    in property <bool> editor-file-dirty;
-    in property <[HighlightedLineData]> editor-highlighted-lines;
-    in property <int> editor-line-count;
+    in-out property <bool> viewer-open;
+    in property <string> viewer-file-path;
+    in property <string> viewer-syntax-name;
+    in property <[HighlightedLineData]> viewer-highlighted-lines;
+    in property <int> viewer-line-count;
+    in-out property <int> file-tree-focused-index: -1;
     callback file-entry-clicked(string, string);
-    callback editor-content-changed(string);
-    callback editor-save();
-    callback editor-close();
+    callback viewer-close();
+    callback activate-focused(int);
 
     // History tab.
     in property <[SessionEntryData]> session-history;
 
     background: Tokens.background;
 
-    // Polish 16 — open-task tabs strip. Only visible when ≥2 tabs are
-    // pinned; a single-task workflow skips this row entirely so the
-    // usual Terminal/Description/Git/Files/History strip stays at the
-    // top. The strip scrolls horizontally when many tabs are open so
-    // we never truncate the tab text.
-    if root.open-task-tabs.length >= 2: Rectangle {
+    // Open-task tabs strip. Always visible when at least one tab is
+    // open, matching the Lanes reference where even a single task shows
+    // its tab above the Terminal/Description/… inner strip.
+    if root.open-task-tabs.length >= 1: Rectangle {
         x: 0; y: 0;
         width: parent.width;
         height: open-tabs-strip-h;
@@ -176,29 +174,47 @@ export component RightPane inherits Rectangle {
             alignment: start;
 
             VerticalLayout { alignment: end;
-                RightTab { label: "Terminal"; tab-kind: "terminal"; selected: root.active-right-tab == "terminal"; clicked => { root.active-right-tab = "terminal"; } }
+                RightTab { label: @tr("Session"); tab-kind: "terminal"; selected: root.active-right-tab == "terminal"; clicked => { root.active-right-tab = "terminal"; } }
             }
             VerticalLayout { alignment: end;
-                RightTab { label: "Description"; tab-kind: "description"; selected: root.active-right-tab == "description"; clicked => { root.active-right-tab = "description"; } }
+                RightTab { label: @tr("Terminal"); tab-kind: "bare-terminal"; selected: root.active-right-tab == "bare-terminal"; clicked => { root.active-right-tab = "bare-terminal"; root.bare-terminal-requested(root.active-task-id); } }
             }
             VerticalLayout { alignment: end;
-                RightTab { label: "Git Changes"; tab-kind: "git"; selected: root.active-right-tab == "git"; clicked => { root.active-right-tab = "git"; } }
+                RightTab { label: @tr("Description"); tab-kind: "description"; selected: root.active-right-tab == "description"; clicked => { root.active-right-tab = "description"; } }
             }
             VerticalLayout { alignment: end;
-                RightTab { label: "Files"; tab-kind: "files"; selected: root.active-right-tab == "files"; clicked => { root.active-right-tab = "files"; } }
+                RightTab { label: @tr("Git Changes"); tab-kind: "git"; selected: root.active-right-tab == "git"; clicked => { root.active-right-tab = "git"; } }
             }
             VerticalLayout { alignment: end;
-                RightTab { label: "History"; tab-kind: "history"; selected: root.active-right-tab == "history"; clicked => { root.active-right-tab = "history"; } }
+                RightTab { label: @tr("Files"); tab-kind: "files"; selected: root.active-right-tab == "files"; clicked => { root.active-right-tab = "files"; } }
+            }
+            VerticalLayout { alignment: end;
+                RightTab { label: @tr("History"); tab-kind: "history"; selected: root.active-right-tab == "history"; clicked => { root.active-right-tab = "history"; } }
             }
         }
     }
 
-    // Terminal area (only visible when active-right-tab == "terminal")
+    // Session terminal (agent CLI) — visible when active-right-tab == "terminal"
     terminal := TerminalView {
+        visible: root.active-right-tab == "terminal";
         x: right-pad-h;
         y: tab-strip-h + open-tabs-strip-h + right-pad-v;
-        width: term-w;
-        height: term-h;
+        width: parent.width - right-pad-h * 2;
+        height: parent.height - tab-strip-h - open-tabs-strip-h - right-pad-v - 22px;
+        frame: root.frame;
+        active-task-id: root.active-task-id;
+        key-pressed(text, ctrl, alt, shift, meta) => {
+            root.terminal-key-pressed(text, ctrl, alt, shift, meta);
+        }
+    }
+
+    // Bare terminal — visible when active-right-tab == "bare-terminal"
+    bare-terminal := TerminalView {
+        visible: root.active-right-tab == "bare-terminal";
+        x: right-pad-h;
+        y: tab-strip-h + open-tabs-strip-h + right-pad-v;
+        width: parent.width - right-pad-h * 2;
+        height: parent.height - tab-strip-h - open-tabs-strip-h - right-pad-v - 22px;
         frame: root.frame;
         active-task-id: root.active-task-id;
         key-pressed(text, ctrl, alt, shift, meta) => {
@@ -224,7 +240,7 @@ export component RightPane inherits Rectangle {
             }
         }
         Text {
-            text: "Quay terminal · esc to interrupt the active session";
+            text: @tr("Quay terminal · esc to interrupt the active session");
             color: Tokens.kind-enhancement;
             font-size: Tokens.text-xs;
             font-family: Tokens.font-mono;
@@ -243,11 +259,9 @@ export component RightPane inherits Rectangle {
         active-task-id: root.active-task-id;
         active-task-display: root.active-task-display;
         active-task-session-state: root.active-task-session-state;
-        active-task-agent <=> root.active-task-agent;
         active-task-title <=> root.active-task-title;
         active-task-title-error <=> root.active-task-title-error;
         active-task-description <=> root.active-task-description;
-        active-task-instructions <=> root.active-task-instructions;
         active-task-tokens-text: root.active-task-tokens-text;
         active-task-cost-text: root.active-task-cost-text;
         active-task-runtime-text: root.active-task-runtime-text;
@@ -262,11 +276,6 @@ export component RightPane inherits Rectangle {
         delete-task(id) => { root.delete-task(id); }
         title-changed(t) => { root.title-changed(t); }
         description-changed(t) => { root.description-changed(t); }
-        instructions-changed(t) => { root.instructions-changed(t); }
-        start-plan(id) => { root.start-plan(id); }
-        start-implement(id) => { root.start-implement(id); }
-        stop-session(id) => { root.stop-session(id); }
-        agent-changed(v) => { root.agent-changed(v); }
         attach-label(id) => { root.attach-label(id); }
         detach-label(id) => { root.detach-label(id); }
         add-dependency(id) => { root.add-dependency(id); }
@@ -286,7 +295,7 @@ export component RightPane inherits Rectangle {
         commit-log: root.git-commit-log;
     }
 
-    // Files tab.
+    // Files tab — read-only viewer.
     FilesPanel {
         visible: root.active-right-tab == "files";
         x: right-pad-h;
@@ -296,18 +305,16 @@ export component RightPane inherits Rectangle {
 
         file-entries: root.file-entries;
         file-current-dir <=> root.file-current-dir;
-        editor-open <=> root.editor-open;
-        editor-file-path <=> root.editor-file-path;
-        editor-file-content <=> root.editor-file-content;
-        editor-syntax-name: root.editor-syntax-name;
-        editor-file-dirty: root.editor-file-dirty;
-        editor-highlighted-lines: root.editor-highlighted-lines;
-        editor-line-count: root.editor-line-count;
+        viewer-open <=> root.viewer-open;
+        viewer-file-path: root.viewer-file-path;
+        viewer-syntax-name: root.viewer-syntax-name;
+        viewer-highlighted-lines: root.viewer-highlighted-lines;
+        viewer-line-count: root.viewer-line-count;
+        focused-index <=> root.file-tree-focused-index;
 
         entry-clicked(path, kind) => { root.file-entry-clicked(path, kind); }
-        content-changed(t) => { root.editor-content-changed(t); }
-        save => { root.editor-save(); }
-        close => { root.editor-close(); }
+        viewer-close => { root.viewer-close(); }
+        activate-focused(idx) => { root.activate-focused(idx); }
     }
 
     // History tab.
@@ -321,4 +328,5 @@ export component RightPane inherits Rectangle {
         active-task-id: root.active-task-id;
         session-history: root.session-history;
     }
+
 }

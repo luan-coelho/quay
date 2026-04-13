@@ -1,0 +1,716 @@
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"POT-Creation-Date: 2026-04-12 17:53+0000\n"
+"PO-Revision-Date: 2026-04-12 18:00+0000\n"
+"Last-Translator: Luan Coelho\n"
+"Language-Team: Portuguese (Brazil)\n"
+"Language: pt_BR\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+#: ui/components/new_task_modal.slint:21
+msgctxt "NewTaskModal"
+msgid "New Task"
+msgstr "Nova Task"
+
+#: ui/components/new_task_modal.slint:30
+msgctxt "NewTaskModal"
+msgid "TITLE"
+msgstr "TÍTULO"
+
+#: ui/components/new_task_modal.slint:32
+msgctxt "NewTaskModal"
+msgid "e.g. Add dark mode"
+msgstr "ex.: Adicionar dark mode"
+
+#: ui/components/new_task_modal.slint:43
+msgctxt "NewTaskModal"
+msgid "INITIAL INSTRUCTIONS (SENT TO THE AGENT ON START)"
+msgstr "INSTRUÇÕES INICIAIS (ENVIADAS AO AGENTE NO INÍCIO)"
+
+#: ui/components/new_task_modal.slint:45
+msgctxt "NewTaskModal"
+msgid "optional — what should the agent do first?"
+msgstr "opcional — o que o agente deve fazer primeiro?"
+
+#: ui/components/new_task_modal.slint:56
+msgctxt "NewTaskModal"
+msgid "Cancel"
+msgstr "Cancelar"
+
+#: ui/components/new_task_modal.slint:63
+msgctxt "NewTaskModal"
+msgid "Create"
+msgstr "Criar"
+
+#: ui/components/files_panel.slint:51
+msgctxt "FilesPanel"
+msgid "Select a task with a worktree"
+msgstr "Selecione uma task com worktree"
+
+#: ui/components/files_panel.slint:186
+msgctxt "FilesPanel"
+msgid ""
+"Click a text file to open it in the built-in editor. Binary or very large "
+"files fall back to $EDITOR."
+msgstr ""
+"Clique em um arquivo de texto para abrir no editor embutido. Arquivos "
+"binários ou muito grandes abrem no $EDITOR."
+
+#: ui/components/files_panel.slint:264
+msgctxt "FilesPanel"
+msgid "save"
+msgstr "salvar"
+
+#: ui/components/files_panel.slint:290
+msgctxt "FilesPanel"
+msgid "(empty file)"
+msgstr "(arquivo vazio)"
+
+#: ui/components/files_panel.slint:339
+msgctxt "FilesPanel"
+msgid ""
+"Top pane: syntect-coloured preview of the last saved state. Bottom pane: "
+"plain editable text. Save to refresh the preview."
+msgstr ""
+"Painel superior: preview colorizado via syntect do último estado salvo. "
+"Painel inferior: texto editável puro. Salve para atualizar o preview."
+
+#: ui/components/shortcuts_overlay.slint:47
+msgctxt "ShortcutsOverlay"
+msgid "Keyboard Shortcuts"
+msgstr "Atalhos de Teclado"
+
+#: ui/components/shortcuts_overlay.slint:68
+msgctxt "ShortcutsOverlay"
+msgid "TASKS"
+msgstr "TAREFAS"
+
+#: ui/components/shortcuts_overlay.slint:73
+msgctxt "ShortcutsOverlay"
+msgid "Create new task in Backlog"
+msgstr "Criar nova task em Pendentes"
+
+#: ui/components/shortcuts_overlay.slint
+msgctxt "ShortcutsOverlay"
+msgid "New bare terminal"
+msgstr "Novo terminal puro"
+
+#: ui/components/shortcuts_overlay.slint:74
+msgctxt "ShortcutsOverlay"
+msgid "Move active task forward"
+msgstr "Mover task ativa para frente"
+
+#: ui/components/shortcuts_overlay.slint:75
+msgctxt "ShortcutsOverlay"
+msgid "Delete active task"
+msgstr "Excluir task ativa"
+
+#: ui/components/shortcuts_overlay.slint:76
+msgctxt "ShortcutsOverlay"
+msgid "(in Instructions field) Start Implement"
+msgstr "(no campo Instruções) Iniciar Implementação"
+
+#: ui/components/shortcuts_overlay.slint:83
+msgctxt "ShortcutsOverlay"
+msgid "OPEN TABS"
+msgstr "ABAS ABERTAS"
+
+#: ui/components/shortcuts_overlay.slint:88
+msgctxt "ShortcutsOverlay"
+msgid "Close active tab"
+msgstr "Fechar aba ativa"
+
+#: ui/components/shortcuts_overlay.slint:89
+msgctxt "ShortcutsOverlay"
+msgid "Close all OTHER tabs"
+msgstr "Fechar TODAS as outras abas"
+
+#: ui/components/shortcuts_overlay.slint:90
+msgctxt "ShortcutsOverlay"
+msgid "Close ALL tabs"
+msgstr "Fechar TODAS as abas"
+
+#: ui/components/shortcuts_overlay.slint:91
+msgctxt "ShortcutsOverlay"
+msgid "Cycle to next tab"
+msgstr "Alternar para próxima aba"
+
+#: ui/components/shortcuts_overlay.slint:92
+msgctxt "ShortcutsOverlay"
+msgid "Cycle to previous tab"
+msgstr "Alternar para aba anterior"
+
+#: ui/components/shortcuts_overlay.slint:99
+msgctxt "ShortcutsOverlay"
+msgid "QUICK ACTIONS"
+msgstr "AÇÕES RÁPIDAS"
+
+#: ui/components/shortcuts_overlay.slint:104
+msgctxt "ShortcutsOverlay"
+msgid "Run quick action by index"
+msgstr "Executar ação rápida por índice"
+
+#: ui/components/shortcuts_overlay.slint:111
+msgctxt "ShortcutsOverlay"
+msgid "SYSTEM"
+msgstr "SISTEMA"
+
+#: ui/components/shortcuts_overlay.slint:116
+msgctxt "ShortcutsOverlay"
+msgid "Quick task switcher"
+msgstr "Alternador rápido de tasks"
+
+#: ui/components/shortcuts_overlay.slint:117
+msgctxt "ShortcutsOverlay"
+msgid "Open Settings"
+msgstr "Abrir Configurações"
+
+#: ui/components/shortcuts_overlay.slint:118
+msgctxt "ShortcutsOverlay"
+msgid "Show this overlay"
+msgstr "Mostrar este painel"
+
+#: ui/components/shortcuts_overlay.slint:119
+msgctxt "ShortcutsOverlay"
+msgid "Close any open modal"
+msgstr "Fechar qualquer modal aberto"
+
+#: ui/components/shortcuts_overlay.slint:126
+msgctxt "ShortcutsOverlay"
+msgid "Tip: Cmd on macOS, Ctrl elsewhere. Esc closes this overlay."
+msgstr "Dica: Cmd no macOS, Ctrl nos demais. Esc fecha este painel."
+
+#: ui/components/task_search_modal.slint:47
+msgctxt "TaskSearchModal"
+msgid "Type to search tasks…"
+msgstr "Digite para buscar tasks..."
+
+#: ui/components/task_search_modal.slint:68
+msgctxt "TaskSearchModal"
+msgid "No matches"
+msgstr "Nenhum resultado"
+
+#: ui/components/task_search_modal.slint:113
+msgctxt "TaskSearchModal"
+msgid "Esc to dismiss · click a result to open"
+msgstr "Esc para fechar · clique em um resultado para abrir"
+
+#: ui/components/tab_context_menu.slint:52
+msgctxt "TabContextMenu"
+msgid "Close this tab"
+msgstr "Fechar esta aba"
+
+#: ui/components/tab_context_menu.slint:63
+msgctxt "TabContextMenu"
+msgid "Close other tabs"
+msgstr "Fechar outras abas"
+
+#: ui/components/tab_context_menu.slint:74
+msgctxt "TabContextMenu"
+msgid "Close tabs to the right"
+msgstr "Fechar abas à direita"
+
+#: ui/components/tab_context_menu.slint:88
+msgctxt "TabContextMenu"
+msgid "Close all tabs"
+msgstr "Fechar todas as abas"
+
+#: ui/components/kanban_grid.slint:77
+msgctxt "KanbanGrid"
+msgid "All"
+msgstr "Todas"
+
+#: ui/components/kanban_grid.slint:155
+msgctxt "KanbanGrid"
+msgid "No tasks yet"
+msgstr "Nenhuma task ainda"
+
+#: ui/components/kanban_grid.slint:156
+msgctxt "KanbanGrid"
+msgid "No tasks match the current filter"
+msgstr "Nenhuma task corresponde ao filtro atual"
+
+#: ui/components/kanban_grid.slint:164
+msgctxt "KanbanGrid"
+msgid "Press Cmd+N to create your first task"
+msgstr "Pressione Cmd+N para criar sua primeira task"
+
+#: ui/components/kanban_grid.slint:165
+msgctxt "KanbanGrid"
+msgid "Click the active filter chip again to clear it"
+msgstr "Clique no filtro ativo novamente para limpá-lo"
+
+#: ui/components/kanban_grid.slint:175
+msgctxt "KanbanGrid"
+msgid "Backlog"
+msgstr "Pendentes"
+
+#: ui/components/kanban_grid.slint:191
+msgctxt "KanbanGrid"
+msgid "Planning & Implementation"
+msgstr "Planejamento & Implementação"
+
+#: ui/components/kanban_grid.slint:212
+msgctxt "KanbanGrid"
+msgid "Review"
+msgstr "Revisão"
+
+#: ui/components/kanban_grid.slint:225
+msgctxt "KanbanGrid"
+msgid "Done"
+msgstr "Concluído"
+
+#: ui/components/kanban_grid.slint:238
+msgctxt "KanbanGrid"
+msgid "Misc"
+msgstr "Diversos"
+
+#: ui/components/atoms.slint:152
+msgctxt "KindChip"
+msgid "Enhancement"
+msgstr "Enhancement"
+
+#: ui/components/atoms.slint:153
+msgctxt "KindChip"
+msgid "Feature"
+msgstr "Feature"
+
+#: ui/components/atoms.slint:154
+msgctxt "KindChip"
+msgid "Bug"
+msgstr "Bug"
+
+#: ui/components/atoms.slint:560
+msgctxt "Select"
+msgid "Select…"
+msgstr "Selecionar..."
+
+#: ui/components/atoms.slint:716
+msgctxt "Select"
+msgid "No branches available"
+msgstr "Nenhuma branch disponível"
+
+#: ui/components/sidebar.slint:135
+msgctxt "Sidebar"
+msgid "Projects"
+msgstr "Projetos"
+
+#: ui/components/sidebar.slint:201
+msgctxt "Sidebar"
+msgid "Worktrees"
+msgstr "Worktrees"
+
+#: ui/components/new_project_modal.slint:34
+msgctxt "NewProjectModal"
+msgid "New Project"
+msgstr "Novo Projeto"
+
+#: ui/components/new_project_modal.slint:45
+msgctxt "NewProjectModal"
+msgid "NAME"
+msgstr "NOME"
+
+#: ui/components/new_project_modal.slint:47
+msgctxt "NewProjectModal"
+msgid "e.g. my-backend"
+msgstr "ex.: meu-backend"
+
+#: ui/components/new_project_modal.slint:63
+msgctxt "NewProjectModal"
+msgid "REPOSITORY PATH"
+msgstr "CAMINHO DO REPOSITÓRIO"
+
+#: ui/components/new_project_modal.slint:75
+msgctxt "NewProjectModal"
+msgid "/absolute/path/to/repo"
+msgstr "/caminho/absoluto/do/repo"
+
+#: ui/components/new_project_modal.slint:88
+msgctxt "NewProjectModal"
+msgid "Browse"
+msgstr "Navegar"
+
+#: ui/components/new_project_modal.slint:111
+msgctxt "NewProjectModal"
+msgid "BASE BRANCH"
+msgstr "BRANCH BASE"
+
+#: ui/components/new_project_modal.slint:120
+msgctxt "NewProjectModal"
+msgid "Select a branch"
+msgstr "Selecione uma branch"
+
+#: ui/components/new_project_modal.slint:134
+msgctxt "NewProjectModal"
+msgid "Cancel"
+msgstr "Cancelar"
+
+#: ui/components/new_project_modal.slint:141
+msgctxt "NewProjectModal"
+msgid "Create"
+msgstr "Criar"
+
+#: ui/components/status_bar.slint:36
+msgctxt "StatusBar"
+msgid "Backlog"
+msgstr "Pendentes"
+
+#: ui/components/status_bar.slint:44
+msgctxt "StatusBar"
+msgid "Planning"
+msgstr "Planejamento"
+
+#: ui/components/status_bar.slint:52
+msgctxt "StatusBar"
+msgid "Impl"
+msgstr "Impl"
+
+#: ui/components/status_bar.slint:60
+msgctxt "StatusBar"
+msgid "Review"
+msgstr "Revisão"
+
+#: ui/components/status_bar.slint:68
+msgctxt "StatusBar"
+msgid "Done"
+msgstr "Concluído"
+
+#: ui/components/status_bar.slint:76
+msgctxt "StatusBar"
+msgid "Misc"
+msgstr "Diversos"
+
+#: ui/components/status_bar.slint:110
+msgctxt "StatusBar"
+msgid "0 sessions"
+msgstr "0 sessões"
+
+#: ui/components/status_bar.slint:119
+msgctxt "StatusBar"
+msgid "tasks total"
+msgstr "tasks no total"
+
+#: ui/components/git_changes_panel.slint:25
+msgctxt "GitChangesPanel"
+msgid "Git Changes"
+msgstr "Alterações Git"
+
+#: ui/components/git_changes_panel.slint:32
+msgctxt "GitChangesPanel"
+msgid "Select a task with a git worktree to see changes."
+msgstr "Selecione uma task com worktree git para ver alterações."
+
+#: ui/components/git_changes_panel.slint:32
+msgctxt "GitChangesPanel"
+msgid "No changes yet."
+msgstr "Nenhuma alteração ainda."
+
+#: ui/components/git_changes_panel.slint:48
+msgctxt "GitChangesPanel"
+msgid "CHANGED FILES"
+msgstr "ARQUIVOS ALTERADOS"
+
+#: ui/components/git_changes_panel.slint:175
+msgctxt "GitChangesPanel"
+msgid "COMMITS ON THIS BRANCH"
+msgstr "COMMITS NESTA BRANCH"
+
+#: ui/components/right_pane.slint:195
+msgctxt "RightPane"
+msgid "Terminal"
+msgstr "Terminal"
+
+#: ui/components/right_pane.slint:198
+msgctxt "RightPane"
+msgid "Description"
+msgstr "Descrição"
+
+#: ui/components/right_pane.slint:201
+msgctxt "RightPane"
+msgid "Git Changes"
+msgstr "Alterações Git"
+
+#: ui/components/right_pane.slint:204
+msgctxt "RightPane"
+msgid "Files"
+msgstr "Arquivos"
+
+#: ui/components/right_pane.slint:207
+msgctxt "RightPane"
+msgid "History"
+msgstr "Histórico"
+
+#: ui/components/right_pane.slint:212
+msgctxt "RightPane"
+msgid "Settings"
+msgstr "Configurações"
+
+#: ui/components/right_pane.slint:248
+msgctxt "RightPane"
+msgid "Quay terminal · esc to interrupt the active session"
+msgstr "Terminal Quay · esc para interromper a sessão ativa"
+
+#: ui/components/history_panel.slint:23
+msgctxt "HistoryPanel"
+msgid "Session History"
+msgstr "Histórico de Sessões"
+
+#: ui/components/history_panel.slint:31
+msgctxt "HistoryPanel"
+msgid "No sessions recorded for this task yet."
+msgstr "Nenhuma sessão registrada para esta task ainda."
+
+#: ui/components/history_panel.slint:39
+msgctxt "HistoryPanel"
+msgid "Select a task to view its session history."
+msgstr "Selecione uma task para ver o histórico de sessões."
+
+#: ui/components/history_panel.slint:81
+msgctxt "HistoryPanel"
+msgid "Claude"
+msgstr "Claude"
+
+#: ui/components/history_panel.slint:82
+msgctxt "HistoryPanel"
+msgid "OpenCode"
+msgstr "OpenCode"
+
+#: ui/components/history_panel.slint:83
+msgctxt "HistoryPanel"
+msgid "Terminal"
+msgstr "Terminal"
+
+#: ui/components/history_panel.slint:119
+msgctxt "HistoryPanel"
+msgid "running"
+msgstr "executando"
+
+#: ui/components/history_panel.slint:120
+msgctxt "HistoryPanel"
+msgid "ok"
+msgstr "ok"
+
+#: ui/components/history_panel.slint:121
+msgctxt "HistoryPanel"
+msgid "exit"
+msgstr "encerrado"
+
+#: ui/components/settings_modal.slint:38
+msgctxt "SettingsPanel"
+msgid "Settings"
+msgstr "Configurações"
+
+#: ui/components/settings_modal.slint:46
+msgctxt "SettingsPanel"
+msgid "GENERAL"
+msgstr "GERAL"
+
+#: ui/components/settings_modal.slint:55
+msgctxt "SettingsPanel"
+msgid "Default base branch"
+msgstr "Branch base padrão"
+
+#: ui/components/settings_modal.slint:73
+msgctxt "SettingsPanel"
+msgid "Language"
+msgstr "Idioma"
+
+#: ui/components/settings_modal.slint:142
+msgctxt "SettingsPanel"
+msgid "QUICK ACTIONS"
+msgstr "AÇÕES RÁPIDAS"
+
+#: ui/components/settings_modal.slint:215
+msgctxt "SettingsPanel"
+msgid "name"
+msgstr "nome"
+
+#: ui/components/settings_modal.slint:263
+msgctxt "SettingsPanel"
+msgid "prompt text…"
+msgstr "texto do prompt..."
+
+#: ui/components/settings_modal.slint:263
+msgctxt "SettingsPanel"
+msgid "shell command…"
+msgstr "comando shell..."
+
+#: ui/components/settings_modal.slint:277
+msgctxt "SettingsPanel"
+msgid "PROCESSES"
+msgstr "PROCESSOS"
+
+#: ui/components/settings_modal.slint:284
+msgctxt "SettingsPanel"
+msgid "refresh"
+msgstr "atualizar"
+
+#: ui/components/settings_modal.slint:302
+msgctxt "SettingsPanel"
+msgid "No agent processes detected."
+msgstr "Nenhum processo de agente detectado."
+
+#: ui/components/settings_modal.slint:344
+msgctxt "SettingsPanel"
+msgid "stop"
+msgstr "parar"
+
+#: ui/components/settings_modal.slint:350
+msgctxt "SettingsPanel"
+msgid "kill"
+msgstr "encerrar"
+
+#: ui/components/description_panel.slint:67
+msgctxt "DescriptionPanel"
+msgid "Description"
+msgstr "Descrição"
+
+#: ui/components/description_panel.slint:74
+msgctxt "DescriptionPanel"
+msgid "Select a task to read or edit its description."
+msgstr "Selecione uma task para ler ou editar sua descrição."
+
+#: ui/components/description_panel.slint:102
+msgctxt "DescriptionPanel"
+msgid "delete"
+msgstr "excluir"
+
+#: ui/components/description_panel.slint:170
+msgctxt "DescriptionPanel"
+msgid "msgs"
+msgstr "msgs"
+
+#: ui/components/description_panel.slint:181
+msgctxt "DescriptionPanel"
+msgid "Task title"
+msgstr "Título da task"
+
+#: ui/components/description_panel.slint:196
+msgctxt "DescriptionPanel"
+msgid "INSTRUCTIONS (SENT TO THE AGENT ON START)"
+msgstr "INSTRUÇÕES (ENVIADAS AO AGENTE NO INÍCIO)"
+
+#: ui/components/description_panel.slint:203
+msgctxt "DescriptionPanel"
+msgid "e.g. Add dark mode with a toggle in settings — press Enter to Implement"
+msgstr "ex.: Adicionar dark mode com toggle nas configurações — pressione Enter para Implementar"
+
+#: ui/components/description_panel.slint:244
+msgctxt "DescriptionPanel"
+msgid "Plan"
+msgstr "Planejar"
+
+#: ui/components/description_panel.slint:251
+msgctxt "DescriptionPanel"
+msgid "Implement"
+msgstr "Implementar"
+
+#: ui/components/description_panel.slint:258
+msgctxt "DescriptionPanel"
+msgid "Stop"
+msgstr "Parar"
+
+#: ui/components/description_panel.slint:277
+msgctxt "DescriptionPanel"
+msgid "LABELS"
+msgstr "LABELS"
+
+#: ui/components/description_panel.slint:309
+msgctxt "DescriptionPanel"
+msgid "No labels — click + to add one."
+msgstr "Nenhuma label — clique em + para adicionar."
+
+#: ui/components/description_panel.slint:359
+msgctxt "DescriptionPanel"
+msgid "Pick a label to attach"
+msgstr "Escolha uma label para associar"
+
+#: ui/components/description_panel.slint:397
+msgctxt "DescriptionPanel"
+msgid "BLOCKED BY"
+msgstr "BLOQUEADO POR"
+
+#: ui/components/description_panel.slint:432
+msgctxt "DescriptionPanel"
+msgid "No dependencies — click + to add one."
+msgstr "Nenhuma dependência — clique em + para adicionar."
+
+#: ui/components/description_panel.slint:449
+msgctxt "DescriptionPanel"
+msgid "Pick a task to depend on"
+msgstr "Escolha uma task como dependência"
+
+#: ui/components/description_panel.slint:458
+msgctxt "DescriptionPanel"
+msgid "No candidate tasks."
+msgstr "Nenhuma task candidata."
+
+#: ui/components/description_panel.slint:537
+msgctxt "DescriptionPanel"
+msgid "DESCRIPTION"
+msgstr "DESCRIÇÃO"
+
+#: ui/components/description_panel.slint:545
+msgctxt "DescriptionPanel"
+msgid "Add a description, notes for the agent, acceptance criteria…"
+msgstr "Adicione uma descrição, notas para o agente, critérios de aceitação..."
+
+#: ui/components/card_context_menu.slint
+msgctxt "CardContextMenu"
+msgid "Move to Backlog"
+msgstr "Mover para Pendentes"
+
+#: ui/components/card_context_menu.slint
+msgctxt "CardContextMenu"
+msgid "Move to Planning"
+msgstr "Mover para Planejamento"
+
+#: ui/components/card_context_menu.slint
+msgctxt "CardContextMenu"
+msgid "Move to Implementation"
+msgstr "Mover para Implementação"
+
+#: ui/components/card_context_menu.slint
+msgctxt "CardContextMenu"
+msgid "Move to Review"
+msgstr "Mover para Revisão"
+
+#: ui/components/card_context_menu.slint
+msgctxt "CardContextMenu"
+msgid "Move to Done"
+msgstr "Mover para Concluído"
+
+#: ui/components/card_context_menu.slint
+msgctxt "CardContextMenu"
+msgid "Move to Misc"
+msgstr "Mover para Diversos"
+
+#: ui/components/card_context_menu.slint
+msgctxt "CardContextMenu"
+msgid "Stop session"
+msgstr "Parar sessão"
+
+#: ui/components/card_context_menu.slint
+msgctxt "CardContextMenu"
+msgid "Delete task"
+msgstr "Excluir task"
+
+#: ui/components/settings_modal.slint
+msgctxt "SettingsPanel"
+msgid "stop all"
+msgstr "parar todos"
+
+#: ui/components/settings_modal.slint
+msgctxt "SettingsPanel"
+msgid "kill all"
+msgstr "encerrar todos"
+
+#: ui/components/settings_page.slint:72
+msgctxt "SettingsPage"
+msgid "Settings"
+msgstr "Configurações"

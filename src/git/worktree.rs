@@ -47,13 +47,23 @@ impl WorktreeManager {
         Ok(Self { git: PathBuf::from("git") })
     }
 
-    /// Create a new worktree at `worktree_path` checked out to a brand-new
-    /// branch named `branch`, branched off `base_ref` inside the main repo.
+    /// Create a new worktree at `worktree_path` checked out to a branch named
+    /// `branch`, branched off `base_ref` inside the main repo.
     ///
-    /// Equivalent shell command:
-    ///     git -C <repo> worktree add -b <branch> <worktree_path> <base_ref>
+    /// Handles all edge cases from previous sessions that weren't cleaned up:
     ///
-    /// `worktree_path` must not exist; git refuses to overwrite.
+    /// 1. **Stale git metadata** — runs `git worktree prune` first to clear
+    ///    records whose on-disk paths no longer exist.
+    /// 2. **Leftover worktree directory** — if the path already exists (zombie
+    ///    from a previous task), removes it via `git worktree remove --force`
+    ///    before creating.
+    /// 3. **Existing branch** — uses `-B` (force-create) so the branch is
+    ///    reset to `base_ref` instead of failing.
+    ///
+    /// Equivalent shell commands:
+    ///     git -C <repo> worktree prune
+    ///     git -C <repo> worktree remove --force <worktree_path>   # if exists
+    ///     git -C <repo> worktree add -B <branch> <worktree_path> <base_ref>
     pub fn create(
         &self,
         repo: &Path,
@@ -61,19 +71,35 @@ impl WorktreeManager {
         worktree_path: &Path,
         base_ref: &str,
     ) -> Result<()> {
+        // 1. Prune stale worktree records whose on-disk paths were deleted
+        //    outside of git (manual rm, crash, etc.). Without this, git
+        //    refuses to create a new worktree on a branch that has a stale
+        //    record pointing to a non-existent directory.
+        let _ = self.prune(repo);
+
+        // 2. If the worktree directory still exists after prune (i.e. it's a
+        //    real leftover, not just stale metadata), force-remove it so the
+        //    slot is free for the new task.
         if worktree_path.exists() {
-            bail!(
-                "worktree path already exists: {}",
-                worktree_path.display()
+            tracing::warn!(
+                worktree = %worktree_path.display(),
+                "removing leftover worktree before re-creating"
             );
+            self.remove(repo, worktree_path)
+                .with_context(|| format!(
+                    "failed to remove leftover worktree at {}",
+                    worktree_path.display()
+                ))?;
         }
 
+        // 3. Create with -B: resets the branch to base_ref if it already
+        //    exists, or creates it fresh otherwise.
         let output = Command::new(&self.git)
             .arg("-C")
             .arg(repo)
             .arg("worktree")
             .arg("add")
-            .arg("-b")
+            .arg("-B")
             .arg(branch)
             .arg(worktree_path)
             .arg(base_ref)
@@ -142,8 +168,6 @@ impl WorktreeManager {
     /// Equivalent shell command:
     ///     git -C <repo> worktree prune
     ///
-    /// `#[allow(dead_code)]` until Phase 2 starts running prune on startup.
-    #[allow(dead_code)]
     pub fn prune(&self, repo: &Path) -> Result<()> {
         let output = Command::new(&self.git)
             .arg("-C")
@@ -302,20 +326,62 @@ mod tests {
     }
 
     #[test]
-    fn create_refuses_existing_path() {
+    fn create_replaces_existing_worktree() {
         let (tmp, repo) = fixture_repo();
         let mgr = WorktreeManager::detect().unwrap();
 
-        let occupied = tmp.path().join("occupied");
-        fs::create_dir_all(&occupied).unwrap();
+        let worktree = tmp.path().join("wt-reuse");
 
-        let err = mgr
-            .create(&repo, "feature/clash", &occupied, "main")
-            .expect_err("create should refuse existing path");
+        // First create: establishes the worktree + branch.
+        mgr.create(&repo, "feature/reuse", &worktree, "main")
+            .expect("first create");
+        assert!(worktree.exists());
+
+        // Second create at the same path + branch: the new logic should
+        // remove the existing worktree and re-create it cleanly.
+        mgr.create(&repo, "feature/reuse", &worktree, "main")
+            .expect("second create should replace existing worktree");
+        assert!(worktree.exists(), "worktree should exist after re-create");
         assert!(
-            err.to_string().contains("already exists"),
-            "error should mention path conflict, got: {err}"
+            worktree.join("README.md").exists(),
+            "re-created worktree should contain the seeded README"
         );
+
+        mgr.remove(&repo, &worktree).expect("cleanup");
+    }
+
+    #[test]
+    fn create_succeeds_when_branch_already_exists() {
+        let (tmp, repo) = fixture_repo();
+        let mgr = WorktreeManager::detect().unwrap();
+
+        // First: create a branch via a worktree, then remove the worktree
+        // (leaving the branch behind).
+        let wt1 = tmp.path().join("wt-first");
+        mgr.create(&repo, "reused-branch", &wt1, "main")
+            .expect("first create");
+        mgr.remove(&repo, &wt1).expect("remove first worktree");
+
+        // The branch still exists even though the worktree is gone.
+        let branch_exists = Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["branch", "--list", "reused-branch"])
+            .output()
+            .expect("git branch --list");
+        assert!(
+            !String::from_utf8_lossy(&branch_exists.stdout).trim().is_empty(),
+            "branch should still exist after worktree removal"
+        );
+
+        // Second: creating a new worktree on the same branch name must succeed
+        // (this was the bug — `-b` failed, `-B` works).
+        let wt2 = tmp.path().join("wt-second");
+        mgr.create(&repo, "reused-branch", &wt2, "main")
+            .expect("second create with existing branch should succeed");
+        assert!(wt2.exists(), "second worktree should exist");
+
+        mgr.remove(&repo, &wt2).expect("cleanup");
     }
 
     #[test]

@@ -31,7 +31,7 @@ export component NewProjectModal inherits Rectangle {
 
     ModalFrame {
         open <=> root.open;
-        title: "New Project";
+        title: @tr("New Project");
         card-width: 440px;
         // Taller than the baseline 340px so the BASE BRANCH Select
         // has room to expand inline when its dropdown opens. Without
@@ -42,9 +42,9 @@ export component NewProjectModal inherits Rectangle {
 
         // Name
         FormField {
-            label: "NAME";
+            label: @tr("NAME");
             text <=> root.name-text;
-            placeholder: "e.g. my-backend";
+            placeholder: @tr("e.g. my-backend");
             error: root.name-error;
             edited(t) => {
                 root.name-text = t;
@@ -60,7 +60,7 @@ export component NewProjectModal inherits Rectangle {
             spacing: Tokens.space-1;
 
             Text {
-                text: "REPOSITORY PATH";
+                text: @tr("REPOSITORY PATH");
                 color: Tokens.muted-foreground;
                 font-size: Tokens.text-xs;
                 font-weight: Tokens.weight-bold;
@@ -72,7 +72,7 @@ export component NewProjectModal inherits Rectangle {
                 Input {
                     horizontal-stretch: 1;
                     text <=> root.repo-path-text;
-                    placeholder: "/absolute/path/to/repo";
+                    placeholder: @tr("/absolute/path/to/repo");
                     error-state: root.has-repo-error;
                     edited(t) => {
                         root.repo-path-text = t;
@@ -85,7 +85,7 @@ export component NewProjectModal inherits Rectangle {
                 // Rust. The label is deliberately short so the
                 // Input still gets the majority of the row width.
                 Button {
-                    text: "Browse";
+                    text: @tr("Browse");
                     variant: "outline";
                     size: "md";
                     clicked => { root.browse-repo(); }
@@ -108,7 +108,7 @@ export component NewProjectModal inherits Rectangle {
             spacing: Tokens.space-1;
 
             Text {
-                text: "BASE BRANCH";
+                text: @tr("BASE BRANCH");
                 color: Tokens.muted-foreground;
                 font-size: Tokens.text-xs;
                 font-weight: Tokens.weight-bold;
@@ -117,7 +117,7 @@ export component NewProjectModal inherits Rectangle {
             Select {
                 options: root.branches;
                 value <=> root.base-branch-text;
-                placeholder: "Select a branch";
+                placeholder: @tr("Select a branch");
                 dropdown-max-height: 160px;
                 changed(b) => { root.base-branch-text = b; }
             }
@@ -131,14 +131,14 @@ export component NewProjectModal inherits Rectangle {
             Rectangle { horizontal-stretch: 1; }
 
             Button {
-                text: "Cancel";
+                text: @tr("Cancel");
                 variant: "outline";
                 size: "sm";
                 clicked => { root.open = false; }
             }
 
             Button {
-                text: "Create";
+                text: @tr("Create");
                 variant: "default";
                 size: "sm";
                 clicked => { root.submit(); }

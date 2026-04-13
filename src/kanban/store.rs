@@ -140,6 +140,16 @@ impl<'a> TaskStore<'a> {
         Ok(())
     }
 
+    /// Remove all tasks from the database. Used on startup to ensure
+    /// the kanban starts clean — tasks are created exclusively via
+    /// terminal interaction (⌘N).
+    pub fn delete_all(&self) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM tasks", [])
+            .context("delete all tasks")?;
+        Ok(())
+    }
+
     pub fn get(&self, id: Uuid) -> Result<Option<Task>> {
         self.conn
             .query_row(

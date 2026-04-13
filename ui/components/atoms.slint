@@ -20,6 +20,49 @@ export component LucideIcon inherits IconDisplay {
     stroke-width: 2;
 }
 
+// Renders a keyboard shortcut using Lucide icons for modifier keys
+// (Cmd, Shift, Option, Delete) and a text label for the main key.
+export component ShortcutKeys inherits HorizontalLayout {
+    in property <bool> cmd;
+    in property <bool> shift;
+    in property <bool> alt;
+    in property <bool> del;
+    in property <string> key;
+    in property <color> icon-color: Tokens.muted-foreground;
+    in property <length> icon-size: 12px;
+
+    spacing: 1px;
+    alignment: center;
+
+    if root.cmd: VerticalLayout {
+        alignment: center;
+        LucideIcon { icon: IconSet.Command; size: root.icon-size; stroke: root.icon-color; stroke-width: 2.2; }
+    }
+    if root.shift: VerticalLayout {
+        alignment: center;
+        LucideIcon { icon: IconSet.ArrowBigUp; size: root.icon-size; stroke: root.icon-color; stroke-width: 2.2; }
+    }
+    if root.alt: VerticalLayout {
+        alignment: center;
+        LucideIcon { icon: IconSet.Option; size: root.icon-size; stroke: root.icon-color; stroke-width: 2.2; }
+    }
+    if root.del: VerticalLayout {
+        alignment: center;
+        LucideIcon { icon: IconSet.Delete; size: root.icon-size; stroke: root.icon-color; stroke-width: 2.2; }
+    }
+    if root.key != "": VerticalLayout {
+        alignment: center;
+        Text {
+            text: root.key;
+            color: root.icon-color;
+            font-size: Tokens.text-xs;
+            font-family: Tokens.font-mono;
+            font-weight: Tokens.weight-medium;
+            vertical-alignment: center;
+        }
+    }
+}
+
 export component KindDiamond inherits Rectangle {
     in property <string> kind;
     width: 12px;
@@ -106,9 +149,9 @@ export component KindChip inherits Rectangle {
             }
         }
         Text {
-            text: kind == "enhancement" ? "Enhancement"
-                 : kind == "feature" ? "Feature"
-                 : kind == "bug" ? "Bug"
+            text: kind == "enhancement" ? @tr("Enhancement")
+                 : kind == "feature" ? @tr("Feature")
+                 : kind == "bug" ? @tr("Bug")
                  : kind;
             color: Tokens.muted-foreground;
             font-size: Tokens.text-xs;
@@ -514,7 +557,7 @@ export component FormField inherits Rectangle {
 export component Select inherits Rectangle {
     in property <[string]> options;
     in-out property <string> value;
-    in property <string> placeholder: "Select…";
+    in property <string> placeholder: @tr("Select…");
     in property <bool> disabled: false;
     in property <bool> error-state: false;
     in property <length> dropdown-max-height: 200px;
@@ -670,7 +713,7 @@ export component Select inherits Rectangle {
                         padding-left: Tokens.space-2;
                         padding-right: Tokens.space-2;
                         Text {
-                            text: "No branches available";
+                            text: @tr("No branches available");
                             color: Tokens.muted-foreground;
                             font-size: Tokens.text-base;
                             vertical-alignment: center;
@@ -740,12 +783,6 @@ export component Badge inherits Rectangle {
 // the caller's job via `<div>` or flex wrappers.
 export component Card inherits Rectangle {
     background: Tokens.card;
-    border-radius: Tokens.radius-lg;
-    border-width: 1px;
-    border-color: Tokens.border;
-    drop-shadow-color: Tokens.shadow-color-md;
-    drop-shadow-blur: Tokens.shadow-md-blur;
-    drop-shadow-offset-y: Tokens.shadow-offset-y;
 
     @children
 }

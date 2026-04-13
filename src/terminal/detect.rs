@@ -52,9 +52,11 @@ const CLAUDE_AWAITING_PATTERNS: &[&str] = &[
     // Claude Code tool use approval prompt
     "Allow once",
     "Allow always",
-    // The ❯ prompt at the end means Claude Code is waiting for a new
-    // user message (idle between turns).
-    "❯ ",
+    // NOTE: the bare "❯" idle prompt is handled separately in the
+    // detection loop via `ends_with("❯")` because `last_lines` calls
+    // `trim_end()` on each row, stripping the trailing space from "❯ ".
+    // Using `contains("❯ ")` would only match lines where the user has
+    // already typed text (e.g. "❯ implement...") — not the idle prompt.
 ];
 
 /// OpenCode patterns that indicate the agent is waiting for input.
@@ -99,6 +101,12 @@ pub fn detect_session_state<T: EventListener>(
             if line.contains(pattern) {
                 return Some(SessionState::Awaiting);
             }
+        }
+        // Claude Code idle prompt: after trim_end(), "❯ " becomes "❯".
+        // Match only at end-of-line to avoid false positives from lines
+        // where the user already typed text ("❯ implement...").
+        if matches!(agent, AgentKind::Claude) && line.ends_with("❯") {
+            return Some(SessionState::Awaiting);
         }
     }
 

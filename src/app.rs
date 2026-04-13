@@ -25,6 +25,11 @@ use crate::kanban::{
     AgentKind, DependencyStore, LabelStore, ProjectStore, SessionRecord, SessionState,
     SessionStore, StartMode, Task, TaskState, TaskStore, WorktreeStrategy, unix_millis_now,
 };
+use alacritty_terminal::Term;
+use alacritty_terminal::event::VoidListener;
+use alacritty_terminal::term::test::TermSize;
+use alacritty_terminal::vte::ansi::Processor;
+
 use crate::persistence::{Database, QuayDirs};
 use crate::terminal::{Framebuffer, GlyphAtlas, PtySession};
 
@@ -40,11 +45,15 @@ pub struct AppState {
     pub cols: std::cell::Cell<usize>,
     pub rows: std::cell::Cell<usize>,
 
-    /// Per-task PTY sessions, keyed by task UUID. Lazily populated on first
-    /// `select_task` for that task. Kept inside a `RefCell` so callbacks can
-    /// mutate without giving up `Rc<AppState>`.
+    /// Per-task agent PTY sessions (Claude Code / OpenCode), keyed by task UUID.
     pub sessions: RefCell<HashMap<Uuid, PtySession>>,
+    /// Per-task bare shell PTY sessions, keyed by task UUID. Lazily
+    /// spawned when the user clicks the "Terminal" tab.
+    pub bare_sessions: RefCell<HashMap<Uuid, PtySession>>,
     pub active_task: RefCell<Option<Uuid>>,
+    /// Whether the active right tab is "bare-terminal" (true) or
+    /// "terminal"/session (false). Controls which PTY gets blitted.
+    pub active_tab_is_bare: std::cell::Cell<bool>,
     /// Polish 16 — ordered list of tasks the user has "pinned" into the
     /// right pane as open tabs. The tab strip in `ui/main.slint` renders
     /// one chip per entry here. Exactly one entry matches `active_task`
@@ -60,6 +69,10 @@ pub struct AppState {
     /// children. Keyed by absolute path so the set survives switching
     /// across tasks that share overlapping subtrees.
     pub expanded_dirs: RefCell<HashSet<PathBuf>>,
+    /// Read-only Term replayed from the PTY byte log of a previous
+    /// session. Populated lazily when selecting a task that has a log
+    /// file but no live PtySession. Evicted when a real session starts.
+    pub replay_terms: RefCell<HashMap<Uuid, Term<VoidListener>>>,
 }
 
 impl AppState {
@@ -110,9 +123,12 @@ impl AppState {
             cols: std::cell::Cell::new(cols),
             rows: std::cell::Cell::new(rows),
             sessions: RefCell::new(HashMap::new()),
+            bare_sessions: RefCell::new(HashMap::new()),
             active_task: RefCell::new(None),
+            active_tab_is_bare: std::cell::Cell::new(false),
             open_tabs: RefCell::new(open_tabs),
             expanded_dirs: RefCell::new(HashSet::new()),
+            replay_terms: RefCell::new(HashMap::new()),
         })
     }
 
@@ -256,6 +272,24 @@ impl AppState {
         switch_to
     }
 
+    /// Reset tasks whose session_state is still "busy" or "awaiting"
+    /// from a previous run. When the app restarts, any PTY processes
+    /// have died, so these states are stale. Returns the number of
+    /// tasks reset.
+    pub fn reset_stale_sessions(&self) -> usize {
+        match self.db.conn.execute(
+            "UPDATE tasks SET session_state = 'exited', process_pid = NULL
+             WHERE session_state IN ('busy', 'awaiting')",
+            [],
+        ) {
+            Ok(count) => count,
+            Err(err) => {
+                tracing::warn!(%err, "reset_stale_sessions failed");
+                0
+            }
+        }
+    }
+
     /// Read every task from the DB, ordered for kanban display.
     pub fn list_tasks(&self) -> Result<Vec<Task>> {
         self.task_store().list_all()
@@ -319,6 +353,7 @@ impl AppState {
     /// Phase 4: refuses to advance beyond Planning if the task has any
     /// unresolved dependencies — the user must either complete the
     /// prerequisites first or manually remove the dependency edges.
+    #[allow(dead_code)]
     pub fn move_forward(&self, id: Uuid) -> Result<()> {
         let deps = self.dependency_store();
         if deps.is_blocked(id)? {
@@ -335,8 +370,26 @@ impl AppState {
     }
 
     /// Move a task one column backward along the primary workflow.
+    #[allow(dead_code)]
     pub fn move_backward(&self, id: Uuid) -> Result<()> {
         self.move_state(id, |s| s.prev())
+    }
+
+    /// Move a task directly to a specific column (used by the card
+    /// context menu). Respects dependency blocking: if the target
+    /// column is beyond Planning and the task is blocked, the move is
+    /// refused.
+    #[allow(dead_code)]
+    pub fn move_to_column(&self, id: Uuid, target: TaskState) -> Result<()> {
+        let deps = self.dependency_store();
+        if deps.is_blocked(id)?
+            && !matches!(target, TaskState::Backlog | TaskState::Planning | TaskState::Misc)
+        {
+            anyhow::bail!("task is blocked by an unresolved dependency");
+        }
+        self.move_state(id, |current| {
+            if current == target { None } else { Some(target) }
+        })
     }
 
     fn move_state(
@@ -431,7 +484,41 @@ impl AppState {
             return Ok(false);
         }
         *active = Some(id);
+        drop(active);
+
+        // If no live session exists, try to replay the PTY byte log so the
+        // user can see the previous terminal output without starting a new
+        // session. The replay Term is stored in `replay_terms` and used as
+        // a fallback by `blit_active`.
+        let has_live = self.sessions.borrow().contains_key(&id);
+        if !has_live && !self.replay_terms.borrow().contains_key(&id) {
+            self.try_replay_log(id);
+        }
+
         Ok(true)
+    }
+
+    /// Replay the PTY byte log for `task_id` into a standalone Term and
+    /// store it in `replay_terms`. No-op if the log file doesn't exist.
+    fn try_replay_log(&self, task_id: Uuid) {
+        let log_path = self.dirs.task_log_path(&task_id.to_string());
+        if !log_path.exists() {
+            return;
+        }
+        let mut term = Term::new(
+            alacritty_terminal::term::Config::default(),
+            &TermSize::new(self.cols.get(), self.rows.get()),
+            VoidListener,
+        );
+        let mut processor = Processor::new();
+        match crate::terminal::replay::replay_log(&log_path, &mut processor, &mut term) {
+            Ok(n) if n > 0 => {
+                tracing::info!(task_id = %task_id, bytes = n, "replayed log for display");
+                self.replay_terms.borrow_mut().insert(task_id, term);
+            }
+            Ok(_) => {}
+            Err(err) => tracing::warn!(%err, "replay log failed for task {}", task_id),
+        }
     }
 
     /// Explicitly start an agent session for a task.
@@ -522,6 +609,11 @@ impl AppState {
         // ── 2. Resolve argv + env via Strategy pattern ───────────────────
         // Bare shell bypasses the trait entirely; other kinds go through the
         // factory and produce their provider-specific argv.
+        let permission_mode = {
+            let s = crate::settings::Settings::new(&self.db.conn);
+            s.get_or(crate::settings::KEY_PERMISSION_MODE, "acceptEdits")
+        };
+
         let (argv, env, resolved_name) = match task.cli_selection {
             AgentKind::Bare => (
                 vec![self.default_shell.clone()],
@@ -544,6 +636,7 @@ impl AppState {
                     mode,
                     task.instructions.as_deref(),
                     resume_id,
+                    Some(permission_mode.as_str()),
                 );
                 let env = provider.env();
                 (argv, env, provider.name())
@@ -657,6 +750,8 @@ impl AppState {
         // writer flushes in Drop. The child process becomes an orphan
         // (Phase 5 Process Manager will surface and kill it).
         self.sessions.borrow_mut().insert(id, session);
+        // Evict the replay-only Term now that a live session exists.
+        self.replay_terms.borrow_mut().remove(&id);
         *self.active_task.borrow_mut() = Some(id);
         Ok(())
     }
@@ -679,31 +774,65 @@ impl AppState {
     /// knows whether to re-blit the framebuffer).
     pub fn poll_all_sessions(&self) -> bool {
         let active = *self.active_task.borrow();
-        let mut sessions = self.sessions.borrow_mut();
+        let is_bare = self.active_tab_is_bare.get();
         let mut active_dirty = false;
-        for (id, sess) in sessions.iter_mut() {
-            let processed = sess.poll();
-            if processed && Some(*id) == active {
-                active_dirty = true;
+        // Poll agent sessions.
+        {
+            let mut sessions = self.sessions.borrow_mut();
+            for (id, sess) in sessions.iter_mut() {
+                let processed = sess.poll();
+                if processed && Some(*id) == active && !is_bare {
+                    active_dirty = true;
+                }
+            }
+        }
+        // Poll bare terminal sessions.
+        {
+            let mut bare = self.bare_sessions.borrow_mut();
+            for (id, sess) in bare.iter_mut() {
+                let processed = sess.poll();
+                if processed && Some(*id) == active && is_bare {
+                    active_dirty = true;
+                }
             }
         }
         active_dirty
     }
 
     /// Re-render the active session's terminal into the shared framebuffer.
-    /// No-op if there is no active task.
+    /// Renders the bare terminal if `active_tab_is_bare` is set, otherwise
+    /// the agent session. No-op if there is no active task.
     pub fn blit_active(&self) -> bool {
         let active = match *self.active_task.borrow() {
             Some(id) => id,
             None => return false,
         };
-        let mut sessions = self.sessions.borrow_mut();
-        let Some(sess) = sessions.get_mut(&active) else {
-            return false;
-        };
-        let mut fb = self.framebuffer.borrow_mut();
-        fb.blit_from_term(&sess.term, &self.atlas);
-        true
+        if self.active_tab_is_bare.get() {
+            let mut bare = self.bare_sessions.borrow_mut();
+            let Some(sess) = bare.get_mut(&active) else {
+                return false;
+            };
+            let mut fb = self.framebuffer.borrow_mut();
+            fb.blit_from_term(&sess.term, &self.atlas);
+            true
+        } else {
+            // Try live session first.
+            let mut sessions = self.sessions.borrow_mut();
+            if let Some(sess) = sessions.get_mut(&active) {
+                let mut fb = self.framebuffer.borrow_mut();
+                fb.blit_from_term(&sess.term, &self.atlas);
+                return true;
+            }
+            drop(sessions);
+            // Fallback: replay-only Term from a previous session's log.
+            let replays = self.replay_terms.borrow();
+            if let Some(term) = replays.get(&active) {
+                let mut fb = self.framebuffer.borrow_mut();
+                fb.blit_from_term(term, &self.atlas);
+                return true;
+            }
+            false
+        }
     }
 
     /// Resize all live PTY sessions and rebuild the framebuffer at
@@ -718,23 +847,158 @@ impl AppState {
         self.cols.set(new_cols);
         self.rows.set(new_rows);
         *self.framebuffer.borrow_mut() = Framebuffer::new(new_cols, new_rows, &self.atlas);
-        let mut sessions = self.sessions.borrow_mut();
-        for sess in sessions.values_mut() {
+        for sess in self.sessions.borrow_mut().values_mut() {
             sess.resize(new_cols, new_rows);
+        }
+        for sess in self.bare_sessions.borrow_mut().values_mut() {
+            sess.resize(new_cols, new_rows);
+        }
+        for term in self.replay_terms.borrow_mut().values_mut() {
+            term.resize(TermSize::new(new_cols, new_rows));
         }
         tracing::debug!(cols = new_cols, rows = new_rows, "resized all sessions");
     }
 
-    /// Forward bytes to the active session. No-op if no task is active.
-    pub fn write_to_active(&self, bytes: &[u8]) {
+    /// Forward bytes to the active session. Writes to the bare terminal
+    /// if `active_tab_is_bare` is set, otherwise to the agent session.
+    ///
+    /// When the agent session tab has no live session but a replay-only
+    /// Term exists (previous session from before restart), the session is
+    /// automatically resumed using the task's saved `start_mode` and
+    /// `claude_session_id`. Returns `true` if a session was auto-resumed
+    /// so the caller can refresh the UI.
+    pub fn write_to_active(&self, bytes: &[u8]) -> bool {
         let active = match *self.active_task.borrow() {
             Some(id) => id,
-            None => return,
+            None => return false,
         };
+        if self.active_tab_is_bare.get() {
+            let mut bare = self.bare_sessions.borrow_mut();
+            if let Some(sess) = bare.get_mut(&active) {
+                sess.write(bytes);
+            }
+            return false;
+        }
+
+        // Check if there's a live agent session.
+        let has_live = self.sessions.borrow().contains_key(&active);
+        if !has_live {
+            // Auto-resume: if a replay term exists, the task had a
+            // previous session. Re-start it so the user can interact.
+            let has_replay = self.replay_terms.borrow().contains_key(&active);
+            if has_replay {
+                match self.resume_session(active) {
+                    Ok(()) => {
+                        tracing::info!(task_id = %active, "auto-resumed session on keypress");
+                        // Write the triggering bytes to the new session.
+                        if let Some(sess) = self.sessions.borrow_mut().get_mut(&active) {
+                            sess.write(bytes);
+                        }
+                        return true; // Signal that UI needs refresh.
+                    }
+                    Err(err) => {
+                        tracing::warn!(%err, "auto-resume session failed");
+                        return false;
+                    }
+                }
+            }
+            return false;
+        }
+
         let mut sessions = self.sessions.borrow_mut();
         if let Some(sess) = sessions.get_mut(&active) {
             sess.write(bytes);
         }
+        false
+    }
+
+    /// Re-start the agent session for a task that previously had one.
+    /// Uses the task's saved `start_mode` (defaulting to Implement) and
+    /// `claude_session_id` for `--resume` support.
+    fn resume_session(&self, id: Uuid) -> Result<()> {
+        let store = self.task_store();
+        let task = store
+            .get(id)?
+            .with_context(|| format!("task {id} not found"))?;
+        let mode = task.start_mode.unwrap_or(StartMode::Implement);
+
+        // Truncate the old PTY log before starting the new session.
+        // The replay term already shows the old content; replaying it
+        // again into the new Term would corrupt the display because
+        // Claude Code with --resume re-renders its own conversation
+        // history, creating overlapping escape sequences.
+        let log_path = self.dirs.task_log_path(&id.to_string());
+        if log_path.exists() {
+            if let Err(err) = std::fs::File::create(&log_path) {
+                tracing::warn!(%err, "failed to truncate old PTY log before resume");
+            }
+        }
+
+        self.start_session(id, mode)
+    }
+
+    /// Read text from the system clipboard and write it to the active PTY.
+    /// Wraps the pasted text with bracketed paste escape sequences when the
+    /// terminal application has enabled bracketed paste mode (CSI ? 2004 h).
+    pub fn paste_to_active(&self) -> Result<(), String> {
+        use alacritty_terminal::term::TermMode;
+
+        let text = arboard::Clipboard::new()
+            .and_then(|mut cb| cb.get_text())
+            .map_err(|e| e.to_string())?;
+        if text.is_empty() {
+            return Ok(());
+        }
+
+        let active = match *self.active_task.borrow() {
+            Some(id) => id,
+            None => return Ok(()),
+        };
+
+        // Check if the terminal has bracketed paste mode enabled.
+        let bracketed = if self.active_tab_is_bare.get() {
+            self.bare_sessions.borrow()
+                .get(&active)
+                .map(|s| s.term.mode().contains(TermMode::BRACKETED_PASTE))
+                .unwrap_or(false)
+        } else {
+            self.sessions.borrow()
+                .get(&active)
+                .map(|s| s.term.mode().contains(TermMode::BRACKETED_PASTE))
+                .unwrap_or(false)
+        };
+
+        let mut payload = Vec::with_capacity(text.len() + 12);
+        if bracketed {
+            payload.extend_from_slice(b"\x1b[200~");
+        }
+        payload.extend_from_slice(text.as_bytes());
+        if bracketed {
+            payload.extend_from_slice(b"\x1b[201~");
+        }
+
+        self.write_to_active(&payload);
+        Ok(())
+    }
+
+    /// Lazily spawn a bare shell for the given task. Uses the task's
+    /// worktree_path (or repo_path) as cwd. No-op if already running.
+    pub fn start_bare_terminal(&self, task_id: Uuid) -> Result<()> {
+        if self.bare_sessions.borrow().contains_key(&task_id) {
+            return Ok(());
+        }
+        let store = self.task_store();
+        let task = store.get(task_id)?.context("task not found")?;
+        let cwd = task
+            .worktree_path
+            .as_deref()
+            .unwrap_or(task.repo_path.as_path());
+        let cols = self.cols.get();
+        let rows = self.rows.get();
+        let argv = vec![self.default_shell.clone()];
+        let session = PtySession::spawn(cols, rows, &argv, &[], cwd, None)?;
+        self.bare_sessions.borrow_mut().insert(task_id, session);
+        Ok(())
     }
 
     /// Whether a session is currently running for this task (in memory).
@@ -808,14 +1072,24 @@ impl AppState {
                 Ok(Some(t)) => t,
                 _ => continue,
             };
-            // Only detect for sessions that are currently "busy".
-            if task.session_state != SessionState::Busy {
+            // Only detect for live sessions (Idle, Busy, or Awaiting).
+            if !matches!(
+                task.session_state,
+                SessionState::Idle | SessionState::Busy | SessionState::Awaiting
+            ) {
                 continue;
             }
-            if let Some(new_state) =
-                crate::terminal::detect::detect_session_state(&sess.term, task.cli_selection)
-                && new_state != task.session_state
-            {
+            let detected =
+                crate::terminal::detect::detect_session_state(&sess.term, task.cli_selection);
+            let new_state = match detected {
+                // Pattern found → agent is waiting for input.
+                Some(SessionState::Awaiting) => SessionState::Awaiting,
+                // No pattern found and agent was awaiting → now busy.
+                None if task.session_state == SessionState::Awaiting => SessionState::Busy,
+                // No pattern found and idle/busy → keep current state.
+                _ => continue,
+            };
+            if new_state != task.session_state {
                 changed.push((*id, new_state));
             }
         }
