@@ -95,6 +95,7 @@ impl JsonSession {
         cmd.arg("-p").arg(prompt);
         cmd.arg("--output-format").arg("stream-json");
         cmd.arg("--verbose");
+        cmd.arg("--include-partial-messages");
 
         // Reuse session_id for conversation continuity.
         if let Some(ref id) = self.session_id {
