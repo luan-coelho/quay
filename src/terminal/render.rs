@@ -80,8 +80,12 @@ impl Framebuffer {
             let line = Line(row as i32 - display_offset);
             for col in 0..cols {
                 let cell = &grid[line][Column(col)];
+                let flags = cell.flags;
                 let (fg, bg) = resolve_colors(cell);
 
+                // Background is drawn for every cell — including
+                // wide-char spacers, so the colour extends across the
+                // full double-width area.
                 if bg != DEFAULT_BG {
                     fill_rect(
                         bytes, fb_w,
@@ -89,6 +93,22 @@ impl Framebuffer {
                         cell_w, cell_h,
                         bg,
                     );
+                }
+
+                // Wide-char spacer cells carry no glyph of their own —
+                // the preceding WIDE_CHAR cell already drew the glyph
+                // across both columns. Skip glyph + decorations.
+                if flags.intersects(
+                    Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER,
+                ) {
+                    continue;
+                }
+
+                // HIDDEN: the application asked to hide this character
+                // (e.g. password entry). Background was drawn above;
+                // skip the glyph and decorations.
+                if flags.contains(Flags::HIDDEN) {
+                    continue;
                 }
 
                 if cell.c != ' '
@@ -102,6 +122,25 @@ impl Framebuffer {
                         &glyph,
                         fg,
                     );
+                }
+
+                // Underline decoration — single solid line for all
+                // underline styles (simple, double, curly, dotted,
+                // dashed). Full fidelity per-style rendering is a
+                // future polish item.
+                if flags.intersects(Flags::ALL_UNDERLINES) {
+                    let uy = row * cell_h + baseline + 2;
+                    if uy < fb_h {
+                        hline(bytes, fb_w, col * cell_w, uy, cell_w, fg);
+                    }
+                }
+
+                // Strikethrough — horizontal line through the middle.
+                if flags.contains(Flags::STRIKEOUT) {
+                    let sy = row * cell_h + cell_h / 2;
+                    if sy < fb_h {
+                        hline(bytes, fb_w, col * cell_w, sy, cell_w, fg);
+                    }
                 }
             }
         }
@@ -161,6 +200,16 @@ fn fill_rect(
     }
 }
 
+/// Draw a 1 px horizontal line at `(x, y)` spanning `w` pixels.
+#[inline]
+fn hline(bytes: &mut [u8], fb_w: usize, x: usize, y: usize, w: usize, color: [u8; 4]) {
+    let start = (y * fb_w + x) * 4;
+    for dx in 0..w {
+        let idx = start + dx * 4;
+        bytes[idx..idx + 4].copy_from_slice(&color);
+    }
+}
+
 /// Blend a rasterized glyph's alpha mask into the framebuffer, over whatever
 /// background has already been drawn.
 #[allow(clippy::too_many_arguments)]
@@ -211,13 +260,31 @@ fn draw_glyph(
     }
 }
 
+/// Resolve foreground + background colours from a cell, applying the
+/// INVERSE, BOLD, and DIM attribute flags.
 fn resolve_colors(cell: &Cell) -> ([u8; 4], [u8; 4]) {
-    let inverse = cell.flags.contains(Flags::INVERSE);
-    let fg = color_to_rgba(cell.fg);
+    let flags = cell.flags;
+    let inverse = flags.contains(Flags::INVERSE);
+
+    // BOLD: for standard ANSI colours (0-7) promote to the bright
+    // variant; for true-colour / indexed colours apply a 25% boost.
+    let mut fg = if flags.contains(Flags::BOLD) {
+        color_to_rgba_bold(cell.fg)
+    } else {
+        color_to_rgba(cell.fg)
+    };
+
     let bg = color_to_rgba(cell.bg);
+
+    // DIM: reduce foreground brightness by ~33%.
+    if flags.contains(Flags::DIM) {
+        fg = dim_color(fg);
+    }
+
     if inverse { (bg, fg) } else { (fg, bg) }
 }
 
+/// Standard colour lookup (no BOLD promotion).
 fn color_to_rgba(color: Color) -> [u8; 4] {
     match color {
         Color::Named(named) => named_to_rgba(named),
@@ -230,6 +297,68 @@ fn color_to_rgba(color: Color) -> [u8; 4] {
             }
         }
     }
+}
+
+/// Colour lookup with BOLD promotion: ANSI 0-7 → 8-15 (bright),
+/// true-colour / extended palette → 25% RGB boost.
+fn color_to_rgba_bold(color: Color) -> [u8; 4] {
+    match color {
+        Color::Named(named) => named_to_rgba(promote_to_bright(named)),
+        Color::Spec(rgb) => brighten_color([rgb.r, rgb.g, rgb.b, 0xff]),
+        Color::Indexed(idx) => {
+            if idx < 8 {
+                // Standard 0-7 → bright 8-15.
+                named_to_rgba(named_from_ansi_index(idx + 8))
+            } else if idx < 16 {
+                // Already bright — no change.
+                named_to_rgba(named_from_ansi_index(idx))
+            } else {
+                brighten_color(approximate_256(idx))
+            }
+        }
+    }
+}
+
+/// Promote a named colour to its bright variant (Black → BrightBlack,
+/// etc.). Colours that are already bright or have no bright counterpart
+/// are returned as-is.
+fn promote_to_bright(c: NamedColor) -> NamedColor {
+    use NamedColor::*;
+    match c {
+        Black   => BrightBlack,
+        Red     => BrightRed,
+        Green   => BrightGreen,
+        Yellow  => BrightYellow,
+        Blue    => BrightBlue,
+        Magenta => BrightMagenta,
+        Cyan    => BrightCyan,
+        White   => BrightWhite,
+        Foreground => BrightForeground,
+        other   => other,
+    }
+}
+
+/// 25% brightness boost for true-colour / extended palette cells with
+/// BOLD. Clamped at 255 per channel.
+#[inline]
+fn brighten_color(c: [u8; 4]) -> [u8; 4] {
+    [
+        ((c[0] as u16) * 5 / 4).min(255) as u8,
+        ((c[1] as u16) * 5 / 4).min(255) as u8,
+        ((c[2] as u16) * 5 / 4).min(255) as u8,
+        c[3],
+    ]
+}
+
+/// ~33% brightness reduction for DIM foreground.
+#[inline]
+fn dim_color(c: [u8; 4]) -> [u8; 4] {
+    [
+        ((c[0] as u16) * 2 / 3) as u8,
+        ((c[1] as u16) * 2 / 3) as u8,
+        ((c[2] as u16) * 2 / 3) as u8,
+        c[3],
+    ]
 }
 
 /// VS Code-ish dark palette. Picked for good legibility on the dark chrome.
