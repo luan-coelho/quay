@@ -16,6 +16,8 @@ import { LucideIcon } from "atoms.slint";
 import { OpenTaskTab } from "cards.slint";
 import { RightTab } from "menu.slint";
 import { TerminalView } from "terminal_view.slint";
+import { ChatView } from "chat_view.slint";
+import { ChatItemData } from "../data.slint";
 import { DescriptionPanel } from "description_panel.slint";
 import { GitChangesPanel } from "git_changes_panel.slint";
 import { FilesPanel } from "files_panel.slint";
@@ -54,6 +56,11 @@ export component RightPane inherits Rectangle {
             terminal.focus-input();
         }
     }
+
+    // Chat view (stream-json sessions).
+    in property <bool> is-chat-session: false;
+    in property <[ChatItemData]> chat-items;
+    callback send-prompt(string);
 
     // Bare terminal tab.
     callback bare-terminal-requested(string);  // task-id
@@ -195,9 +202,21 @@ export component RightPane inherits Rectangle {
         }
     }
 
-    // Session terminal (agent CLI) — visible when active-right-tab == "terminal"
+    // Session panel — ChatView for Claude stream-json sessions,
+    // TerminalView for other agents / fallback.
+    if root.is-chat-session && root.active-right-tab == "terminal": ChatView {
+        x: right-pad-h;
+        y: tab-strip-h + open-tabs-strip-h + right-pad-v;
+        width: parent.width - right-pad-h * 2;
+        height: parent.height - tab-strip-h - open-tabs-strip-h - right-pad-v - 22px;
+        items: root.chat-items;
+        session-state: root.active-task-session-state;
+        active-task-id: root.active-task-id;
+        send-prompt(text) => { root.send-prompt(text); }
+    }
+
     terminal := TerminalView {
-        visible: root.active-right-tab == "terminal";
+        visible: !root.is-chat-session && root.active-right-tab == "terminal";
         x: right-pad-h;
         y: tab-strip-h + open-tabs-strip-h + right-pad-v;
         width: parent.width - right-pad-h * 2;

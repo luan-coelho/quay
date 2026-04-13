@@ -89,7 +89,13 @@ fn wire_open_task_tab(window: &MainWindow, ctx: &WiringContext) {
                     window.set_active_task_cost_text(SharedString::from(""));
                     window.set_active_task_runtime_text(SharedString::from(""));
                     window.set_active_task_message_count(0);
-                    if state.blit_active() {
+                    // Switch between ChatView (Claude JSON) and TerminalView.
+                    let is_chat = state.active_has_json_session();
+                    window.set_is_chat_session(is_chat);
+                    if is_chat {
+                        let items = crate::build_chat_items_model(&state);
+                        window.set_chat_items(items);
+                    } else if state.blit_active() {
                         window.set_frame(Image::from_rgba8_premultiplied(
                             state.framebuffer.borrow().buffer.clone(),
                         ));

@@ -1,5 +1,10 @@
 //! Capture Claude Code session ids from the agent's own state directory.
 //!
+//! NOTE: With stream-json sessions, the session id is captured directly
+//! from the JSON events. This module is kept for historical stats and
+//! potential future use with the PTY fallback path.
+#![allow(dead_code)]
+//!
 //! Claude Code persists every session as a JSONL file at
 //! `~/.claude/projects/<cwd-encoded>/<session-id>.jsonl`, where
 //! `<cwd-encoded>` is the working directory with path separators replaced

@@ -43,6 +43,56 @@ const DEFAULT_COLS: usize = 96;
 const DEFAULT_ROWS: usize = 28;
 const FONT_SIZE: f32 = 14.0;
 
+/// Build the Slint model for the active task's JSON session chat items.
+fn build_chat_items_model(state: &AppState) -> ModelRc<ChatItemData> {
+    use crate::agents::stream_json::ChatItem;
+
+    let active = *state.active_task.borrow();
+    let sessions = state.json_sessions.borrow();
+    let items = active
+        .and_then(|id| sessions.get(&id))
+        .map(|sess| &sess.items[..])
+        .unwrap_or(&[]);
+
+    let slint_items: Vec<ChatItemData> = items
+        .iter()
+        .map(|item| match item {
+            ChatItem::UserPrompt(text) => ChatItemData {
+                kind: "user".into(),
+                text: text.as_str().into(),
+                tool_name: SharedString::default(),
+                is_error: false,
+            },
+            ChatItem::AssistantText(text) => ChatItemData {
+                kind: "text".into(),
+                text: text.as_str().into(),
+                tool_name: SharedString::default(),
+                is_error: false,
+            },
+            ChatItem::ToolUse { name, input } => ChatItemData {
+                kind: "tool-use".into(),
+                text: input.as_str().into(),
+                tool_name: name.as_str().into(),
+                is_error: false,
+            },
+            ChatItem::ToolResult { output, is_error } => ChatItemData {
+                kind: "tool-result".into(),
+                text: output.as_str().into(),
+                tool_name: "Result".into(),
+                is_error: *is_error,
+            },
+            ChatItem::Status(text) => ChatItemData {
+                kind: "status".into(),
+                text: text.as_str().into(),
+                tool_name: SharedString::default(),
+                is_error: false,
+            },
+        })
+        .collect();
+
+    ModelRc::from(Rc::new(VecModel::from(slint_items)))
+}
+
 fn main() -> Result<()> {
     util::log::init();
     tracing::info!("quay starting");
@@ -609,6 +659,30 @@ fn main() -> Result<()> {
                     window.set_frame(Image::from_rgba8_premultiplied(
                         state.framebuffer.borrow().buffer.clone(),
                     ));
+                }
+
+                // Poll JSON streaming sessions (Claude Code non-PTY).
+                let json_changed = state.poll_all_json_sessions();
+                if json_changed {
+                    if let Some(window) = weak.upgrade() {
+                        // Rebuild the chat items model for the active task.
+                        let is_chat = state.active_has_json_session();
+                        window.set_is_chat_session(is_chat);
+                        if is_chat {
+                            let items = build_chat_items_model(&state);
+                            window.set_chat_items(items);
+                            // Sync session state.
+                            if let Some(active_id) = *state.active_task.borrow() {
+                                let sessions = state.json_sessions.borrow();
+                                if let Some(sess) = sessions.get(&active_id) {
+                                    window.set_active_task_session_state(
+                                        sess.state.as_str().into(),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    refresh();
                 }
 
                 // Session exit detection + resize — check once per second.

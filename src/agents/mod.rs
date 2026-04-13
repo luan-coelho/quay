@@ -23,7 +23,9 @@
 pub mod claude_code;
 pub mod claude_resume;
 pub mod claude_stats;
+pub mod json_session;
 pub mod opencode;
+pub mod stream_json;
 
 use anyhow::Result;
 

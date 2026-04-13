@@ -36,7 +36,7 @@ import {
     HlSpanData, HighlightedLineData, TaskCardData, DiffLineData,
     DiffFileData, CommitEntryData, MenuItemData, ProjectData,
     OpenTaskTabData, SessionDotData, WorktreeEntryData, SessionEntryData,
-    ToastData,
+    ToastData, ChatItemData,
 } from "data.slint";
 import {
     LucideIcon, KindDiamond, Spinner, KindChip, Avatar, CloseButton,
@@ -328,6 +328,10 @@ export component MainWindow inherits Window {
     callback key-pressed(string, bool, bool, bool, bool);
     // Mouse wheel delta (in logical pixels) for the terminal pane.
     callback terminal-scroll(float);
+    // Chat view (stream-json sessions).
+    callback send-prompt(string);
+    in property <bool> is-chat-session: false;
+    in property <[ChatItemData]> chat-items;
 
     // Layout constants.
     // Polish 24: sidebar-w switches between full and compact based
@@ -453,6 +457,9 @@ export component MainWindow inherits Window {
             root.key-pressed(text, ctrl, alt, shift, meta);
         }
         terminal-scroll(delta) => { root.terminal-scroll(delta); }
+        is-chat-session: root.is-chat-session;
+        chat-items: root.chat-items;
+        send-prompt(text) => { root.send-prompt(text); }
         bare-terminal-requested(id) => { root.bare-terminal-requested(id); }
 
         // Description tab.

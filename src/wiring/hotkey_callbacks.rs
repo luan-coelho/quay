@@ -47,6 +47,33 @@ pub fn wire(window: &MainWindow, ctx: &WiringContext) {
         });
     }
 
+    // ── Chat prompt submission (stream-json sessions) ─────────────
+    {
+        let state = ctx.state.clone();
+        let weak = window.as_weak();
+        let refresh = ctx.refresh_kanban.clone();
+        let toast = ctx.show_toast.clone();
+        window.on_send_prompt(move |text| {
+            let prompt = text.to_string();
+            if prompt.is_empty() {
+                return;
+            }
+            match state.send_prompt_to_active(&prompt) {
+                Ok(()) => {
+                    tracing::info!("sent prompt to json session");
+                    if let Some(w) = weak.upgrade() {
+                        w.set_active_task_session_state("busy".into());
+                    }
+                    refresh();
+                }
+                Err(err) => {
+                    tracing::warn!(%err, "send_prompt failed");
+                    toast("error", format!("Failed to send prompt: {err}"));
+                }
+            }
+        });
+    }
+
     // ── Keyboard dispatch ───────────────────────────────────────────
     let state = ctx.state.clone();
     let weak = window.as_weak();
@@ -132,9 +159,19 @@ pub fn wire(window: &MainWindow, ctx: &WiringContext) {
                             let _ = state.select_task(task.id);
                             if let Some(w) = weak.upgrade() {
                                 w.set_active_task_id(task.id.to_string().into());
-                                w.set_active_task_session_state(crate::kanban::SessionState::Busy.as_str().into());
+                                let is_chat = state.active_has_json_session();
+                                w.set_is_chat_session(is_chat);
+                                let initial_state = if is_chat && task.instructions.as_deref().unwrap_or("").is_empty() {
+                                    "awaiting"
+                                } else {
+                                    "busy"
+                                };
+                                w.set_active_task_session_state(initial_state.into());
                                 w.set_active_right_tab(slint::SharedString::from("terminal"));
-                                if state.blit_active() {
+                                if is_chat {
+                                    let items = crate::build_chat_items_model(&state);
+                                    w.set_chat_items(items);
+                                } else if state.blit_active() {
                                     w.set_frame(slint::Image::from_rgba8_premultiplied(
                                         state.framebuffer.borrow().buffer.clone(),
                                     ));

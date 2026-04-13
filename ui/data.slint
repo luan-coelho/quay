@@ -150,6 +150,15 @@ export struct SessionEntryData {
     agent-kind: string,    // "claude" | "opencode" | "bare"
 }
 
+// Stream-json chat item — one entry per chat bubble / tool card /
+// status line in the ChatView.
+export struct ChatItemData {
+    kind: string,       // "user" | "text" | "tool-use" | "tool-result" | "status"
+    text: string,       // rendered content
+    tool-name: string,  // for kind == "tool-use"
+    is-error: bool,     // for kind == "tool-result"
+}
+
 // Toast stack entry — one per visible notification. `alive` drives
 // the fade-out animation; when false the toast is being dismissed.
 export struct ToastData {

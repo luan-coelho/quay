@@ -1,0 +1,236 @@
+// Chat-based session view — replaces TerminalView for Claude Code
+// sessions using `--output-format stream-json`.
+//
+// Renders a flat list of ChatItemData entries (user prompts, assistant
+// text, tool call cards, status lines) inside a scrollable area, with
+// a TextInput at the bottom for sending follow-up prompts.
+
+import { ScrollView } from "std-widgets.slint";
+import { Tokens } from "../tokens.slint";
+import { ChatItemData } from "../data.slint";
+
+component UserBubble inherits Rectangle {
+    in property <string> text;
+    height: self.preferred-height;
+    preferred-height: inner.preferred-height + 20px;
+
+    inner := Rectangle {
+        x: 32px;
+        width: parent.width - 40px;
+        height: msg.preferred-height + 16px;
+        background: Tokens.accent.with-alpha(0.15);
+        border-radius: 8px;
+
+        msg := Text {
+            x: 8px; y: 8px;
+            width: parent.width - 16px;
+            text: root.text;
+            color: Tokens.foreground;
+            font-size: Tokens.text-sm;
+            wrap: word-wrap;
+        }
+    }
+}
+
+component AssistantText inherits Rectangle {
+    in property <string> text;
+    height: self.preferred-height;
+    preferred-height: body.preferred-height + 12px;
+
+    body := Text {
+        x: 8px; y: 4px;
+        width: parent.width - 48px;
+        text: root.text;
+        color: Tokens.foreground;
+        font-size: Tokens.text-sm;
+        wrap: word-wrap;
+    }
+}
+
+component ToolCard inherits Rectangle {
+    in property <string> tool-name;
+    in property <string> text;    // tool input / output
+    in property <bool> is-error;
+    height: self.preferred-height;
+    preferred-height: card.preferred-height + 12px;
+
+    card := Rectangle {
+        x: 8px;
+        width: parent.width - 48px;
+        height: card-col.preferred-height + 12px;
+        background: Tokens.muted.with-alpha(0.08);
+        border-radius: 6px;
+        border-width: 1px;
+        border-color: root.is-error ? Tokens.destructive : Tokens.border;
+
+        card-col := VerticalLayout {
+            padding: 6px;
+            spacing: 4px;
+
+            HorizontalLayout {
+                spacing: 6px;
+                Text {
+                    text: "⚙";
+                    color: Tokens.muted-foreground;
+                    font-size: Tokens.text-xs;
+                }
+                Text {
+                    text: root.tool-name;
+                    color: root.is-error ? Tokens.destructive : Tokens.accent;
+                    font-size: Tokens.text-xs;
+                    font-weight: Tokens.weight-semibold;
+                }
+            }
+
+            if root.text != "": Text {
+                width: parent.width - 12px;
+                text: root.text;
+                color: Tokens.muted-foreground;
+                font-size: 11px;
+                font-family: Tokens.font-mono;
+                wrap: word-wrap;
+                overflow: elide;
+            }
+        }
+    }
+}
+
+component StatusLine inherits Rectangle {
+    in property <string> text;
+    height: 28px;
+
+    HorizontalLayout {
+        alignment: center;
+        padding: 8px;
+        Text {
+            text: root.text;
+            color: Tokens.muted-foreground;
+            font-size: Tokens.text-xs;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+export component ChatView inherits Rectangle {
+    in property <[ChatItemData]> items;
+    in property <string> session-state;    // "idle" | "busy" | "awaiting" | ...
+    in property <string> active-task-id;
+    callback send-prompt(string);
+
+    VerticalLayout {
+        // Chat history — scrollable.
+        ScrollView {
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                spacing: 2px;
+                padding: 4px;
+
+                for item in root.items: Rectangle {
+                    if item.kind == "user": UserBubble {
+                        width: parent.width;
+                        text: item.text;
+                    }
+                    if item.kind == "text": AssistantText {
+                        width: parent.width;
+                        text: item.text;
+                    }
+                    if item.kind == "tool-use" || item.kind == "tool-result": ToolCard {
+                        width: parent.width;
+                        tool-name: item.tool-name;
+                        text: item.text;
+                        is-error: item.is-error;
+                    }
+                    if item.kind == "status": StatusLine {
+                        width: parent.width;
+                        text: item.text;
+                    }
+                }
+            }
+        }
+
+        // Input bar — visible when session is awaiting input or idle.
+        if root.session-state != "busy" && root.active-task-id != "": Rectangle {
+            height: 40px;
+            background: Tokens.card;
+            border-width: 1px;
+            border-color: Tokens.border;
+
+            HorizontalLayout {
+                padding: 6px;
+                spacing: 6px;
+
+                prompt-input := TextInput {
+                    vertical-alignment: center;
+                    font-size: Tokens.text-sm;
+                    color: Tokens.foreground;
+                    accepted => {
+                        if self.text != "" {
+                            root.send-prompt(self.text);
+                            self.text = "";
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 6px;
+                    background: Tokens.accent;
+                    TouchArea {
+                        clicked => {
+                            if prompt-input.text != "" {
+                                root.send-prompt(prompt-input.text);
+                                prompt-input.text = "";
+                            }
+                        }
+                    }
+                    Text {
+                        text: "↵";
+                        color: Tokens.foreground;
+                        font-size: Tokens.text-sm;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Busy indicator while streaming.
+        if root.session-state == "busy": Rectangle {
+            height: 32px;
+            HorizontalLayout {
+                alignment: center;
+                padding: 8px;
+                Text {
+                    text: @tr("Claude is working…");
+                    color: Tokens.muted-foreground;
+                    font-size: Tokens.text-xs;
+                    font-weight: Tokens.weight-semibold;
+                }
+            }
+        }
+
+        // Empty state.
+        if root.active-task-id == "": Rectangle {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: center;
+                spacing: 8px;
+                Text {
+                    text: @tr("No active session");
+                    color: Tokens.foreground;
+                    font-size: Tokens.text-lg;
+                    font-weight: Tokens.weight-semibold;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: @tr("Press ⌘N to start a new session, or select a task from the kanban.");
+                    color: Tokens.muted-foreground;
+                    font-size: Tokens.text-sm;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+    }
+}

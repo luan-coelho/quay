@@ -50,6 +50,28 @@ const ALLOWED_TOOLS: &[&str] = &[
     "WebFetch", "WebSearch", "NotebookEdit",
 ];
 
+impl ClaudeCodeProvider {
+    /// Build the permission-related argv fragment used by both the
+    /// interactive PTY path and the non-interactive `stream-json` path.
+    pub fn permission_argv(permission_mode: Option<&str>) -> Vec<String> {
+        let mut argv = Vec::new();
+        match permission_mode.unwrap_or("acceptEdits") {
+            "bypassPermissions" => {
+                argv.push("--dangerously-skip-permissions".into());
+            }
+            _ => {
+                argv.push("--permission-mode".into());
+                argv.push("acceptEdits".into());
+                argv.push("--allowedTools".into());
+                for tool in ALLOWED_TOOLS {
+                    argv.push((*tool).into());
+                }
+            }
+        }
+        argv
+    }
+}
+
 impl AgentProvider for ClaudeCodeProvider {
     fn name(&self) -> &'static str {
         "claude"

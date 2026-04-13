@@ -30,6 +30,7 @@ use alacritty_terminal::event::VoidListener;
 use alacritty_terminal::term::test::TermSize;
 use alacritty_terminal::vte::ansi::Processor;
 
+use crate::agents::json_session::JsonSession;
 use crate::persistence::{Database, QuayDirs};
 use crate::terminal::{Framebuffer, GlyphAtlas, PtySession};
 
@@ -73,6 +74,9 @@ pub struct AppState {
     /// session. Populated lazily when selecting a task that has a log
     /// file but no live PtySession. Evicted when a real session starts.
     pub replay_terms: RefCell<HashMap<Uuid, Term<VoidListener>>>,
+    /// Per-task Claude Code JSON streaming sessions (non-PTY), keyed
+    /// by task UUID. Used instead of `sessions` for Claude tasks.
+    pub json_sessions: RefCell<HashMap<Uuid, JsonSession>>,
 }
 
 impl AppState {
@@ -129,6 +133,7 @@ impl AppState {
             open_tabs: RefCell::new(open_tabs),
             expanded_dirs: RefCell::new(HashSet::new()),
             replay_terms: RefCell::new(HashMap::new()),
+            json_sessions: RefCell::new(HashMap::new()),
         })
     }
 
@@ -652,72 +657,50 @@ impl AppState {
             "starting agent session"
         );
 
-        // ── 3. Spawn PTY session ─────────────────────────────────────────
+        // ── 3. Spawn session ─────────────────────────────────────────────
+        // Claude Code: non-interactive JSON streaming session. Other
+        // agents and bare shell: interactive PTY as before.
         let log_path = self.dirs.task_log_path(&id.to_string());
-        let spawn_time = std::time::SystemTime::now();
-        let session = PtySession::spawn(
-            self.cols.get(),
-            self.rows.get(),
-            &argv,
-            &env,
-            &cwd,
-            Some(log_path.clone()),
-        )?;
+        let is_json_session = matches!(task.cli_selection, AgentKind::Claude);
 
-        // Phase 3: if this is a Claude Code session, kick off a background
-        // thread to capture the session id from Claude's `.claude/projects/`
-        // state directory. The capture updates the task row directly via
-        // a fresh short-lived DB connection when it finds the id; on the
-        // next start_session we pass it as `--resume <id>` so the agent's
-        // conversation memory survives restarts.
-        if matches!(task.cli_selection, AgentKind::Claude) {
-            let db_path = self.dirs.db_path.clone();
-            let capture_cwd = cwd.clone();
-            let task_id = id;
-            std::thread::Builder::new()
-                .name("quay-claude-resume-capture".into())
-                .spawn(move || {
-                    let timeout = std::time::Duration::from_secs(30);
-                    match agents::claude_resume::capture_session_id(
-                        &capture_cwd,
-                        spawn_time,
-                        timeout,
-                    ) {
-                        Ok(Some(session_id)) => {
-                            if let Err(err) =
-                                persist_claude_session_id(&db_path, task_id, &session_id)
-                            {
-                                tracing::warn!(
-                                    task_id = %task_id,
-                                    %err,
-                                    "failed to persist captured claude_session_id"
-                                );
-                            } else {
-                                tracing::info!(
-                                    task_id = %task_id,
-                                    session_id = %session_id,
-                                    "claude session id captured"
-                                );
-                            }
-                        }
-                        Ok(None) => {
-                            tracing::debug!(
-                                task_id = %task_id,
-                                "no claude session file appeared within timeout"
-                            );
-                        }
-                        Err(err) => {
-                            tracing::warn!(%err, "claude_resume capture failed");
-                        }
-                    }
-                })
-                .ok(); // If we can't spawn the thread, resume support is
-                       // silently skipped for this session. Not fatal.
+        if is_json_session {
+            // Resolve the binary path from argv[0].
+            let binary = PathBuf::from(&argv[0]);
+            let perm_argv = agents::claude_code::ClaudeCodeProvider::permission_argv(
+                Some(permission_mode.as_str()),
+            );
+
+            let mut json_sess = JsonSession::new(binary, cwd.clone(), perm_argv);
+
+            // If the task has instructions, start the first turn
+            // immediately. Otherwise the session stays Idle with an
+            // empty chat, waiting for the user's first prompt.
+            if let Some(ref prompt) = task.instructions
+                && !prompt.is_empty()
+            {
+                json_sess.send_prompt(prompt)?;
+            }
+
+            self.json_sessions.borrow_mut().insert(id, json_sess);
+        } else {
+            let session = PtySession::spawn(
+                self.cols.get(),
+                self.rows.get(),
+                &argv,
+                &env,
+                &cwd,
+                Some(log_path.clone()),
+            )?;
+            self.sessions.borrow_mut().insert(id, session);
         }
 
         // ── 4. Persist task state transitions ────────────────────────────
         task.start_mode = Some(mode);
-        task.session_state = SessionState::Busy;
+        task.session_state = if is_json_session && task.instructions.as_deref().unwrap_or("").is_empty() {
+            SessionState::Awaiting // No prompt yet — show input field.
+        } else {
+            SessionState::Busy
+        };
         task.state = match mode {
             StartMode::Plan => TaskState::Planning,
             StartMode::Implement => TaskState::Implementation,
@@ -745,12 +728,7 @@ impl AppState {
         );
         self.session_store().insert(&record)?;
 
-        // ── 6. Register the live session + mark active ──────────────────
-        // An existing session for the same id gets dropped here; its log
-        // writer flushes in Drop. The child process becomes an orphan
-        // (Phase 5 Process Manager will surface and kill it).
-        self.sessions.borrow_mut().insert(id, session);
-        // Evict the replay-only Term now that a live session exists.
+        // ── 6. Mark active ──────────────────────────────────────────────
         self.replay_terms.borrow_mut().remove(&id);
         *self.active_task.borrow_mut() = Some(id);
         Ok(())
@@ -797,6 +775,69 @@ impl AppState {
             }
         }
         active_dirty
+    }
+
+    /// Drain events from all live JSON streaming sessions. Returns
+    /// `true` if the active task's chat changed (the UI should rebuild
+    /// the chat model).
+    pub fn poll_all_json_sessions(&self) -> bool {
+        let active = *self.active_task.borrow();
+        let mut active_dirty = false;
+        let mut state_changes: Vec<(Uuid, SessionState)> = Vec::new();
+        {
+            let mut sessions = self.json_sessions.borrow_mut();
+            for (id, sess) in sessions.iter_mut() {
+                let changed = sess.poll();
+                if changed && Some(*id) == active {
+                    active_dirty = true;
+                }
+                // Detect state changes for DB persistence.
+                let store = self.task_store();
+                if let Ok(Some(task)) = store.get(*id)
+                    && sess.state != task.session_state
+                {
+                    state_changes.push((*id, sess.state));
+                }
+            }
+        }
+        // Persist state changes.
+        let store = self.task_store();
+        for (id, new_state) in &state_changes {
+            if let Ok(Some(mut task)) = store.get(*id) {
+                task.session_state = *new_state;
+                task.updated_at = unix_millis_now();
+                let _ = store.update(&task);
+            }
+        }
+        active_dirty
+    }
+
+    /// Send a user prompt to the active task's JSON session.
+    pub fn send_prompt_to_active(&self, prompt: &str) -> Result<()> {
+        let active = self.active_task.borrow();
+        let active_id = active.context("no active task")?;
+        let mut sessions = self.json_sessions.borrow_mut();
+        let sess = sessions
+            .get_mut(&active_id)
+            .context("no JSON session for active task")?;
+        sess.send_prompt(prompt)?;
+        // Update task state to Busy.
+        let store = self.task_store();
+        if let Ok(Some(mut task)) = store.get(active_id) {
+            task.session_state = SessionState::Busy;
+            task.updated_at = unix_millis_now();
+            let _ = store.update(&task);
+        }
+        Ok(())
+    }
+
+    /// Whether the active task has a JSON streaming session.
+    pub fn active_has_json_session(&self) -> bool {
+        let active = *self.active_task.borrow();
+        match active {
+            Some(id) => self.json_sessions.borrow().contains_key(&id),
+            None => false,
+        }
     }
 
     /// Re-render the active session's terminal into the shared framebuffer.
@@ -1210,6 +1251,7 @@ impl AppState {
 ///
 /// Opens in WAL mode with foreign keys on, same as `Database::configure`,
 /// so concurrent reads from the main thread are cheap and consistent.
+#[allow(dead_code)]
 fn persist_claude_session_id(
     db_path: &Path,
     task_id: Uuid,
