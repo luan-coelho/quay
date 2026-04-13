@@ -16,7 +16,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::MainWindow;
-use crate::kanban::{SessionState, StartMode, TaskKind};
+use crate::kanban::{StartMode, TaskKind};
 use crate::wiring::context::WiringContext;
 use crate::wiring::helpers::kind_to_str;
 use crate::wiring::validation::{TaskTitleForm, first_errors};
@@ -112,7 +112,13 @@ fn wire_select(window: &MainWindow, ctx: &WiringContext) {
                     window.set_active_task_cost_text("".into());
                     window.set_active_task_runtime_text("".into());
                     window.set_active_task_message_count(0);
-                    if state.blit_active() {
+                    // Switch between ChatView (Claude JSON) and TerminalView.
+                    let is_chat = state.active_has_json_session();
+                    window.set_is_chat_session(is_chat);
+                    if is_chat {
+                        let items = crate::build_chat_items_model(&state);
+                        window.set_chat_items(items);
+                    } else if state.blit_active() {
                         window.set_frame(Image::from_rgba8_premultiplied(
                             state.framebuffer.borrow().buffer.clone(),
                         ));
@@ -158,9 +164,19 @@ fn wire_create_submit(window: &MainWindow, ctx: &WiringContext) {
                     let _ = state.select_task(task.id);
                     if let Some(w) = weak.upgrade() {
                         w.set_active_task_id(task.id.to_string().into());
-                        w.set_active_task_session_state(SessionState::Busy.as_str().into());
+                        let is_chat = state.active_has_json_session();
+                        w.set_is_chat_session(is_chat);
+                        let initial_state = if is_chat && task.instructions.as_deref().unwrap_or("").is_empty() {
+                            "awaiting"
+                        } else {
+                            "busy"
+                        };
+                        w.set_active_task_session_state(initial_state.into());
                         w.set_active_right_tab(SharedString::from("terminal"));
-                        if state.blit_active() {
+                        if is_chat {
+                            let items = crate::build_chat_items_model(&state);
+                            w.set_chat_items(items);
+                        } else if state.blit_active() {
                             w.set_frame(Image::from_rgba8_premultiplied(
                                 state.framebuffer.borrow().buffer.clone(),
                             ));

@@ -673,12 +673,14 @@ impl AppState {
             let mut json_sess = JsonSession::new(binary, cwd.clone(), perm_argv);
 
             // If the task has instructions, start the first turn
-            // immediately. Otherwise the session stays Idle with an
-            // empty chat, waiting for the user's first prompt.
+            // immediately. Otherwise mark the session as Awaiting
+            // so the ChatView shows the input bar.
             if let Some(ref prompt) = task.instructions
                 && !prompt.is_empty()
             {
                 json_sess.send_prompt(prompt)?;
+            } else {
+                json_sess.state = SessionState::Awaiting;
             }
 
             self.json_sessions.borrow_mut().insert(id, json_sess);

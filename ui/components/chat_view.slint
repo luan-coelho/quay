@@ -118,8 +118,33 @@ export component ChatView inherits Rectangle {
     callback send-prompt(string);
 
     VerticalLayout {
-        // Chat history — scrollable.
-        ScrollView {
+        // Placeholder when no messages yet — overlays the scroll area.
+        if root.items.length == 0 && root.active-task-id != "" && root.session-state != "busy": Rectangle {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: center;
+                spacing: 8px;
+                padding: 24px;
+
+                Text {
+                    text: "Claude Code";
+                    color: Tokens.foreground;
+                    font-size: Tokens.text-lg;
+                    font-weight: Tokens.weight-semibold;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: @tr("Type a message below to start the conversation.");
+                    color: Tokens.muted-foreground;
+                    font-size: Tokens.text-sm;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        // Chat history — scrollable (shown when items exist).
+        if root.items.length > 0: ScrollView {
             vertical-stretch: 1;
 
             VerticalLayout {
@@ -151,14 +176,18 @@ export component ChatView inherits Rectangle {
 
         // Input bar — visible when session is awaiting input or idle.
         if root.session-state != "busy" && root.active-task-id != "": Rectangle {
-            height: 40px;
+            height: 44px;
             background: Tokens.card;
             border-width: 1px;
             border-color: Tokens.border;
+            border-radius: 8px;
 
             HorizontalLayout {
-                padding: 6px;
-                spacing: 6px;
+                padding-left: 12px;
+                padding-right: 6px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+                spacing: 8px;
 
                 prompt-input := TextInput {
                     vertical-alignment: center;
@@ -173,8 +202,8 @@ export component ChatView inherits Rectangle {
                 }
 
                 Rectangle {
-                    width: 28px;
-                    height: 28px;
+                    width: 30px;
+                    height: 30px;
                     border-radius: 6px;
                     background: Tokens.accent;
                     TouchArea {
@@ -211,7 +240,7 @@ export component ChatView inherits Rectangle {
             }
         }
 
-        // Empty state.
+        // Empty state — no task selected at all.
         if root.active-task-id == "": Rectangle {
             vertical-stretch: 1;
             VerticalLayout {
@@ -225,7 +254,7 @@ export component ChatView inherits Rectangle {
                     horizontal-alignment: center;
                 }
                 Text {
-                    text: @tr("Press ⌘N to start a new session, or select a task from the kanban.");
+                    text: @tr("Press Ctrl+N to start a new session, or select a task from the kanban.");
                     color: Tokens.muted-foreground;
                     font-size: Tokens.text-sm;
                     horizontal-alignment: center;

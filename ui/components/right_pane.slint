@@ -203,8 +203,10 @@ export component RightPane inherits Rectangle {
     }
 
     // Session panel — ChatView for Claude stream-json sessions,
-    // TerminalView for other agents / fallback.
-    if root.is-chat-session && root.active-right-tab == "terminal": ChatView {
+    // TerminalView for other agents / fallback. Both are always
+    // present; `visible` toggles which one renders.
+    chat-view := ChatView {
+        visible: root.is-chat-session && root.active-right-tab == "terminal";
         x: right-pad-h;
         y: tab-strip-h + open-tabs-strip-h + right-pad-v;
         width: parent.width - right-pad-h * 2;
