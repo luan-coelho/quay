@@ -222,10 +222,7 @@ fn main() -> Result<()> {
     let menu_model = Rc::new(VecModel::<MenuItemData>::default());
     for (id, glyph, label, shortcut) in [
         ("new-task",      "",  t!("menu.new_cli_session").to_string(), "".to_string()),
-        ("quick-action",  "",  t!("menu.quick_action").to_string(),    "submenu".to_string()),
         ("configure",     "",  t!("menu.configure").to_string(),       "".to_string()),
-        ("sessions",      "",  t!("menu.sessions").to_string(),        "".to_string()),
-        ("worktrees",     "",  t!("menu.worktrees").to_string(),       "".to_string()),
     ] {
         menu_model.push(MenuItemData {
             id: id.into(),

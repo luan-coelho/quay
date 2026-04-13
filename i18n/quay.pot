@@ -388,7 +388,7 @@ msgstr ""
 
 #: ui/components/git_changes_panel.slint:25
 msgctxt "GitChangesPanel"
-msgid "Git Changes"
+msgid "Git"
 msgstr ""
 
 #: ui/components/git_changes_panel.slint:32
@@ -423,7 +423,7 @@ msgstr ""
 
 #: ui/components/right_pane.slint:201
 msgctxt "RightPane"
-msgid "Git Changes"
+msgid "Git"
 msgstr ""
 
 #: ui/components/right_pane.slint:204

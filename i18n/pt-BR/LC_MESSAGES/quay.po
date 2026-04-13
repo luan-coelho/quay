@@ -397,8 +397,8 @@ msgstr "tasks no total"
 
 #: ui/components/git_changes_panel.slint:25
 msgctxt "GitChangesPanel"
-msgid "Git Changes"
-msgstr "Alterações Git"
+msgid "Git"
+msgstr "Git"
 
 #: ui/components/git_changes_panel.slint:32
 msgctxt "GitChangesPanel"
@@ -432,8 +432,8 @@ msgstr "Descrição"
 
 #: ui/components/right_pane.slint:201
 msgctxt "RightPane"
-msgid "Git Changes"
-msgstr "Alterações Git"
+msgid "Git"
+msgstr "Git"
 
 #: ui/components/right_pane.slint:204
 msgctxt "RightPane"

@@ -340,7 +340,7 @@ export component MainWindow inherits Window {
     // the toggle is fired.
     in-out property <bool> sidebar-collapsed: false;
     property <length> sidebar-w: sidebar-collapsed ? 56px : 200px;
-    property <length> middle-w: (root.width - sidebar-w) * 45%;
+    property <length> middle-w: (root.width - sidebar-w) * 35%;
     property <length> title-bar-h: 0px;
     property <length> tab-strip-h: 32px;
     property <length> term-w: root.cols * root.cell-w * 1px;

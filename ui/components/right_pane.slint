@@ -191,7 +191,7 @@ export component RightPane inherits Rectangle {
                 RightTab { label: @tr("Description"); tab-kind: "description"; selected: root.active-right-tab == "description"; clicked => { root.active-right-tab = "description"; } }
             }
             VerticalLayout { alignment: end;
-                RightTab { label: @tr("Git Changes"); tab-kind: "git"; selected: root.active-right-tab == "git"; clicked => { root.active-right-tab = "git"; } }
+                RightTab { label: @tr("Git"); tab-kind: "git"; selected: root.active-right-tab == "git"; clicked => { root.active-right-tab = "git"; } }
             }
             VerticalLayout { alignment: end;
                 RightTab { label: @tr("Files"); tab-kind: "files"; selected: root.active-right-tab == "files"; clicked => { root.active-right-tab = "files"; } }
